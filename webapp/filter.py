@@ -14,6 +14,7 @@ class SidebarFilter:
         select_flat_type=True,
         select_towns=(True, "single"),
         select_lease_years=True,
+        select_street=False,
         default_flat_type="ALL",
         default_town=None,
     ):
@@ -23,6 +24,7 @@ class SidebarFilter:
         self.min_date = min_date or self.df["month"].max() - relativedelta(months=12)
         self.max_date = max_date or self.df["month"].max()
         self.selected_towns = []
+        self.selected_street = None
         self.default_flat_type = default_flat_type
         self.default_town = default_town
 
@@ -47,6 +49,13 @@ class SidebarFilter:
 
         if self.selected_towns:
             self.df = self.df.filter(pl.col("town").is_in(self.selected_towns))
+
+        if select_street:
+            self.selected_street = self.create_streets_multiselect()
+            if self.selected_street:
+                self.df = self.df.filter(
+                    pl.col("street_name").is_in(self.selected_street)
+                )
 
         if select_lease_years:
             start_year, end_year = self.create_lease_select()
@@ -104,6 +113,15 @@ class SidebarFilter:
             placeholder="Choose town (default: all)",
         )
         return [town]
+
+    def create_streets_multiselect(self):
+        street_filter = sorted(self.df["street_name"].unique())
+        return st.sidebar.multiselect(
+            "Select street(s)",
+            options=street_filter,
+            default=None,
+            placeholder="Choose street (default: all)",
+        )
 
     def create_town_multiselect(self):
         town_filter = sorted(self.df["town"].unique())
