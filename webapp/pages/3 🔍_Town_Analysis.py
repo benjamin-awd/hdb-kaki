@@ -96,8 +96,10 @@ try:
             var month = row[3];
             var level = row[4];
             var price = row[5];
-            var lease = row[6];
-            var cat_resale_price = row[7];
+            var psf = row[6];
+            var sqft = row[7];
+            var lease = row[8];
+            var cat_resale_price = row[9];
 
             var color = cat_resale_price === "Low" ? "green" :
                         cat_resale_price === "Medium" ? "orange" : "red";
@@ -109,6 +111,8 @@ try:
                         <span style="font-weight: bold;">Sold:</span> ${month}<br>
                         <span style="font-weight: bold;">Storey:</span> ${level}<br>
                         <span style="font-weight: bold;">Price:</span> $${price.toLocaleString()}<br>
+                        <span style="font-weight: bold;">Sqft:</span> ${sqft} sqft<br>
+                        <span style="font-weight: bold;">Psf:</span> $${parseFloat(psf).toFixed(2)}<br>
                         <span style="font-weight: bold;">Remaining Lease:</span> ${lease} years
                     </p>
                 </div>
@@ -150,6 +154,8 @@ try:
                 "month",
                 "storey_range",
                 "resale_price",
+                "psf",
+                "floor_area_sqft",
                 "remaining_lease_years",
                 "cat_resale_price",
             ]
