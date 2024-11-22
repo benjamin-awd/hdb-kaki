@@ -22,6 +22,7 @@ def csv_to_parquet() -> pl.DataFrame:
 
     df = pl.read_csv(data_dir / "*.csv", schema=schema)
 
+    df = df.unique()
     df = df.with_columns(
         (
             pl.col("remaining_lease")
@@ -37,7 +38,32 @@ def csv_to_parquet() -> pl.DataFrame:
         .alias("cat_remaining_lease_years")
     )
 
-    df = df.unique()
+    df = df.with_columns(
+        [
+            (pl.col("floor_area_sqm") * 10.7639)
+            .alias("floor_area_sqft")
+            .cast(pl.Int16),
+            (pl.col("resale_price") / (pl.col("floor_area_sqm") * 10.7639)).alias(
+                "psf"
+            ),
+        ]
+    )
+
+    df = df.with_columns(
+        [
+            pl.col("storey_range")
+            .str.split_exact(" TO ", 1)
+            .struct.field("field_0")
+            .cast(pl.Int32)
+            .alias("storey_lower_bound"),
+            pl.col("storey_range")
+            .str.split_exact(" TO ", 1)
+            .struct.field("field_1")
+            .cast(pl.Int32)
+            .alias("storey_upper_bound"),
+        ]
+    )
+
     df = df.sort(by="_id")
     df.write_parquet(data_dir / "df.parquet")
     return
