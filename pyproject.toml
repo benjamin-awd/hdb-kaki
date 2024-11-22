@@ -23,6 +23,7 @@ python-dateutil = "^2.9.0.post0"
 pybadges = {git = "https://github.com/benjamin-awd/pybadges"}
 setuptools = "^75.1.0"
 streamlit-searchbox = "^0.1.17"
+statsmodels = "^0.14.4"
 
 [tool.poetry.group.dev.dependencies]
 black = "^24.4.0"
