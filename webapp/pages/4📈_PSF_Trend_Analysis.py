@@ -55,7 +55,7 @@ scatter_trace.update(
 trendline_trace = fig.data[1]
 
 trendline_trace.update(
-    # line_color="red",
+    hoveron="points+fills",
     hovertemplate="<b>OLS Trendline:</b><br>"
     + "Month: %{x}<br>"
     + "psf: S$%{y:.2f} <b>(trend)</b><br>"
@@ -63,7 +63,7 @@ trendline_trace.update(
 )
 
 fig.update_layout(
-    hoverdistance=150,
+    hoverdistance=-1,
     xaxis_title="Month",
     yaxis_title="Price per Square Foot ($)",
 )
