@@ -26,10 +26,21 @@ storey_range_filter = st.sidebar.slider(
     value=(sf.df["storey_lower_bound"].min(), sf.df["storey_upper_bound"].max()),
 )
 
+# block_filter = sorted(sf.df["block"].unique())
+# block = st.multiselect(
+#     "Select block(s)",
+#     options=block_filter,
+#     default=None,
+#     placeholder="Choose block (default: all)",
+# )
+
 filtered_df = sf.df.filter(
     (pl.col("storey_lower_bound") >= storey_range_filter[0])
     & (pl.col("storey_upper_bound") <= storey_range_filter[1])
 )
+
+# if block:
+#     filtered_df = filtered_df.filter(pl.col("block").is_in(block))
 
 trendline = st.sidebar.selectbox("Select regression type", options=["ols", "lowess"])
 
@@ -64,6 +75,7 @@ trendline_trace.update(
 
 fig.update_layout(
     hoverdistance=-1,
+    showlegend=False,
     xaxis_title="Month",
     yaxis_title="Price per Square Foot ($)",
 )
