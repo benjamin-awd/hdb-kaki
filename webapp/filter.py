@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import polars as pl
 import streamlit as st
 from dateutil.relativedelta import relativedelta
@@ -21,8 +23,9 @@ class SidebarFilter:
         if not df:
             df = load_dataframe()
         self.df = df
-        self.min_date = min_date or self.df["month"].max() - relativedelta(months=12)
-        self.max_date = max_date or self.df["month"].max()
+        now = datetime.now()
+        self.min_date = min_date or (now - relativedelta(months=12)).date()
+        self.max_date = max_date or now.date()
         self.selected_towns = []
         self.selected_street = None
         self.default_flat_type = default_flat_type
