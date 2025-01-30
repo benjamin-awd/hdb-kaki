@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import plotly.express as px
 import plotly.graph_objects as go
@@ -172,7 +172,10 @@ if group_by == "Town":
 
 st.markdown("### Recent transactions")
 st.dataframe(
-    sf.df.select(
+    sf.df.filter(
+        pl.col("month") >= datetime.today().replace(day=1) - timedelta(days=365)
+    )
+    .select(
         "_id",
         pl.col("month").dt.strftime("%Y-%m").alias("month_sold"),
         "town",
@@ -184,7 +187,8 @@ st.dataframe(
         "storey_range",
         "remaining_lease",
         "quarter_label",
-    ).sort(by="_id", descending=True)
+    )
+    .sort(by="_id", descending=True)
 )
 
 st.markdown("### Download")
