@@ -170,6 +170,23 @@ if group_by == "Lease Years":
 if group_by == "Town":
     plot_town(sf)
 
+st.markdown("### Recent transactions")
+st.dataframe(
+    sf.df.select(
+        "_id",
+        pl.col("month").dt.strftime("%Y-%m").alias("month_sold"),
+        "town",
+        "address",
+        "flat_type",
+        "resale_price",
+        "floor_area_sqft",
+        "psf",
+        "storey_range",
+        "remaining_lease",
+        "quarter_label",
+    ).sort(by="_id", descending=True)
+)
+
 st.markdown("### Download")
 st.write(
     "Download the full dataset for resale flat prices based on registration date from Jan-2017 onwards"
