@@ -70,7 +70,7 @@ def add_time_filters(df: pl.DataFrame):
     return df
 
 
-@st.cache_data
+@st.cache_data(ttl=3600)
 def load_dataframe() -> pl.DataFrame:
     """Wrapper for get_dataframe that provides a cache"""
     df = get_dataframe_from_parquet()
