@@ -77,8 +77,14 @@ def fetch_map_data(query_address, session: requests.Session):
 
 
 def get_map_results(data):
+    headers = {
+        "User-Agent": "HDB Kaki/1.0 (https://hdb-kaki.streamlit.app/)",
+        "Referer": "https://hdb-kaki.streamlit.app/",
+    }
+
     unique_address = list(dict.fromkeys(data["address"]))
     with requests.Session() as session:
+        session.headers = headers
         with ThreadPoolExecutor() as executor:
             results = list(
                 tqdm(
