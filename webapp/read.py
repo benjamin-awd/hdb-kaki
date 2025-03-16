@@ -95,4 +95,5 @@ schema = {
     "postal": pl.Int32,
     "latitude": pl.Float32,
     "longitude": pl.Float32,
+    "_ts": pl.Utf8,
 }

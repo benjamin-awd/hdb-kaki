@@ -206,8 +206,15 @@ def process_month(month: str, data_dir: Path, should_process: bool = False):
                 "postal": int,
                 "latitude": float,
                 "longitude": float,
+                "_ts": str,
             }
         )
+
+        # the _id column isn't chronological, so the only way to
+        # differentiate "new" rows added upstream is to
+        # create a timestamp with the current date
+        today = datetime.today().strftime("%Y-%m-%d")
+        df["_ts"] = df["_ts"].fillna(today)
         df.to_csv(file_path, index=False)
     return None
 
