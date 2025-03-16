@@ -176,7 +176,7 @@ st.dataframe(
         pl.col("month") >= datetime.today().replace(day=1) - timedelta(days=365)
     )
     .select(
-        "_id",
+        "_ts",
         pl.col("month").dt.strftime("%Y-%m").alias("month_sold"),
         "town",
         "address",
@@ -188,7 +188,7 @@ st.dataframe(
         "remaining_lease",
         "quarter_label",
     )
-    .sort(by="_id", descending=True)
+    .sort(by="_ts", descending=True)
 )
 
 st.markdown("### Download")
