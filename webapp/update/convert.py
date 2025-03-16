@@ -64,7 +64,7 @@ def csv_to_parquet() -> pl.DataFrame:
         ]
     )
 
-    df = df.sort(by="_id")
+    df = df.sort(by="_ts")
     df.write_parquet(data_dir / "df.parquet")
     return
 
