@@ -7,6 +7,7 @@ from pathlib import Path
 import pandas as pd
 import requests
 from dateutil.relativedelta import relativedelta
+from numpy import nan
 from tqdm import tqdm
 
 
@@ -215,6 +216,9 @@ def process_month(month: str, data_dir: Path, should_process: bool = False):
         # create a timestamp with the current date
         today = datetime.today().strftime("%Y-%m-%d")
         df["_ts"] = df["_ts"].fillna(today)
+        df["_ts"] = df["_ts"].replace("nan", nan)
+        df["_ts"] = df["_ts"].fillna(today)
+
         df.to_csv(file_path, index=False)
     return None
 
