@@ -205,3 +205,53 @@ st.download_button(
     "text/csv",
     key="download-csv",
 )
+
+
+def plot_qoq_change(sf: SidebarFilter):
+    """Plot quarter-on-quarter percentage change in median resale price by lease years."""
+    # Count the transactions for each quarter and lease year
+    transaction_count_df = sf.df.group_by(
+        ["quarter_label", "cat_remaining_lease_years"]
+    ).agg(pl.count("resale_price").alias("transaction_count"))
+
+    # Get the latest quarter in the data
+    latest_quarter = (
+        sf.df.select("quarter_label").sort("quarter_label", descending=True).row(0)[0]
+    )
+
+    # Filter out the latest quarter if it has fewer than 50 transactions
+    filtered_df = sf.df.join(
+        transaction_count_df, on=["quarter_label", "cat_remaining_lease_years"]
+    ).filter(
+        (pl.col("quarter_label") != latest_quarter)
+        | (pl.col("transaction_count") >= 50)
+    )
+
+    # Compute the quarter-on-quarter percentage change
+    chart_df = (
+        filtered_df.group_by(["quarter_label", "cat_remaining_lease_years"])
+        .agg(pl.median("resale_price").alias("median_resale_price"))
+        .sort(["cat_remaining_lease_years", "quarter_label"])
+        .with_columns(
+            (
+                (
+                    (
+                        pl.col("median_resale_price")
+                        - pl.col("median_resale_price").shift(1)
+                    )
+                    / pl.col("median_resale_price").shift(1)
+                )
+                * 100
+            )
+            .alias("percentage_change")
+            .round(2)
+        )
+        .sort(by="quarter_label", descending=True)
+        .select(["quarter_label", "cat_remaining_lease_years", "percentage_change"])
+    )
+
+    st.dataframe(chart_df)
+
+
+st.markdown("### QoQ % Change in Median Price")
+plot_qoq_change(sf)
