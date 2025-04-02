@@ -189,6 +189,14 @@ def process_month(month: str, data_dir: Path, should_process: bool = False):
 
         print(f"Total number of observations for {month}: {df.shape[0]}")
         df.sort_values(by="_id", ascending=False)
+
+        # the _id column isn't chronological, so the only way to
+        # differentiate "new" rows added upstream is to
+        # create a timestamp with the current date
+        today = datetime.today().strftime("%Y-%m-%d")
+        df["_ts"] = df.get("_ts", nan)
+        df["_ts"] = df["_ts"].fillna(today)
+
         df = df.astype(
             {
                 "_id": int,
@@ -210,14 +218,6 @@ def process_month(month: str, data_dir: Path, should_process: bool = False):
                 "_ts": str,
             }
         )
-
-        # the _id column isn't chronological, so the only way to
-        # differentiate "new" rows added upstream is to
-        # create a timestamp with the current date
-        today = datetime.today().strftime("%Y-%m-%d")
-        df["_ts"] = df["_ts"].fillna(today)
-        df["_ts"] = df["_ts"].replace("nan", nan)
-        df["_ts"] = df["_ts"].fillna(today)
 
         df.to_csv(file_path, index=False)
     return None
