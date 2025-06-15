@@ -243,7 +243,8 @@ def plot_flat_type(sf: SidebarFilter):
 sf = SidebarFilter(
     min_date=datetime.strptime("2017-01-01", "%Y-%m-%d").date(),
     select_towns=(True, "multi"),
-    select_lease_years=False,
+    select_lease_years=True,
+    select_storey=True,
     default_town="ANG MO KIO" if group_by == "Town" else None,
 )
 
