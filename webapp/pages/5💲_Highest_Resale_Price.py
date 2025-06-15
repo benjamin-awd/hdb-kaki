@@ -16,7 +16,7 @@ st.write(
     "The colour of the pins reflect whether the unit is below or above the median value. Red indicates above median while green indicates below median"
 )
 
-sf = SidebarFilter(select_towns=(True, "multi"))
+sf = SidebarFilter(select_towns=(True, "multi"), select_lease_years=True)
 
 # get highest price flat by town
 highest_price = sf.df.filter(

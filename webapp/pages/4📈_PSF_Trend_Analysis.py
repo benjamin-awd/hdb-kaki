@@ -16,14 +16,8 @@ sf = SidebarFilter(
     min_date=datetime(2020, 1, 1).date(),
     select_towns=(True, "multi"),
     select_street=True,
+    select_storey=True,
     default_town="ANG MO KIO",
-)
-
-storey_range_filter = st.sidebar.slider(
-    "Select storey range bound (inclusive)",
-    sf.df["storey_lower_bound"].min(),
-    sf.df["storey_upper_bound"].max(),
-    value=(sf.df["storey_lower_bound"].min(), sf.df["storey_upper_bound"].max()),
 )
 
 # block_filter = sorted(sf.df["block"].unique())
@@ -34,19 +28,14 @@ storey_range_filter = st.sidebar.slider(
 #     placeholder="Choose block (default: all)",
 # )
 
-filtered_df = sf.df.filter(
-    (pl.col("storey_lower_bound") >= storey_range_filter[0])
-    & (pl.col("storey_upper_bound") <= storey_range_filter[1])
-)
-
 # if block:
-#     filtered_df = filtered_df.filter(pl.col("block").is_in(block))
+#     sf.df = sf.df.filter(pl.col("block").is_in(block))
 
 trendline = st.sidebar.selectbox("Select regression type", options=["ols", "lowess"])
 
 # Create the scatter plot with trendline
 fig = px.scatter(
-    filtered_df,
+    sf.df,
     x="month",
     y="psf",
     trendline_scope="overall",
@@ -92,7 +81,7 @@ if trendline == "ols":
 
     psf_diff_percentage = ((current_trend_psf - last_month_psf) / last_month_psf) * 100
 
-    current_month = str(filtered_df["month"].max())[:7]
+    current_month = str(sf.df["month"].max())[:7]
 
     col1, col2, col3 = st.columns(3)
     col1.metric("Current Month", current_month)

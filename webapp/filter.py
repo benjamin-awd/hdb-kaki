@@ -17,6 +17,7 @@ class SidebarFilter:
         select_towns=(True, "single"),
         select_lease_years=True,
         select_street=False,
+        select_storey=False,
         default_flat_type="ALL",
         default_town=None,
     ):
@@ -28,6 +29,7 @@ class SidebarFilter:
         self.max_date = max_date or now.date()
         self.selected_towns = []
         self.selected_street = None
+        self.selected_storey = [] # Add attribute for selected storeys
         self.default_flat_type = default_flat_type
         self.default_town = default_town
 
@@ -59,6 +61,13 @@ class SidebarFilter:
                 self.df = self.df.filter(
                     pl.col("street_name").is_in(self.selected_street)
                 )
+
+        if select_storey:
+            start_storey, end_storey = self.create_storey_slider()
+            self.df = self.df.filter(
+                (pl.col("storey_lower_bound") >= start_storey)
+                & (pl.col("storey_lower_bound") <= end_storey)
+            )
 
         if select_lease_years:
             start_year, end_year = self.create_lease_select()
@@ -126,6 +135,16 @@ class SidebarFilter:
             placeholder="Choose street (default: all)",
         )
 
+    def create_storey_slider(self):
+        min_storey = int(self.df["storey_lower_bound"].min())
+        max_storey = int(self.df["storey_lower_bound"].max())
+        return st.sidebar.slider(
+            "Select storey range (inclusive)",
+            min_value=min_storey,
+            max_value=max_storey,
+            value=(min_storey, max_storey),
+        )
+
     def create_town_multiselect(self):
         town_filter = sorted(self.df["town"].unique())
         return st.sidebar.multiselect(
@@ -138,9 +157,11 @@ class SidebarFilter:
         )
 
     def create_lease_select(self):
+        min_lease = int(self.df["remaining_lease_years"].min())
+        max_lease = int(self.df["remaining_lease_years"].max())
         return st.sidebar.slider(
             "Select remaining lease years",
-            min_value=self.df["remaining_lease_years"].min(),
-            max_value=self.df["remaining_lease_years"].max(),
-            value=(81, 99),
+            min_value=min_lease,
+            max_value=max_lease,
+            value=(min_lease, max_lease),
         )
