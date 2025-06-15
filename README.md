@@ -2,6 +2,8 @@
 
 HDB Kaki helps you stay updated on the latest movements in the HDB resale market.
 
+This repository is a fork of https://github.com/Joanna-Khek/hdb_resale_prices.
+
 <h3 align="center">
     🔑 Try it out: <br>
     <a href="https://hdb-kaki.streamlit.app/">https://hdb-kaki.streamlit.app/</a>
