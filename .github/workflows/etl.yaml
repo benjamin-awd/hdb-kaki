@@ -12,21 +12,23 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      with:
-        ref: main
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
+
+    - name: Set up Python
+      run: uv python install
 
     - name: Install dependencies
-      uses: ./.github/actions/setup-python-poetry
-      with:
-        python-version: "3.12"
-        poetry-version: "1.8.3"
-        poetry-install-args: --without dev
+      run: |
+        uv venv
+        uv pip install .
 
     - name: Run ETL Process
       id: etl
       run: |
-        source .venv/bin/activate
-        python webapp/update/etl.py
+        git lfs pull
+        uv run webapp/update/etl.py
 
     - name: Check for changes in data/*.csv
       id: check_changes
