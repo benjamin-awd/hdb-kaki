@@ -18,15 +18,14 @@ The data used in this application comes from the "Resale flat prices based on re
 
 ## Developing
 
-Install poetry
+Install uv
 ```sh
-pipx install poetry
+pipx install uv
 ```
 
 Install dependencies
 ```sh
-poetry shell
-poetry install
+uv sync
 ```
 
 Run the app
