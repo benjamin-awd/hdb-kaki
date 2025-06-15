@@ -4,6 +4,7 @@ import streamlit as st
 from folium.plugins import FastMarkerCluster
 from PIL import Image
 from streamlit_folium import st_folium
+from branca.element import Template, MacroElement
 
 from webapp.filter import SidebarFilter
 
@@ -87,6 +88,59 @@ try:
         attr="OpenStreetMap",
         prefer_canvas=True,
     )
+
+    legend_html = """
+    {% macro html(this, kwargs) %}
+    <div id='maplegend' class='maplegend' 
+        style='position: absolute; z-index: 9999; background-color: rgba(255, 255, 255, 0.8);
+        border-radius: 6px; padding: 10px; font-size: 14px; right: 10px; top: 70px; border: 2px solid grey;'>
+        
+    <div class='legend-title'>Price Category</div>
+    <div class='legend-scale'>
+    <ul class='legend-labels'>
+        <li><span style='background: green; opacity: 0.75;'></span>Low Price</li>
+        <li><span style='background: orange; opacity: 0.75;'></span>Medium Price</li>
+        <li><span style='background: red; opacity: 0.75;'></span>High Price</li>
+    </ul>
+    </div>
+    </div> 
+
+    <style type='text/css'>
+    .maplegend {
+        font-family: Arial, sans-serif;
+    }
+    .maplegend .legend-title {
+        text-align: center;
+        margin-bottom: 8px;
+        font-weight: bold;
+        font-size: 90%;
+        color: #0f0f0f;
+        }
+    .maplegend .legend-scale ul {
+        margin: 0;
+        padding: 0;
+        color: #0f0f0f;
+    }
+    .maplegend .legend-scale ul li {
+        list-style: none;
+        line-height: 18px;
+        margin-bottom: 2px;
+    }
+    .maplegend ul.legend-labels li span {
+        display: inline-block;
+        float: left;
+        height: 16px;
+        width: 16px;
+        margin-right: 5px;
+        margin-left: 0;
+    }
+    </style>
+    {% endmacro %}
+    """
+
+    macro = MacroElement()
+    macro._template = Template(legend_html)
+    sg_map.get_root().add_child(macro)
 
     callback = """
         function(row) {
@@ -190,10 +244,6 @@ try:
     )
 
     sg_map.fit_bounds([sw, ne])
-
-    image = Image.open("assets/resale_price_legends.png")
-
-    st.image(image)
 
     st_data = st_folium(sg_map, use_container_width=True, returned_objects=[])
 
