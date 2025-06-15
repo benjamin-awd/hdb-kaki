@@ -1,38 +1,49 @@
-[tool.poetry]
+[project]
 name = "hdb-resale-prices"
-packages = [
-    {include = "webapp"}
-]
 version = "0.1.0"
 description = ""
-authors = ["Benjamin Dornel <benjamindornel@gmail.com>"]
+authors = [{ name = "Benjamin Dornel", email = "benjamindornel@gmail.com" }]
+requires-python = ">=3.12,<3.13"
 readme = "README.md"
+dependencies = [
+    "pandas>=2.2.2,<3",
+    "streamlit",
+    "folium>=0.17.0,<0.18",
+    "altair>=5.4.1,<6",
+    "streamlit-folium>=0.22.0,<0.23",
+    "seaborn>=0.13.2,<0.14",
+    "tqdm>=4.66.5,<5",
+    "polars>=1.7.1,<2",
+    "plotly>=5.24.1,<6",
+    "python-dateutil>=2.9.0.post0,<3",
+    "pybadges",
+    "setuptools>=75.1.0,<76",
+    "streamlit-searchbox>=0.1.17,<0.2",
+    "statsmodels>=0.14.4,<0.15",
+]
 
-[tool.poetry.dependencies]
-python = ">=3.12,<3.13"
-pandas = "^2.2.2"
-streamlit = {path = "./build/streamlit-1.43.2.tar.gz"}
-folium = "^0.17.0"
-altair = "^5.4.1"
-streamlit-folium = "^0.22.0"
-seaborn = "^0.13.2"
-tqdm = "^4.66.5"
-polars = "^1.7.1"
-plotly = "^5.24.1"
-python-dateutil = "^2.9.0.post0"
-pybadges = {git = "https://github.com/benjamin-awd/pybadges"}
-setuptools = "^75.1.0"
-streamlit-searchbox = "^0.1.17"
-statsmodels = "^0.14.4"
-
-[tool.poetry.group.dev.dependencies]
-black = "^24.4.0"
-isort = "^5.13.2"
-pylint = "^3.1.0"
-
-[tool.poetry.scripts]
+[project.scripts]
 extract = "webapp.update.extract:extract"
 
+[dependency-groups]
+dev = [
+    "black>=24.4.0,<25",
+    "isort>=5.13.2,<6",
+    "pylint>=3.1.0,<4",
+]
+
+[tool.uv]
+
+[tool.uv.sources]
+streamlit = { path = "./build/streamlit-1.43.2.tar.gz" }
+pybadges = { git = "https://github.com/benjamin-awd/pybadges" }
+
+[tool.hatch.build.targets.sdist]
+include = ["webapp"]
+
+[tool.hatch.build.targets.wheel]
+include = ["webapp"]
+
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
