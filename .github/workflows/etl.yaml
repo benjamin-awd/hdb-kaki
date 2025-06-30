@@ -26,9 +26,7 @@ jobs:
 
     - name: Run ETL Process
       id: etl
-      run: |
-        git lfs pull
-        uv run webapp/update/etl.py
+      run: uv run webapp/update/etl.py
 
     - name: Check for changes in data/*.csv
       id: check_changes
