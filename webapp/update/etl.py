@@ -1,6 +1,5 @@
 import sys
 from pathlib import Path
-
 import polars as pl
 
 from webapp.read import get_project_root, schema
@@ -13,11 +12,10 @@ def update_data():
     csv_file_glob: Path = get_project_root() / "data" / "*.csv"
     df = pl.read_csv(csv_file_glob, schema=schema)
 
-    start, end = get_timestamps()
-    extract([start, end, "-f"])
-    csv_to_parquet()
-    new_df = pl.read_csv(csv_file_glob, schema=schema)
-    has_changed = not df.equals(new_df)
+    start, end = get_timestamps(df)
+    has_changed = extract([start, end, "-f"])
+    if has_changed:
+        csv_to_parquet()
 
     if has_changed:
         print("Changes detected")
