@@ -29,7 +29,7 @@ class SidebarFilter:
         self.max_date = max_date or now.date()
         self.selected_towns = []
         self.selected_street = None
-        self.selected_storey = [] # Add attribute for selected storeys
+        self.selected_storey = []  # Add attribute for selected storeys
         self.default_flat_type = default_flat_type
         self.default_town = default_town
 
