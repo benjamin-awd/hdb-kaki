@@ -5,6 +5,9 @@ on:
     - cron: "0 20 * * *"
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   update:
     runs-on: ubuntu-latest
@@ -30,6 +33,13 @@ jobs:
         DATAGOV_API_KEY: ${{ secrets.DATAGOV_API_KEY }}
       run: uv run webapp/update/etl.py
 
+    - name: Upload parquet to release
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        gh release create data --title "Data" --notes "Auto-updated parquet data" 2>/dev/null || true
+        gh release upload data data/df.parquet --clobber
+
     - name: Check for changes in data/*.csv
       id: check_changes
       run: |
@@ -49,13 +59,7 @@ jobs:
         git config user.email 'actions@github.com'
 
         echo $(date +%s) > data/metadata
-        git add data
+        git add data/*.csv data/metadata
 
-        last_msg=$(git log -1 --format=%s)
-        if [ "$last_msg" = "chore: update data" ]; then
-          git commit --amend -m "chore: update data"
-          git push --force-with-lease
-        else
-          git commit -m "chore: update data"
-          git push
-        fi
+        git commit -m "chore: update data"
+        git push
