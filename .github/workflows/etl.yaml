@@ -48,6 +48,12 @@ jobs:
 
         echo $(date +%s) > data/metadata
         git add data
-        git commit -m "chore: update data"
-        git status
-        git push
+
+        last_msg=$(git log -1 --format=%s)
+        if [ "$last_msg" = "chore: update data" ]; then
+          git commit --amend -m "chore: update data"
+          git push --force-with-lease
+        else
+          git commit -m "chore: update data"
+          git push
+        fi
