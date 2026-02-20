@@ -40,12 +40,8 @@ def csv_to_parquet() -> pl.DataFrame:
 
     df = df.with_columns(
         [
-            (pl.col("floor_area_sqm") * 10.7639)
-            .alias("floor_area_sqft")
-            .cast(pl.Int16),
-            (pl.col("resale_price") / (pl.col("floor_area_sqm") * 10.7639)).alias(
-                "psf"
-            ),
+            (pl.col("floor_area_sqm") * 10.7639).alias("floor_area_sqft").cast(pl.Int16),
+            (pl.col("resale_price") / (pl.col("floor_area_sqm") * 10.7639)).alias("psf"),
         ]
     )
 
