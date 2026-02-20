@@ -157,6 +157,88 @@ def plot_town(sf: SidebarFilter):
 
     st.plotly_chart(fig, use_container_width=True)
 
+def plot_flat_type(sf: SidebarFilter):
+    """Plot median resale price, showing interpolated values as a dotted line."""
+    
+    # 1. Aggregate your data
+    agg_df = (
+        sf.df.group_by(["quarter_label", "flat_type"])
+        .agg(pl.median("resale_price").alias("resale_price"))
+    )
+
+    # 2. Create the complete data grid
+    all_quarters = sf.df["quarter_label"].unique().sort()
+    all_flat_types = sf.df["flat_type"].unique().sort()
+    grid_df = pl.DataFrame({'quarter_label': all_quarters}).join(
+        pl.DataFrame({'flat_type': all_flat_types}), how='cross'
+    )
+
+    # 3. Join data to grid, creating nulls for missing data
+    chart_df_with_gaps = grid_df.join(
+        agg_df, on=["quarter_label", "flat_type"], how="left"
+    )
+
+    # 4. Flag the rows that will be interpolated
+    data_to_plot = chart_df_with_gaps.sort(["flat_type", "quarter_label"]).with_columns(
+        is_interpolated = pl.col("resale_price").is_null()
+    )
+
+    # 5. Now, create the final DataFrame with interpolated values
+    final_df = data_to_plot.with_columns(
+        resale_price = pl.col("resale_price").interpolate().over("flat_type")
+    )
+
+    # --- Plotting Section ---
+    fig = go.Figure()
+    
+    # Get Plotly's default qualitative color sequence
+    colors = px.colors.qualitative.Plotly
+
+    # MODIFICATION: Use enumerate to get an index for selecting colors
+    for i, flat_type in enumerate(all_flat_types):
+        # Select a color from the cycle. Use modulo to loop through colors if needed.
+        color = colors[i % len(colors)]
+        
+        flat_type_df = final_df.filter(pl.col("flat_type") == flat_type)
+
+        # Create a series for actual data points (null where interpolated)
+        actual_prices = flat_type_df.with_columns(
+            actual=pl.when(pl.col("is_interpolated")).then(None).otherwise(pl.col("resale_price"))
+        )["actual"]
+
+        # Add the INTERPOLATED trace (dotted line, in the background)
+        # MODIFICATION: Use the assigned color instead of "grey"
+        fig.add_trace(go.Scatter(
+            x=flat_type_df["quarter_label"],
+            y=flat_type_df["resale_price"], 
+            mode="lines",
+            line=dict(color=color, dash='dot', width=2),
+            legendgroup=flat_type,
+            showlegend=False, 
+            hovertemplate="Interpolated: $%{y:,.0f}"
+        ))
+
+        fig.add_trace(go.Scatter(
+            x=flat_type_df["quarter_label"],
+            y=actual_prices, 
+            mode="lines",
+            line=dict(color=color, width=3),
+            name=flat_type,
+            legendgroup=flat_type,
+            showlegend=True, 
+            hovertemplate="Actual: $%{y:,.0f}"
+        ))
+
+    fig.update_layout(
+        title_text="Median Resale Price by Flat Type",
+        xaxis_title="Quarter",
+        yaxis_title="Median Resale Price ($)",
+        xaxis_tickformat="%Y-%m",
+        legend_title_text="Flat Type"
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
 
 def plot_flat_type(sf: SidebarFilter):
     """Plot median resale price, showing interpolated values as a dotted line."""
