@@ -210,7 +210,7 @@ def process_month(month: str, data_dir: Path, should_process: bool = False):
 
     # 4. Combine with existing data and deduplicate
 
-    if not any([existing_data.empty and new_data.empty]):
+    if not existing_data.empty:
         ts_map = existing_data.set_index("_id")["_ts"]
         ts_map = ts_map[~ts_map.index.duplicated(keep="first")]
 
