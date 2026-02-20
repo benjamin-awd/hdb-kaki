@@ -169,6 +169,9 @@ def process_month(month: str, data_dir: Path, should_process: bool = False):
         print(f"Data size not updated {month}, skip processing...")
         return False
 
+    property_coords = pd.DataFrame(columns=["address", "postal", "latitude", "longitude"])
+    new_addresses = new_data.drop_duplicates(subset="address")
+
     if not existing_data.empty:
         print(f"Found {existing_data.shape[0]} existing records in {month}.")
         property_coords = (
@@ -177,7 +180,7 @@ def process_month(month: str, data_dir: Path, should_process: bool = False):
             .dropna(subset="postal")
         )
         existing_addresses = set(property_coords["address"])
-        new_adresses = new_data[
+        new_addresses = new_data[
             ~new_data["address"].isin(existing_addresses)
         ].drop_duplicates(subset="address")
 
@@ -187,13 +190,13 @@ def process_month(month: str, data_dir: Path, should_process: bool = False):
                 f"Updating missing latitude and longitude for existing addresses in {month}"
             )
             addresses_to_update = existing_data[missing_lat_lon]
-            new_adresses = pd.concat([new_adresses, addresses_to_update]).drop_duplicates(
+            new_addresses = pd.concat([new_addresses, addresses_to_update]).drop_duplicates(
                 subset="address"
             )
 
-    if not new_adresses.empty:
+    if not new_addresses.empty:
         print(f"Fetching latitude and longitude for new addresses in {month}")
-        new_map_data = get_map_results(new_adresses)
+        new_map_data = get_map_results(new_addresses)
         property_coords = pd.concat(
             [existing_data["address", "postal", "latitude", "longtitude"], new_map_data]
         )
