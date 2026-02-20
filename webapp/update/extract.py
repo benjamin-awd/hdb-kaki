@@ -250,7 +250,7 @@ def process_month(month: str, data_dir: Path, should_process: bool = False):
         }
     )
 
-    df.sort_values(by="_ts", ascending=False)
+    df = df.sort_values(by="_ts", ascending=False)
 
     df.to_csv(file_path, index=False)
     return True
