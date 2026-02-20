@@ -14,8 +14,7 @@ def update_data():
 
     start, end = get_timestamps(df)
     has_changed = extract([start, end, "-f"])
-    if has_changed:
-        csv_to_parquet()
+    csv_to_parquet()
 
     if has_changed:
         print("Changes detected")
