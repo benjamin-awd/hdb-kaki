@@ -2,3 +2,4 @@ __pycache__
 .env
 test.ipynb
 uv.lock
+data/df.parquet

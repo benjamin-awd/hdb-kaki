@@ -1,3 +1,5 @@
+import io
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 
@@ -6,6 +8,8 @@ import streamlit as st
 from pybadges import badge
 
 from webapp.utils import get_project_root
+
+PARQUET_URL = "https://github.com/benjamin-awd/hdb-kaki/releases/download/data/df.parquet"
 
 
 def get_last_updated_badge():
@@ -41,10 +45,15 @@ def get_dataframe_from_csv() -> pl.DataFrame:
 
 
 def get_dataframe_from_parquet() -> pl.DataFrame:
-    """Combine all CSV files in the specified directory into a single DataFrame."""
-    data_dir: Path = get_project_root() / "data"
+    """Read parquet from local file if available, otherwise download from GitHub Release."""
+    local_path = get_project_root() / "data" / "df.parquet"
 
-    df = pl.read_parquet(data_dir / "df.parquet")
+    if local_path.exists():
+        df = pl.read_parquet(local_path)
+    else:
+        with urllib.request.urlopen(PARQUET_URL) as resp:
+            df = pl.read_parquet(io.BytesIO(resp.read()))
+
     return df.sort(by="town")
 
 
