@@ -243,7 +243,7 @@ def process_month(month: str, data_dir: Path, should_process: bool = False):
             "remaining_lease": str,
             "resale_price": float,
             "address": str,
-            "postal": int,
+            "postal": "Int64",
             "latitude": float,
             "longitude": float,
             "_ts": str,
