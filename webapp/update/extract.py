@@ -1,3 +1,4 @@
+import os
 import time
 from argparse import ArgumentParser
 from concurrent.futures import ThreadPoolExecutor
@@ -11,6 +12,8 @@ from dateutil.relativedelta import relativedelta
 from numpy import nan
 from tqdm import tqdm
 
+DATAGOV_API_KEY = os.environ.get("DATAGOV_API_KEY")
+
 
 @lru_cache
 def extract_hdb_data(year_month, max_retries=5):
@@ -19,14 +22,16 @@ def extract_hdb_data(year_month, max_retries=5):
         "limit": "14000",
     }
     search_url = "https://data.gov.sg/api/action/datastore_search?resource_id=d_8b84c4ee58e3cfc0ece0d773c8ca6abc"
+    headers = {"x-api-key": DATAGOV_API_KEY} if DATAGOV_API_KEY else {}
 
     for attempt in range(max_retries):
-        response = requests.request("GET", search_url, params=data)
+        response = requests.get(search_url, params=data, headers=headers)
         result = response.json()
         if "result" in result:
             return result["result"]["records"]
         if result.get("code") == 24:
-            wait = 2 ** attempt
+            print(result)
+            wait = 10 * (2 ** attempt)
             print(f"Rate limited for {year_month}, retrying in {wait}s...")
             time.sleep(wait)
         else:
