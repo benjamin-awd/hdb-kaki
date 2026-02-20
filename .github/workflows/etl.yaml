@@ -33,6 +33,9 @@ jobs:
         DATAGOV_API_KEY: ${{ secrets.DATAGOV_API_KEY }}
       run: uv run webapp/update/etl.py
 
+    - name: Build parquet
+      run: uv run -c "from webapp.update.convert import csv_to_parquet; csv_to_parquet()"
+
     - name: Upload parquet to release
       env:
         GH_TOKEN: ${{ github.token }}
