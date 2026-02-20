@@ -1,3 +1,4 @@
+import time
 from argparse import ArgumentParser
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
@@ -12,15 +13,25 @@ from tqdm import tqdm
 
 
 @lru_cache
-def extract_hdb_data(year_month):
+def extract_hdb_data(year_month, max_retries=5):
     data = {
         "filters": f'{{"month":"{year_month}"}}',
         "limit": "14000",
     }
     search_url = "https://data.gov.sg/api/action/datastore_search?resource_id=d_8b84c4ee58e3cfc0ece0d773c8ca6abc"
 
-    response = requests.request("GET", search_url, params=data)
-    return response.json()["result"]["records"]
+    for attempt in range(max_retries):
+        response = requests.request("GET", search_url, params=data)
+        result = response.json()
+        if "result" in result:
+            return result["result"]["records"]
+        if result.get("code") == 24:
+            wait = 2 ** attempt
+            print(f"Rate limited for {year_month}, retrying in {wait}s...")
+            time.sleep(wait)
+        else:
+            raise RuntimeError(f"Unexpected API response for {year_month}: {result}")
+    raise RuntimeError(f"Max retries exceeded for {year_month}")
 
 
 def get_data(start_date="2019-01", end_date=pd.Timestamp.now().strftime("%Y-%m")):
