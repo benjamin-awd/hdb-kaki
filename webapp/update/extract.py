@@ -1,3 +1,5 @@
+import os
+import time
 from argparse import ArgumentParser
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
@@ -10,17 +12,31 @@ from dateutil.relativedelta import relativedelta
 from numpy import nan
 from tqdm import tqdm
 
+DATAGOV_API_KEY = os.environ.get("DATAGOV_API_KEY")
+
 
 @lru_cache
-def extract_hdb_data(year_month):
+def extract_hdb_data(year_month, max_retries=5):
     data = {
         "filters": f'{{"month":"{year_month}"}}',
         "limit": "14000",
     }
     search_url = "https://data.gov.sg/api/action/datastore_search?resource_id=d_8b84c4ee58e3cfc0ece0d773c8ca6abc"
+    headers = {"x-api-key": DATAGOV_API_KEY} if DATAGOV_API_KEY else {}
 
-    response = requests.request("GET", search_url, params=data)
-    return response.json()["result"]["records"]
+    for attempt in range(max_retries):
+        response = requests.get(search_url, params=data, headers=headers)
+        result = response.json()
+        if "result" in result:
+            return result["result"]["records"]
+        if result.get("code") == 24:
+            print(result)
+            wait = 10 * (2 ** attempt)
+            print(f"Rate limited for {year_month}, retrying in {wait}s...")
+            time.sleep(wait)
+        else:
+            raise RuntimeError(f"Unexpected API response for {year_month}: {result}")
+    raise RuntimeError(f"Max retries exceeded for {year_month}")
 
 
 def get_data(start_date="2019-01", end_date=pd.Timestamp.now().strftime("%Y-%m")):
@@ -156,77 +172,114 @@ def process_month(month: str, data_dir: Path, should_process: bool = False):
     file_path = data_dir / f"{month}.csv"
 
     if not skip_process(file_path, should_process):
-        return
+        return False
 
+    # 1. Download new data for the month
     new_data = get_data(start_date=month, end_date=month)
+    if new_data.empty:
+        print(f"No data found for {month}")
+        return False
+
     existing_data = load_existing_data(file_path)
+    if not existing_data.empty and len(new_data) == len(existing_data):
+        print(f"Data size not updated {month}, skip processing...")
+        return False
+
+    property_coords = pd.DataFrame(columns=["address", "postal", "latitude", "longitude"])
+    new_addresses = new_data.drop_duplicates(subset="address")
 
     if not existing_data.empty:
-        existing_addresses = set(existing_data["address"])
-        new_data = new_data[~new_data["address"].isin(existing_addresses)]
+        print(f"Found {existing_data.shape[0]} existing records in {month}.")
+        property_coords = (
+            existing_data[["address", "postal", "latitude", "longitude"]]
+            .drop_duplicates(subset="address")
+            .dropna(subset="postal")
+        )
+        existing_addresses = set(property_coords["address"])
+        new_addresses = new_data[
+            ~new_data["address"].isin(existing_addresses)
+        ].drop_duplicates(subset="address")
 
-    if not new_data.empty:
-        print(f"Fetching latitude and longitude for new addresses in {month}")
-        new_map_data = get_map_results(new_data)
-        new_data = new_data.merge(new_map_data, on="address", how="left")
-
-    if not existing_data.empty:
         missing_lat_lon = existing_data[["latitude", "longitude"]].isna().any(axis=1)
         if missing_lat_lon.any():
             print(
                 f"Updating missing latitude and longitude for existing addresses in {month}"
             )
             addresses_to_update = existing_data[missing_lat_lon]
-            updated_map_data = get_map_results(addresses_to_update)
-            existing_data.update(updated_map_data)
+            new_addresses = pd.concat([new_addresses, addresses_to_update]).drop_duplicates(
+                subset="address"
+            )
 
-        print(f"Processing complete for {month}")
-
-    if not any([existing_data.empty and new_data.empty]):
-        df = pd.concat(
-            [existing_data, new_data if not new_data.empty else None], ignore_index=True
+    if not new_addresses.empty:
+        print(f"Fetching latitude and longitude for new addresses in {month}")
+        new_map_data = get_map_results(new_addresses)
+        property_coords = pd.concat(
+            [existing_data[["address", "postal", "latitude", "longitude"]], new_map_data]
         )
 
-        print(f"Total number of observations for {month}: {df.shape[0]}")
-        df.sort_values(by="_id", ascending=False)
+    # 3. Merge Coordinates
+    # Remove existing coord cols from new_data if present to avoid overlap
+    new_data = new_data.drop(
+        columns=[c for c in ["postal", "latitude", "longitude"] if c in new_data.columns]
+    )
+    merged_df = new_data.merge(property_coords, on="address", how="left")
 
-        # the _id column isn't chronological, so the only way to
-        # differentiate "new" rows added upstream is to
-        # create a timestamp with the current date
-        today = datetime.today().strftime("%Y-%m-%d")
-        df["_ts"] = df.get("_ts", nan)
-        df["_ts"] = df["_ts"].fillna(today)
+    # 4. Combine with existing data and deduplicate
 
-        df = df.astype(
-            {
-                "_id": int,
-                "month": str,
-                "town": str,
-                "flat_type": str,
-                "block": str,
-                "street_name": str,
-                "storey_range": str,
-                "floor_area_sqm": float,
-                "flat_model": str,
-                "lease_commence_date": int,
-                "remaining_lease": str,
-                "resale_price": float,
-                "address": str,
-                "postal": int,
-                "latitude": float,
-                "longitude": float,
-                "_ts": str,
-            }
-        )
+    if not existing_data.empty:
+        ts_map = existing_data.set_index("_id")["_ts"]
+        ts_map = ts_map[~ts_map.index.duplicated(keep="first")]
 
-        df.to_csv(file_path, index=False)
-    return None
+        merged_df["_ts"] = merged_df["_id"].map(ts_map)
+
+    df = merged_df
+    print(f"Total number of observations for {month}: {df.shape[0]}")
+
+    # 5. Add/Fill Timestamp
+
+    # the _id column isn't chronological, so the only way to
+    # differentiate "new" rows added upstream is to
+    # create a timestamp with the current date
+    today = datetime.today().strftime("%Y-%m-%d")
+    df["_ts"] = df.get("_ts", nan)
+    df["_ts"] = df["_ts"].fillna(today)
+
+    df = df.astype(
+        {
+            "_id": int,
+            "month": str,
+            "town": str,
+            "flat_type": str,
+            "block": str,
+            "street_name": str,
+            "storey_range": str,
+            "floor_area_sqm": float,
+            "flat_model": str,
+            "lease_commence_date": int,
+            "remaining_lease": str,
+            "resale_price": float,
+            "address": str,
+            "postal": "Int64",
+            "latitude": float,
+            "longitude": float,
+            "_ts": str,
+        }
+    )
+
+    df = df.sort_values(by="_ts", ascending=False)
+
+    df.to_csv(file_path, index=False)
+    return True
 
 
-def get_timestamps() -> tuple[str, str]:
+def get_timestamps(df=None) -> tuple[str, str]:
     current_timestamp = datetime.now()
     current_month = current_timestamp.strftime("%Y-%m")
-    last_month = (datetime.now() - relativedelta(months=1)).strftime("%Y-%m")
+
+    if df is not None:
+        last_month = df["month"].max()
+    else:
+        last_month = (datetime.now() - relativedelta(months=1)).strftime("%Y-%m")
 
     return last_month, current_month
 
@@ -250,8 +303,10 @@ def extract(raw_args=None):
     )
     last_month, current_month = get_timestamps()
 
+    all_changed = False
     for month in months:
         should_process = args.force or month in (last_month, current_month)
-        process_month(month, data_dir, should_process)
-
-    return None
+        month_changed = process_month(month, data_dir, should_process)
+        if month_changed:
+            all_changed = True
+    return all_changed
