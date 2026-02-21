@@ -244,6 +244,8 @@ def process_month(month: str, data_dir: Path, should_process: bool = False):
     df["_ts"] = df.get("_ts", nan)
     df["_ts"] = df["_ts"].fillna(today)
 
+    df["postal"] = pd.to_numeric(df["postal"], errors="coerce")
+
     df = df.astype(
         {
             "_id": int,
