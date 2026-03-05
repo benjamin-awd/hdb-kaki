@@ -214,7 +214,7 @@ def process_month(month: str, data_dir: Path, should_process: bool = False):
         print(f"Fetching latitude and longitude for new addresses in {month}")
         new_map_data = get_map_results(new_addresses)
         property_coords = pd.concat(
-            [existing_data[["address", "postal", "latitude", "longitude"]], new_map_data]
+            [property_coords, new_map_data]
         )
 
     # 3. Merge Coordinates
