@@ -70,14 +70,29 @@ def fetch_osm_postal(query_address, session: requests.Session):
     return response[0]["address"].get("postcode", None)
 
 
-def fetch_map_data(query_address, session: requests.Session):
+def fetch_map_data(query_address, session: requests.Session, max_retries=5):
     query_string = (
         "https://www.onemap.gov.sg/api/common/elastic/search?&searchVal="
         + query_address
         + "&returnGeom=Y&getAddrDetails=Y"
     )
 
-    response = session.get(query_string).json()["results"][0]
+    for attempt in range(max_retries):
+        resp = session.get(query_string)
+        if resp.status_code == 429:
+            time.sleep(10 * (attempt + 1))
+            continue
+        try:
+            response = resp.json()["results"][0]
+            break
+        except (requests.exceptions.JSONDecodeError, KeyError, IndexError):
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
+            else:
+                raise RuntimeError(
+                    f"Failed to fetch map data for '{query_address}' after {max_retries} attempts "
+                    f"(status={resp.status_code}, body={resp.text[:200]})"
+                )
 
     if response:
         postal_code = response["POSTAL"]
@@ -102,7 +117,7 @@ def get_map_results(data):
     unique_address = list(dict.fromkeys(data["address"]))
     with requests.Session() as session:
         session.headers = headers
-        with ThreadPoolExecutor() as executor:
+        with ThreadPoolExecutor(max_workers=3) as executor:
             results = list(
                 tqdm(
                     executor.map(
