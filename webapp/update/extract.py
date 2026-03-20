@@ -78,7 +78,16 @@ def fetch_map_data(query_address, session: requests.Session, max_retries=5):
     )
 
     for attempt in range(max_retries):
-        resp = session.get(query_string)
+        try:
+            resp = session.get(query_string)
+        except requests.exceptions.ConnectionError:
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
+                continue
+            else:
+                raise RuntimeError(
+                    f"Connection failed for '{query_address}' after {max_retries} attempts"
+                )
         if resp.status_code == 429:
             time.sleep(10 * (attempt + 1))
             continue
