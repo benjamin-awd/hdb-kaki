@@ -251,6 +251,7 @@ sf = SidebarFilter(
     select_towns=(True, "multi"),
     select_lease_years=True,
     select_storey=True,
+    select_street=True,
     default_town="ANG MO KIO" if group_by == "Town" else None,
 )
 
