@@ -127,6 +127,18 @@ class SidebarFilter:
         return [town]
 
     def create_streets_multiselect(self):
+        # Street options are derived from self.df, which is already filtered by
+        # the selected town(s) at this point. Without a town selected the list
+        # spans every street in the dataset, so gate it on a town selection.
+        if not self.selected_towns:
+            st.sidebar.multiselect(
+                "Select street(s)",
+                options=[],
+                default=None,
+                placeholder="Select town(s) first to filter by street",
+                disabled=True,
+            )
+            return None
         street_filter = sorted(self.df["street_name"].unique())
         return st.sidebar.multiselect(
             "Select street(s)",
