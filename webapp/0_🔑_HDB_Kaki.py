@@ -78,6 +78,10 @@ def plot_lease_years(sf: SidebarFilter):
     )
 
     fig.update_yaxes(ticksuffix="%")
+    # Force chronological x-axis: quarter_label is categorical, so plotly would
+    # otherwise order it by first appearance across traces, which scrambles the
+    # axis when lease-year groups have non-overlapping quarter coverage.
+    fig.update_xaxes(categoryorder="category ascending")
     fig.update_traces(hovertemplate="%{y:.2f}%")
     fig.update_layout(hovermode="x unified", **annotations)
 
@@ -127,7 +131,9 @@ def plot_town(sf: SidebarFilter):
                 secondary_y=True,
             )
 
-    fig.update_xaxes(tickformat="%Y-%m")
+    # categoryorder keeps the quarter_label axis chronological even when towns
+    # have non-overlapping quarter coverage (see plot_lease_years).
+    fig.update_xaxes(tickformat="%Y-%m", categoryorder="category ascending")
     fig.update_yaxes(
         showgrid=False, zeroline=False, secondary_y=True, showticklabels=False
     )
