@@ -1,0 +1,428 @@
+---
+import Base from '../layouts/Base.astro';
+---
+
+<Base active="My Flat Insights" title="My Flat Insights — HDB Kaki">
+  <section class="hero">
+    <div class="wrap">
+      <span class="eyebrow rise"><span class="dot"></span> New · Personalised</span>
+      <h1 class="title rise" style="animation-delay:.05s">What's your flat<br /><em>really</em> worth?</h1>
+      <p class="lede rise" style="animation-delay:.1s">
+        Enter your postal code and a few details. We'll value it against real transactions nearby
+        and show how it stacks up against the market.
+      </p>
+
+      <div class="form-card rise" style="animation-delay:.16s">
+        <div class="form-grid">
+          <div class="field">
+            <label for="f-postal">Postal code</label>
+            <input id="f-postal" class="big" type="text" inputmode="numeric" maxlength="6" value="" />
+            <div class="sub" id="f-postal-sub">&nbsp;</div>
+          </div>
+          <div class="field">
+            <label for="f-flat">Flat type</label>
+            <select id="f-flat"></select>
+            <div class="sub" id="f-flat-sub">&nbsp;</div>
+          </div>
+          <div class="field">
+            <label for="f-storey">Storey</label>
+            <select id="f-storey"></select>
+            <div class="sub">Storey band</div>
+          </div>
+          <div class="field">
+            <label for="f-area">Floor area (sqft)</label>
+            <input id="f-area" type="number" min="200" max="3000" step="1" value="" />
+            <div class="sub" id="f-area-sub">&nbsp;</div>
+          </div>
+          <div class="field">
+            <label for="f-lease">Remaining lease (years)</label>
+            <input id="f-lease" type="number" min="1" max="99" step="1" value="" />
+            <div class="sub" id="f-lease-sub">&nbsp;</div>
+          </div>
+          <div class="field">
+            <label>Flat model</label>
+            <div class="val" id="f-model">—</div>
+            <div class="sub">From records</div>
+          </div>
+        </div>
+        <div class="form-foot">
+          <div class="resolved">
+            <span class="pin">📍</span>
+            <span id="resolved">Enter a postal code to begin.</span>
+          </div>
+          <button class="cta" id="get-insights">Get insights <span class="arrow">→</span></button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="results">
+    <div class="wrap">
+      <!-- 01 VALUATION -->
+      <div class="sec-head"><span class="num">01</span><h2>Estimated valuation</h2>
+        <span class="hint" id="val-hint">Modelled from median PSF of comparable sales in your town.</span></div>
+
+      <div class="card val-hero">
+        <div class="val-main">
+          <div class="val-label">Estimated market value</div>
+          <div class="val-big" id="val-big">—</div>
+          <div class="val-range-txt">Likely range <b id="val-low">—</b> – <b id="val-high">—</b></div>
+          <div class="rangebar">
+            <div class="track"><div class="fill"></div><div class="marker" id="val-marker"></div></div>
+            <div class="scale"><span class="mono" id="scale-low">—</span><span>estimate</span><span class="mono" id="scale-high">—</span></div>
+          </div>
+        </div>
+        <div class="val-side">
+          <div class="vs-label">How we got here</div>
+          <div class="vs-row"><span class="k">Comparable sales used</span><span class="v" id="vs-n">—</span></div>
+          <div class="vs-row"><span class="k">Median PSF (comps)</span><span class="v" id="vs-psf">—</span></div>
+          <div class="vs-row"><span class="k">Storey adjustment</span><span class="v" id="vs-storey">—</span></div>
+          <div class="vs-row"><span class="k">Your floor area</span><span class="v" id="vs-area">—</span></div>
+          <div class="conf">Confidence <span class="bars" id="conf-bars"></span> <span id="conf-label">—</span></div>
+          <p class="disclaimer">Indicative estimate for guidance only — not a valuation for HDB, bank or CPF
+            purposes. Adjusted for storey band; not for exact lease or unit condition. Based on registered
+            resale transactions from data.gov.sg.</p>
+        </div>
+      </div>
+
+      <!-- 02 BENCHMARKING -->
+      <div class="sec-head"><span class="num">02</span><h2>How it benchmarks</h2>
+        <span class="hint" id="bench-hint">Your flat vs the town and island-wide market.</span></div>
+
+      <div class="bench-grid">
+        <div class="card bench">
+          <div class="bk">Estimated PSF</div><div class="bv" id="b1-v">—</div>
+          <span class="pill" id="b1-pill">—</span>
+          <div class="minibar" id="b1-bars"></div>
+        </div>
+        <div class="card bench">
+          <div class="bk">Estimated value</div><div class="bv" id="b2-v">—</div>
+          <span class="pill" id="b2-pill">—</span>
+          <div class="minibar" id="b2-bars"></div>
+        </div>
+        <div class="card bench">
+          <div class="bk">Floor area</div><div class="bv" id="b3-v">—</div>
+          <span class="pill" id="b3-pill">—</span>
+          <div class="minibar" id="b3-bars"></div>
+        </div>
+      </div>
+
+      <div class="card lease-card">
+        <div class="lease-top"><span class="t">Lease position</span>
+          <span class="r"><b id="lease-rem">—</b> of 99 years remaining · commenced <b id="lease-start">—</b></span></div>
+        <div class="decay">
+          <div class="grad"></div>
+          <div class="ticks"><span>99</span><span>80</span><span>60</span><span>40</span><span>20</span><span>0</span></div>
+          <div class="now" id="lease-now"></div>
+        </div>
+      </div>
+
+      <!-- 03 COMPARABLES -->
+      <div class="sec-head"><span class="num">03</span><h2>Nearby comparables</h2>
+        <span class="hint" id="comp-hint">Recent sales of the same flat type in your town, same street first.</span></div>
+
+      <div class="split">
+        <div class="card comp-wrap">
+          <table class="comp">
+            <thead><tr><th>Address</th><th>Storey</th><th class="r">Area</th><th class="r">Lease</th><th class="r">Price</th><th class="r">PSF</th><th class="r">Sold</th></tr></thead>
+            <tbody id="comp-body"><tr><td colspan="7" style="padding:22px 16px;color:var(--ink-3)">Enter a postal code…</td></tr></tbody>
+          </table>
+          <div class="comp-foot"><span id="comp-foot">&nbsp;</span></div>
+        </div>
+        <div id="ins-map" class="map-real"></div>
+      </div>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .results{padding:0 0 80px}
+  /* form */
+  .form-card{background:var(--paper-2);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);margin-top:30px;overflow:hidden}
+  .form-grid{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:0}
+  .field{padding:18px 22px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .field:nth-child(3n){border-right:none}
+  .field label{display:block;font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3);margin-bottom:9px}
+  .field .val{font-size:17px;font-weight:500}
+  .field input, .field select{width:100%;border:none;background:none;font-family:inherit;font-size:17px;font-weight:500;color:var(--ink);outline:none;padding:0}
+  .field input.big{font-family:'IBM Plex Mono';font-size:26px;font-weight:600;letter-spacing:.02em}
+  .field select{cursor:pointer}
+  .field .sub{font-size:12.5px;color:var(--ink-3);margin-top:5px}
+  .form-foot{display:flex;align-items:center;justify-content:space-between;padding:16px 22px;gap:16px;flex-wrap:wrap}
+  .resolved{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--ink-2)}
+  .resolved .pin{width:26px;height:26px;border-radius:8px;background:var(--red-wash);color:var(--red-ink);display:grid;place-items:center;font-size:13px;flex:none}
+  .resolved b{color:var(--ink);font-weight:600}
+  /* valuation hero */
+  .val-hero{display:grid;grid-template-columns:1.15fr .85fr;overflow:hidden;padding:0}
+  .val-main{padding:34px 36px}
+  .val-side{background:linear-gradient(160deg,#1c1712,#241d16);color:#f4efe6;padding:34px}
+  .val-label{font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+  .val-big{font-family:'Fraunces';font-weight:600;font-size:clamp(46px,7vw,68px);letter-spacing:-.03em;line-height:1;margin:8px 0 4px}
+  .val-range-txt{font-size:15px;color:var(--ink-2)}
+  .val-range-txt b{color:var(--ink);font-family:'IBM Plex Mono';font-weight:600}
+  .rangebar{margin-top:26px}
+  .rangebar .track{position:relative;height:10px;border-radius:999px;background:linear-gradient(90deg,#f0e7d8,#e9dcc7)}
+  .rangebar .fill{position:absolute;top:0;bottom:0;left:12%;right:12%;border-radius:999px;background:linear-gradient(90deg,rgba(254,1,43,.25),rgba(254,1,43,.55))}
+  .rangebar .marker{position:absolute;top:50%;left:50%;width:18px;height:18px;border-radius:50%;background:var(--red);border:3px solid #fff;transform:translate(-50%,-50%);box-shadow:0 4px 12px -2px rgba(254,1,43,.7)}
+  .rangebar .scale{display:flex;justify-content:space-between;margin-top:10px;font-size:12.5px;color:var(--ink-3)}
+  .rangebar .scale .mono{color:var(--ink-2)}
+  .val-side .vs-label{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#b9ae9c}
+  .vs-row{display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-bottom:1px solid rgba(255,255,255,.08)}
+  .vs-row .k{font-size:14px;color:#d8cfc0}
+  .vs-row .v{font-family:'IBM Plex Mono';font-weight:600;font-size:15px}
+  .conf{display:inline-flex;align-items:center;gap:8px;margin-top:14px;font-size:13px;color:#e8e0d2}
+  .conf .bars{display:flex;gap:3px}
+  :global(.conf .bars i){width:5px;height:14px;border-radius:2px;background:rgba(255,255,255,.22)}
+  :global(.conf .bars i.on){background:#5bd08a}
+  .disclaimer{font-size:11.5px;color:#a49a89;margin-top:18px;line-height:1.4}
+  /* bench minibars */
+  .bench{padding:24px 24px 22px}
+  .bench .bv{font-family:'Fraunces';font-weight:600;font-size:34px;letter-spacing:-.02em;margin:8px 0 10px}
+  /* :global — these rows are injected via innerHTML, so scoped selectors would miss them */
+  .minibar{margin-top:12px}
+  :global(.minibar .row){display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:12.5px}
+  :global(.minibar .row .lab){width:78px;color:var(--ink-3);flex:none}
+  :global(.minibar .row .bar){flex:1;height:8px;border-radius:999px;background:#efeadf;overflow:hidden}
+  :global(.minibar .row .bar span){display:block;height:100%;border-radius:999px}
+  :global(.minibar .row .bar span.you){background:var(--red)}
+  :global(.minibar .row .bar span.ctx){background:#c9bfae}
+  :global(.minibar .row .amt){width:60px;text-align:right;color:var(--ink-2);font-family:'IBM Plex Mono';font-size:12px}
+  /* lease decay */
+  .lease-card{padding:24px 26px;margin-top:18px}
+  .lease-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:16px;gap:12px;flex-wrap:wrap}
+  .lease-top .t{font-size:13px;font-weight:600;color:var(--ink-2)}
+  .lease-top .r{font-size:13px;color:var(--ink-3)}
+  .lease-top .r b{color:var(--ink);font-family:'IBM Plex Mono'}
+  .decay{position:relative;height:34px;border-radius:10px;overflow:hidden}
+  .decay .grad{position:absolute;inset:0;background:linear-gradient(90deg,#cfe7d7,#f0dfc0 55%,#f2c9c2)}
+  .decay .now{position:absolute;top:0;bottom:0;width:3px;background:var(--ink)}
+  .decay .now::after{content:attr(data-label);position:absolute;top:-1px;left:8px;font-size:11px;font-weight:600;background:var(--ink);color:#fff;padding:2px 7px;border-radius:6px;white-space:nowrap}
+  .decay .ticks{position:absolute;inset:0;display:flex;justify-content:space-between;padding:0 10px;align-items:center;font-size:10.5px;color:#7a7264;font-family:'IBM Plex Mono'}
+  /* comps */
+  .comp-wrap{overflow:hidden}
+  /* :global — comparables rows are injected via innerHTML */
+  :global(.addr b){font-weight:600}
+  :global(.addr .st){color:var(--ink-3);font-size:12.5px}
+  :global(table.comp tbody tr.you){background:var(--red-wash)}
+  :global(.badge){font-size:10.5px;font-weight:700;letter-spacing:.04em;color:var(--red-ink);background:#fff;border:1px solid var(--red);padding:1px 6px;border-radius:5px;margin-left:8px;vertical-align:middle;display:inline-block}
+  .comp-foot{display:flex;justify-content:space-between;align-items:center;padding:16px;font-size:13px;color:var(--ink-3);border-top:1px solid var(--line)}
+  /* leaflet map */
+  .map-real{min-height:340px;border-radius:var(--radius);border:1px solid var(--line);box-shadow:var(--shadow);overflow:hidden;z-index:0}
+  :global(.leaflet-container){font-family:'Public Sans',sans-serif;background:#f3ede1}
+  :global(.leaflet-tooltip.hdb-tip){background:var(--paper-2);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);color:var(--ink);font-family:'Public Sans',sans-serif;font-size:13px;padding:9px 12px;line-height:1.5;white-space:nowrap}
+  :global(.leaflet-tooltip.hdb-tip b){font-weight:600}
+  :global(.leaflet-tooltip-top.hdb-tip::before){border-top-color:var(--paper-2)}
+  @media(max-width:900px){
+    .form-grid{grid-template-columns:1fr 1fr}
+    .field:nth-child(3n){border-right:1px solid var(--line)}
+    .val-hero{grid-template-columns:1fr}
+    .bench-grid{grid-template-columns:1fr}
+    .split{grid-template-columns:1fr !important}
+  }
+</style>
+
+<script>
+  import 'leaflet/dist/leaflet.css';
+  import L from 'leaflet';
+  import { query } from '../lib/db';
+  import { money, moneyShort, psf as fpsf, titleCase } from '../lib/format';
+
+  const $ = (id: string) => document.getElementById(id)!;
+  const sql = (s: string) => String(s).replace(/'/g, "''");
+  const NOW_YEAR = new Date().getFullYear();
+
+  let block = { town: '', street: '', address: '', model: '', lc: 0 };
+  let userLatLng: [number, number] | null = null;
+  let resolvedPostal = 0; // the postal the form fields currently reflect
+
+  const med = (a: number[]) => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+  const quantile = (sorted: number[], p: number) => { if (!sorted.length) return 0; const i = (sorted.length - 1) * p, lo = Math.floor(i), hi = Math.ceil(i); return sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo); };
+  const pillClass = (d: number) => (d >= 1 ? 'up' : d <= -1 ? 'down' : 'flat');
+  const arrow = (d: number) => (d >= 0 ? '▲' : '▼');
+
+  // ---- Leaflet map ----
+  const map = L.map('ins-map', { scrollWheelZoom: false }).setView([1.3521, 103.8198], 12);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { attribution: '© OpenStreetMap © CARTO', maxZoom: 19, subdomains: 'abcd' }).addTo(map);
+  let layer = L.layerGroup().addTo(map);
+
+  // ---- resolve a postal code → block metadata + populate dependent fields ----
+  async function resolveBlock() {
+    const postal = parseInt(($('f-postal') as HTMLInputElement).value, 10);
+    if (!postal || String(postal).length < 5) { $('resolved').textContent = 'Enter a valid 6-digit postal code.'; return false; }
+
+    const meta = await query<any>(
+      `SELECT arg_max(town,month) town, arg_max(street_name,month) street, arg_max(address,month) address,
+              mode(flat_model) model, mode(lease_commence_date) lc,
+              arg_max(latitude,month) lat, arg_max(longitude,month) lng
+       FROM resale WHERE postal=${postal}`,
+    );
+    if (!meta.length || !meta[0].town) { $('resolved').textContent = 'No transactions found for that postal code — try another.'; return false; }
+    resolvedPostal = postal;
+    block = { town: meta[0].town, street: meta[0].street, address: meta[0].address, model: meta[0].model, lc: Number(meta[0].lc) };
+    userLatLng = meta[0].lat != null ? [Number(meta[0].lat), Number(meta[0].lng)] : null;
+    $('f-postal-sub').textContent = titleCase(block.address);
+    $('f-model').textContent = titleCase(block.model || '—');
+
+    const flats = await query<{ flat_type: string; n: number }>(`SELECT flat_type, count(*) n FROM resale WHERE postal=${postal} GROUP BY flat_type ORDER BY n DESC`);
+    ($('f-flat') as HTMLSelectElement).innerHTML = flats.map((f) => `<option>${f.flat_type}</option>`).join('');
+    $('resolved').innerHTML = `Matched to <b>${titleCase(block.address)}</b>, ${titleCase(block.town)}`;
+    await onFlatChange();
+    return true;
+  }
+
+  async function onFlatChange() {
+    const postal = parseInt(($('f-postal') as HTMLInputElement).value, 10);
+    const flat = ($('f-flat') as HTMLSelectElement).value;
+    $('f-flat-sub').textContent = titleCase(block.model || '');
+
+    const storeys = await query<{ storey_range: string; lo: number }>(
+      `SELECT storey_range, min(storey_lower_bound) lo FROM resale WHERE postal=${postal} AND flat_type='${sql(flat)}' GROUP BY storey_range ORDER BY lo`);
+    const sel = $('f-storey') as HTMLSelectElement;
+    sel.innerHTML = storeys.map((s) => `<option>${s.storey_range}</option>`).join('');
+    if (storeys.length) sel.selectedIndex = Math.floor(storeys.length / 2); // default mid-floor
+
+    const [area] = await query<{ a: number }>(`SELECT median(floor_area_sqft) a FROM resale WHERE postal=${postal} AND flat_type='${sql(flat)}'`);
+    if (area?.a) { ($('f-area') as HTMLInputElement).value = String(Math.round(Number(area.a))); $('f-area-sub').textContent = `≈ typical for this block`; }
+    const remDefault = Math.max(1, Math.min(99, 99 - (NOW_YEAR - block.lc)));
+    ($('f-lease') as HTMLInputElement).value = String(remDefault);
+    $('f-lease-sub').textContent = block.lc ? `Commenced ${block.lc}` : '';
+  }
+
+  // ---- compute valuation + benchmarks + comparables ----
+  async function compute() {
+    const flat = ($('f-flat') as HTMLSelectElement).value;
+    const storey = ($('f-storey') as HTMLSelectElement).value;
+    const area = Number(($('f-area') as HTMLInputElement).value) || 0;
+    const rem = Number(($('f-lease') as HTMLInputElement).value) || 0;
+    if (!block.town || !flat || !area) return;
+
+    // comps: same town + flat type, last 12mo; widen to 24 if thin
+    const compQ = (mb: number) => query<any>(
+      `SELECT month, address, street_name, storey_range, storey_lower_bound slo, floor_area_sqft area,
+              remaining_lease_years lease, resale_price price, psf, latitude lat, longitude lng
+       FROM resale WHERE town='${sql(block.town)}' AND flat_type='${sql(flat)}'
+         AND month >= strftime(current_date - INTERVAL ${mb} MONTH, '%Y-%m')`);
+    let months = 12;
+    let comps = await compQ(12);
+    if (comps.length < 10) { months = 24; comps = await compQ(24); }
+    comps = comps.map((c) => ({ ...c, price: Number(c.price), psf: Number(c.psf), area: Number(c.area), lease: Number(c.lease), slo: Number(c.slo), lat: Number(c.lat), lng: Number(c.lng) }));
+
+    const [island] = await query<any>(
+      `SELECT median(psf) psf, median(resale_price) price, median(floor_area_sqft) area
+       FROM resale WHERE flat_type='${sql(flat)}' AND month >= strftime(current_date - INTERVAL 12 MONTH, '%Y-%m')`);
+    const islandPsf = Number(island?.psf || 0), islandPrice = Number(island?.price || 0), islandArea = Number(island?.area || 0);
+
+    // valuation — base median PSF over all comps, then adjust for the chosen storey band
+    const baseMedPsf = med(comps.map((c) => c.psf));
+    const userLo = parseInt(storey, 10) || 0; // "10 TO 12" -> 10
+    const nearStorey = comps.filter((c) => Math.abs(c.slo - userLo) <= 3);
+    const useStorey = nearStorey.length >= 5; // only adjust when the band has enough sales
+    const basis = useStorey ? nearStorey : comps;
+    const psfs = basis.map((c) => c.psf).sort((a, b) => a - b);
+    const medPsf = med(psfs), q25 = quantile(psfs, 0.25), q75 = quantile(psfs, 0.75);
+    const storeyAdjPct = baseMedPsf ? (medPsf / baseMedPsf - 1) * 100 : 0;
+    const estimate = medPsf * area, low = q25 * area, high = q75 * area;
+    const n = comps.length;
+    const nb = basis.length;
+    const [confLabel, confBars] = nb >= 30 ? ['High', 4] : nb >= 15 ? ['Medium-High', 3] : nb >= 5 ? ['Medium', 2] : ['Low', 1];
+
+    $('val-hint').textContent = useStorey
+      ? `Modelled from ${nb} comparable ${flat.toLowerCase()} sales on similar storeys (${storey}) in ${titleCase(block.town)}, last ${months} months.`
+      : `Modelled from ${n} comparable ${flat.toLowerCase()} sales in ${titleCase(block.town)}, last ${months} months.`;
+    $('val-big').textContent = money(estimate);
+    $('val-low').textContent = money(low); $('val-high').textContent = money(high);
+    $('scale-low').textContent = moneyShort(low); $('scale-high').textContent = moneyShort(high);
+    const pos = high > low ? Math.min(92, Math.max(8, ((estimate - low) / (high - low)) * 100)) : 50;
+    ($('val-marker') as HTMLElement).style.left = pos + '%';
+    $('vs-n').textContent = String(n);
+    $('vs-psf').textContent = fpsf(baseMedPsf);
+    $('vs-area').textContent = `${area.toLocaleString()} sqft`;
+    $('vs-storey').textContent = useStorey
+      ? `${storeyAdjPct >= 0 ? '+' : ''}${storeyAdjPct.toFixed(1)}% · ${storey}`
+      : 'n/a — too few';
+    $('conf-label').textContent = confLabel;
+    $('conf-bars').innerHTML = [0, 1, 2, 3].map((i) => `<i class="${i < confBars ? 'on' : ''}"></i>`).join('');
+
+    // benchmarks
+    const townPrice = med(comps.map((c) => c.price)), townArea = med(comps.map((c) => c.area));
+    const bar = (rows: { lab: string; val: number; you?: boolean; fmt: (n: number) => string }[]) => {
+      const max = Math.max(...rows.map((r) => r.val), 1);
+      return rows.map((r) => `<div class="row"><span class="lab">${r.lab}</span><span class="bar"><span class="${r.you ? 'you' : 'ctx'}" style="width:${Math.round((r.val / max) * 100)}%"></span></span><span class="amt">${r.fmt(r.val)}</span></div>`).join('');
+    };
+    const dPsf = islandPsf ? (medPsf / islandPsf - 1) * 100 : 0;
+    $('b1-v').textContent = fpsf(medPsf);
+    $('b1-pill').className = `pill ${pillClass(dPsf)}`; $('b1-pill').textContent = `${arrow(dPsf)} ${Math.abs(dPsf).toFixed(1)}% vs island`;
+    $('b1-bars').innerHTML = bar([{ lab: 'This flat', val: medPsf, you: true, fmt: fpsf }, { lab: 'Island', val: islandPsf, fmt: fpsf }]);
+
+    const dPrice = townPrice ? (estimate / townPrice - 1) * 100 : 0;
+    $('b2-v').textContent = moneyShort(estimate);
+    $('b2-pill').className = `pill ${pillClass(dPrice)}`; $('b2-pill').textContent = `${arrow(dPrice)} ${Math.abs(dPrice).toFixed(1)}% vs town`;
+    $('b2-bars').innerHTML = bar([{ lab: 'This flat', val: estimate, you: true, fmt: moneyShort }, { lab: `${titleCase(block.town)}`, val: townPrice, fmt: moneyShort }, { lab: 'Island', val: islandPrice, fmt: moneyShort }]);
+
+    const dArea = townArea ? (area / townArea - 1) * 100 : 0;
+    $('b3-v').textContent = `${area.toLocaleString()} sqft`;
+    $('b3-pill').className = `pill ${Math.abs(dArea) < 3 ? 'flat' : pillClass(dArea)}`;
+    $('b3-pill').textContent = Math.abs(dArea) < 3 ? '≈ typical for type' : `${arrow(dArea)} ${Math.abs(dArea).toFixed(0)}% vs town`;
+    $('b3-bars').innerHTML = bar([{ lab: 'This flat', val: area, you: true, fmt: (v) => v.toLocaleString() }, { lab: `${titleCase(block.town)}`, val: townArea, fmt: (v) => Math.round(v).toLocaleString() }, { lab: 'Island', val: islandArea, fmt: (v) => Math.round(v).toLocaleString() }]);
+
+    // lease decay
+    $('lease-rem').textContent = String(rem); $('lease-start').textContent = block.lc ? String(block.lc) : '—';
+    const nowEl = $('lease-now') as HTMLElement;
+    nowEl.style.left = `${((99 - rem) / 99) * 100}%`;
+    nowEl.setAttribute('data-label', `${rem} yrs left`);
+
+    // comparables table (same street first, then recency)
+    const sameStreet = (c: any) => c.street_name === block.street;
+    const sorted = [...comps].sort((a, b) => (Number(sameStreet(b)) - Number(sameStreet(a))) || b.month.localeCompare(a.month));
+    const youRow = `<tr class="you"><td class="addr"><b>${titleCase(block.address)}</b><span class="badge">YOUR FLAT</span><br><span class="st">Estimated</span></td>
+      <td>${storey}</td><td class="r">${area.toLocaleString()}</td><td class="r">${rem} yr</td>
+      <td class="r price">${money(estimate)}</td><td class="r psf">${fpsf(medPsf)}</td><td class="r">—</td></tr>`;
+    const rows = sorted.slice(0, 8).map((c) => `<tr><td class="addr"><b>${titleCase(c.address)}</b>${sameStreet(c) ? '<span class="badge" style="color:var(--ink-2);border-color:var(--line)">SAME ST</span>' : ''}<br><span class="st">${titleCase(c.street_name)}</span></td>
+      <td>${c.storey_range}</td><td class="r">${c.area.toLocaleString()}</td><td class="r">${c.lease} yr</td>
+      <td class="r price">${money(c.price)}</td><td class="r psf">${fpsf(c.psf)}</td><td class="r">${c.month}</td></tr>`).join('');
+    $('comp-body').innerHTML = youRow + rows;
+    $('comp-foot').textContent = `Showing ${Math.min(8, comps.length)} of ${comps.length} comparable sales · last ${months} months · ${titleCase(block.town)}`;
+
+    // map: comps (grey) + your block (red)
+    layer.clearLayers();
+    const pts: [number, number][] = [];
+    comps.forEach((c) => {
+      if (!c.lat) return;
+      pts.push([c.lat, c.lng]);
+      L.circleMarker([c.lat, c.lng], { radius: 6, weight: 1.5, color: '#fff', fillColor: '#c9bfae', fillOpacity: 0.9 })
+        .bindTooltip(`<b>${titleCase(c.address)}</b><br/>${c.month} · ${c.storey_range}<br/><b>${money(c.price)}</b> · ${fpsf(c.psf)} psf`, { direction: 'top', offset: [0, -6], opacity: 1, className: 'hdb-tip' })
+        .addTo(layer);
+    });
+    if (userLatLng) {
+      pts.push(userLatLng);
+      L.circleMarker(userLatLng, { radius: 9, weight: 2.5, color: '#fff', fillColor: '#fe012b', fillOpacity: 1 })
+        .bindTooltip(`<b>Your flat</b> · ${titleCase(block.address)}<br/><b>${money(estimate)}</b> est · ${fpsf(medPsf)} psf`, { direction: 'top', offset: [0, -8], opacity: 1, className: 'hdb-tip' })
+        .addTo(layer);
+    }
+    if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.15));
+    setTimeout(() => map.invalidateSize(), 50);
+  }
+
+  // ---- wiring ----
+  ($('f-postal') as HTMLInputElement).addEventListener('change', async () => { if (await resolveBlock()) compute(); });
+  $('f-flat').addEventListener('change', async () => { await onFlatChange(); compute(); });
+  ['f-storey', 'f-area', 'f-lease'].forEach((id) => $(id).addEventListener('change', compute));
+  $('get-insights').addEventListener('click', async () => {
+    const cur = parseInt(($('f-postal') as HTMLInputElement).value, 10);
+    // re-resolve only if the postal changed (avoid clobbering the user's edited fields)
+    if (cur !== resolvedPostal) { if (!(await resolveBlock())) return; }
+    await compute();
+    document.querySelector('.results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  (async () => {
+    const [def] = await query<{ postal: number }>(`SELECT postal FROM resale WHERE postal IS NOT NULL GROUP BY postal ORDER BY count(*) DESC LIMIT 1`);
+    ($('f-postal') as HTMLInputElement).value = String(def.postal);
+    if (await resolveBlock()) {
+      $('resolved').innerHTML = `Matched to <b>${titleCase(block.address)}</b>, ${titleCase(block.town)}`;
+      await compute();
+    }
+  })();
+
+  window.addEventListener('resize', () => map.invalidateSize());
+</script>

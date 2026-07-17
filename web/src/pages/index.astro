@@ -1,0 +1,273 @@
+---
+import Base from '../layouts/Base.astro';
+---
+
+<Base active="Resale Visualizations" title="Resale Visualizations — HDB Kaki">
+  <section class="hero">
+    <div class="wrap">
+      <span class="eyebrow rise"><span class="dot"></span> Market Overview</span>
+      <h1 class="title rise" style="animation-delay:.05s">How's the resale<br />market <em>moving</em>?</h1>
+      <p class="lede rise" style="animation-delay:.1s">
+        Median prices, distributions and lease dynamics across every HDB resale transaction
+        since 2017 — refreshed daily from data.gov.sg.
+      </p>
+    </div>
+  </section>
+
+  <main class="wrap pagepad">
+    <!-- 01 · PRICE TRENDS -->
+    <div class="sec-head rise">
+      <span class="num">01</span><h2>Price trends</h2>
+      <span class="hint">Median resale price over time. Switch the lens to compare by lease band, town or flat type.</span>
+    </div>
+    <div class="controls" style="margin-bottom:16px">
+      <div class="chipset" id="trend-toggle">
+        <button class="chip on" data-mode="lease">Lease band</button>
+        <button class="chip" data-mode="flat">Flat type</button>
+        <button class="chip" data-mode="town">Town</button>
+      </div>
+    </div>
+    <div class="card chart-card">
+      <div class="chart-head"><div class="chart-title" id="trend-title">Median resale price by lease band</div></div>
+      <div id="chart-trends" class="chart-box"></div>
+    </div>
+
+    <!-- 02 · DISTRIBUTION -->
+    <div class="sec-head"><span class="num">02</span><h2>Price distribution by town</h2>
+      <span class="hint">Spread of 4-room resale prices, last 12 months — box shows the middle 50%.</span></div>
+    <div class="card chart-card">
+      <div class="chart-head"><div class="chart-title">Resale price spread · 4-room</div></div>
+      <div id="chart-box" class="chart-box"></div>
+    </div>
+
+    <!-- 03 · LEASE RELATIONSHIP -->
+    <div class="sec-head"><span class="num">03</span><h2>Price &amp; remaining lease</h2>
+      <span class="hint">How 4-room resale price relates to years left on the lease.</span></div>
+    <div class="split" style="grid-template-columns:1.5fr 1fr">
+      <div class="card chart-card">
+        <div class="chart-head"><div class="chart-title">Resale price vs remaining lease</div></div>
+        <div id="chart-scatter" class="chart-box"></div>
+      </div>
+      <div class="card chart-card">
+        <div class="chart-head"><div class="chart-title">Transactions by lease band</div></div>
+        <div id="chart-buckets" class="chart-box"></div>
+      </div>
+    </div>
+
+    <!-- 04 · RECENT TRANSACTIONS -->
+    <div class="sec-head"><span class="num">04</span><h2>Recent transactions</h2>
+      <span class="hint">Latest registered resale deals.</span></div>
+    <div class="card" style="overflow:hidden">
+      <table class="comp">
+        <thead><tr>
+          <th>Sold</th><th>Town</th><th>Address</th><th>Type</th>
+          <th class="r">Area</th><th class="r">Price</th><th class="r">PSF</th>
+        </tr></thead>
+        <tbody id="tbody-recent">
+          <tr><td colspan="7" style="padding:22px 16px;color:var(--ink-3)">Loading market data…</td></tr>
+        </tbody>
+      </table>
+      <div class="tbl-foot"><span id="recent-foot">&nbsp;</span></div>
+    </div>
+  </main>
+</Base>
+
+<style>
+  .chart-box { width: 100%; height: 380px; }
+  #chart-scatter, #chart-buckets { height: 320px; }
+</style>
+
+<script>
+  import echarts from '../lib/echarts';
+  import { query } from '../lib/db';
+  import { baseOption, palette, axisLabel, splitLine, axisLine, ink3 } from '../lib/echartsTheme';
+  import { money, moneyShort, psf as fpsf, titleCase } from '../lib/format';
+
+  const q = (id: string) => document.getElementById(id)!;
+  const quarterExpr =
+    `substr(month,1,4) || ' Q' || CAST((CAST(substr(month,6,2) AS INTEGER)-1)//3 + 1 AS VARCHAR)`;
+
+  // ---- 01 price trends (with lens toggle) ----
+  const trendChart = echarts.init(q('chart-trends'));
+  const trendCache: Record<string, any[]> = {};
+  const trendCfg: Record<string, { col: string; title: string; pctChange: boolean }> = {
+    lease: { col: 'cat_remaining_lease_years', title: 'Median resale price by lease band', pctChange: false },
+    flat: { col: 'flat_type', title: 'Median resale price by flat type', pctChange: false },
+    town: { col: 'town', title: 'Median resale price by town', pctChange: false },
+  };
+
+  async function renderTrends(mode: string) {
+    const cfg = trendCfg[mode];
+    q('trend-title').textContent = cfg.title;
+    if (!trendCache[mode]) {
+      trendCache[mode] = await query<{ quarter: string; series: string; v: number }>(
+        `SELECT ${quarterExpr} AS quarter, ${cfg.col} AS series, median(resale_price) AS v
+         FROM resale WHERE ${cfg.col} IS NOT NULL
+         GROUP BY 1,2 ORDER BY 1,2`,
+      );
+    }
+    const rows = trendCache[mode];
+    const quarters = [...new Set(rows.map((r) => r.quarter))].sort();
+    const seriesNames = [...new Set(rows.map((r) => r.series))].sort();
+    const byKey = new Map(rows.map((r) => [r.series + '|' + r.quarter, Number(r.v)]));
+
+    const series = seriesNames.map((name) => ({
+      name,
+      type: 'line' as const,
+      smooth: true,
+      showSymbol: false,
+      emphasis: { focus: 'series' as const },
+      data: quarters.map((qtr) => {
+        const v = byKey.get(name + '|' + qtr);
+        return v == null ? null : Math.round(v);
+      }),
+    }));
+
+    trendChart.setOption(
+      {
+        ...baseOption(),
+        color: palette,
+        legend: { top: 0, right: 0, type: 'scroll', textStyle: { fontSize: 12 }, icon: 'roundRect' },
+        grid: { left: 66, right: 24, top: 40, bottom: 46, containLabel: false },
+        tooltip: { trigger: 'axis', valueFormatter: (v: number) => (v == null ? '—' : money(v)) },
+        xAxis: {
+          type: 'category', data: quarters, boundaryGap: false,
+          axisLabel: { ...axisLabel, interval: Math.ceil(quarters.length / 8) }, axisLine, axisTick: { show: false },
+        },
+        yAxis: {
+          type: 'value', scale: true,
+          axisLabel: { ...axisLabel, formatter: (v: number) => moneyShort(v) },
+          splitLine,
+        },
+        series,
+      },
+      true,
+    );
+  }
+
+  document.querySelectorAll<HTMLButtonElement>('#trend-toggle .chip').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#trend-toggle .chip').forEach((b) => b.classList.remove('on'));
+      btn.classList.add('on');
+      renderTrends(btn.dataset.mode!);
+    });
+  });
+
+  // ---- 02 box plot by town ----
+  async function renderBox() {
+    const rows = await query<any>(
+      `SELECT town,
+         min(resale_price) mn, quantile_cont(resale_price,0.25) q1,
+         median(resale_price) med, quantile_cont(resale_price,0.75) q3,
+         max(resale_price) mx, count(*) n
+       FROM resale
+       WHERE flat_type='4 ROOM'
+         AND month >= strftime(current_date - INTERVAL 12 MONTH, '%Y-%m')
+       GROUP BY town HAVING n > 20 ORDER BY med DESC LIMIT 12`,
+    );
+    const chart = echarts.init(q('chart-box'));
+    chart.setOption({
+      ...baseOption(),
+      grid: { left: 64, right: 20, top: 20, bottom: 78, containLabel: false },
+      tooltip: { trigger: 'item' },
+      xAxis: {
+        type: 'category', data: rows.map((r) => titleCase(r.town)),
+        axisLabel: { ...axisLabel, rotate: 38 }, axisLine, axisTick: { show: false },
+      },
+      yAxis: {
+        type: 'value', scale: true, splitLine,
+        axisLabel: { ...axisLabel, formatter: (v: number) => moneyShort(v) },
+      },
+      series: [{
+        type: 'boxplot', itemStyle: { color: '#efeadf', borderColor: '#181410' },
+        data: rows.map((r) => [Number(r.mn), Number(r.q1), Number(r.med), Number(r.q3), Number(r.mx)]),
+      }],
+    });
+  }
+
+  // ---- 03 scatter + bucket counts ----
+  async function renderLease() {
+    const bands = ['0-60 years', '61-80 years', '81-99 years'];
+    const colors: Record<string, string> = { '0-60 years': palette[0], '61-80 years': palette[3], '81-99 years': palette[2] };
+    const pts = await query<any>(
+      `SELECT remaining_lease_years x, resale_price y, cat_remaining_lease_years band
+       FROM resale WHERE flat_type='4 ROOM' AND cat_remaining_lease_years IS NOT NULL
+       USING SAMPLE 1800 ROWS`,
+    );
+    const scatter = echarts.init(q('chart-scatter'));
+    scatter.setOption({
+      ...baseOption(),
+      grid: { left: 62, right: 20, top: 30, bottom: 44, containLabel: false },
+      legend: { top: 0, right: 0, textStyle: { fontSize: 12 } },
+      tooltip: {
+        trigger: 'item',
+        formatter: (p: any) => `${p.value[0]} yrs left<br/>${money(p.value[1])}`,
+      },
+      xAxis: { type: 'value', name: 'Remaining lease (yrs)', nameLocation: 'middle', nameGap: 28,
+        nameTextStyle: { color: ink3, fontSize: 11 }, axisLabel, splitLine, axisLine },
+      yAxis: { type: 'value', scale: true, axisLabel: { ...axisLabel, formatter: (v: number) => moneyShort(v) }, splitLine },
+      series: bands.map((b) => ({
+        name: b.replace(' years', ''), type: 'scatter', symbolSize: 6,
+        itemStyle: { color: colors[b], opacity: 0.55 },
+        data: pts.filter((p) => p.band === b).map((p) => [Number(p.x), Number(p.y)]),
+      })),
+    });
+
+    const counts = await query<any>(
+      `SELECT cat_remaining_lease_years band, count(*) n FROM resale
+       WHERE cat_remaining_lease_years IS NOT NULL GROUP BY 1 ORDER BY 1`,
+    );
+    const buckets = echarts.init(q('chart-buckets'));
+    buckets.setOption({
+      ...baseOption(),
+      grid: { left: 90, right: 40, top: 20, bottom: 30, containLabel: false },
+      tooltip: { trigger: 'item', valueFormatter: (v: number) => Number(v).toLocaleString() },
+      xAxis: { type: 'value', axisLabel: { show: false }, splitLine: { show: false }, axisLine: { show: false } },
+      yAxis: { type: 'category', data: counts.map((c) => c.band.replace(' years', ' yrs')),
+        axisLabel: { color: '#5b544a', fontSize: 12 }, axisLine, axisTick: { show: false } },
+      series: [{
+        type: 'bar', barWidth: 22,
+        itemStyle: { color: (p: any) => [palette[0], palette[3], palette[2]][p.dataIndex], borderRadius: 5 },
+        label: { show: true, position: 'right', formatter: (p: any) => Number(p.value).toLocaleString(), color: ink3, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 },
+        data: counts.map((c) => Number(c.n)),
+      }],
+    });
+  }
+
+  // ---- 04 recent transactions ----
+  async function renderRecent() {
+    const rows = await query<any>(
+      `SELECT month, town, address, flat_type, floor_area_sqft, resale_price, psf
+       FROM resale WHERE month >= strftime(current_date - INTERVAL 12 MONTH, '%Y-%m')
+       ORDER BY month DESC, resale_price DESC LIMIT 8`,
+    );
+    const total = await query<any>(
+      `SELECT count(*) n FROM resale WHERE month >= strftime(current_date - INTERVAL 12 MONTH, '%Y-%m')`,
+    );
+    q('tbody-recent').innerHTML = rows
+      .map((r) => `<tr>
+        <td class="num-cell">${r.month}</td>
+        <td>${titleCase(r.town)}</td>
+        <td>${titleCase(r.address)}</td>
+        <td>${r.flat_type}</td>
+        <td class="r num-cell">${Number(r.floor_area_sqft).toLocaleString()}</td>
+        <td class="r price">${money(Number(r.resale_price))}</td>
+        <td class="r num-cell">${fpsf(Number(r.psf))}</td>
+      </tr>`)
+      .join('');
+    q('recent-foot').innerHTML =
+      `Showing ${rows.length} of ${Number(total[0].n).toLocaleString()} in the last 12 months`;
+  }
+
+  // boot
+  renderTrends('lease');
+  renderBox();
+  renderLease();
+  renderRecent();
+  window.addEventListener('resize', () => {
+    trendChart.resize();
+    echarts.getInstanceByDom(q('chart-box'))?.resize();
+    echarts.getInstanceByDom(q('chart-scatter'))?.resize();
+    echarts.getInstanceByDom(q('chart-buckets'))?.resize();
+  });
+</script>
