@@ -1,8 +1,11 @@
 ---
 import Base from '../layouts/Base.astro';
+const base = import.meta.env.BASE_URL;
 ---
 
 <Base active="Resale Visualizations" title="Resale Visualizations — HDB Kaki">
+  <!-- Start the data fetch during HTML parse, parallel to the JS, so charts paint sooner. -->
+  <link slot="head" rel="preload" as="fetch" href={`${base}data/overview.json`} crossorigin="anonymous" />
   <section class="hero">
     <div class="wrap">
       <span class="eyebrow rise"><span class="dot"></span> Market Overview</span>
@@ -79,34 +82,30 @@ import Base from '../layouts/Base.astro';
 
 <script>
   import echarts from '../lib/echarts';
-  import { query } from '../lib/db';
   import { baseOption, palette, axisLabel, splitLine, axisLine, ink3 } from '../lib/echartsTheme';
   import { money, moneyShort, psf as fpsf, titleCase } from '../lib/format';
 
+  // Landing renders from a single precomputed aggregate (webapp/update/emit_web.py),
+  // so it never boots DuckDB-WASM — that engine loads only on the interactive pages.
+  type Overview = {
+    trends: Record<string, { quarter: string; series: string; v: number }[]>;
+    box: any[]; scatter: any[]; buckets: any[]; recent: any[]; recentTotal: number;
+  };
+  let OV: Overview;
+
   const q = (id: string) => document.getElementById(id)!;
-  const quarterExpr =
-    `substr(month,1,4) || ' Q' || CAST((CAST(substr(month,6,2) AS INTEGER)-1)//3 + 1 AS VARCHAR)`;
 
   // ---- 01 price trends (with lens toggle) ----
   const trendChart = echarts.init(q('chart-trends'));
-  const trendCache: Record<string, any[]> = {};
-  const trendCfg: Record<string, { col: string; title: string; pctChange: boolean }> = {
-    lease: { col: 'cat_remaining_lease_years', title: 'Median resale price by lease band', pctChange: false },
-    flat: { col: 'flat_type', title: 'Median resale price by flat type', pctChange: false },
-    town: { col: 'town', title: 'Median resale price by town', pctChange: false },
+  const trendTitle: Record<string, string> = {
+    lease: 'Median resale price by lease band',
+    flat: 'Median resale price by flat type',
+    town: 'Median resale price by town',
   };
 
-  async function renderTrends(mode: string) {
-    const cfg = trendCfg[mode];
-    q('trend-title').textContent = cfg.title;
-    if (!trendCache[mode]) {
-      trendCache[mode] = await query<{ quarter: string; series: string; v: number }>(
-        `SELECT ${quarterExpr} AS quarter, ${cfg.col} AS series, median(resale_price) AS v
-         FROM resale WHERE ${cfg.col} IS NOT NULL
-         GROUP BY 1,2 ORDER BY 1,2`,
-      );
-    }
-    const rows = trendCache[mode];
+  function renderTrends(mode: string) {
+    q('trend-title').textContent = trendTitle[mode];
+    const rows = OV.trends[mode];
     const quarters = [...new Set(rows.map((r) => r.quarter))].sort();
     const seriesNames = [...new Set(rows.map((r) => r.series))].sort();
     const byKey = new Map(rows.map((r) => [r.series + '|' + r.quarter, Number(r.v)]));
@@ -154,17 +153,8 @@ import Base from '../layouts/Base.astro';
   });
 
   // ---- 02 box plot by town ----
-  async function renderBox() {
-    const rows = await query<any>(
-      `SELECT town,
-         min(resale_price) mn, quantile_cont(resale_price,0.25) q1,
-         median(resale_price) med, quantile_cont(resale_price,0.75) q3,
-         max(resale_price) mx, count(*) n
-       FROM resale
-       WHERE flat_type='4 ROOM'
-         AND month >= strftime(current_date - INTERVAL 12 MONTH, '%Y-%m')
-       GROUP BY town HAVING n > 20 ORDER BY med DESC LIMIT 12`,
-    );
+  function renderBox() {
+    const rows = OV.box;
     const chart = echarts.init(q('chart-box'));
     chart.setOption({
       ...baseOption(),
@@ -186,14 +176,10 @@ import Base from '../layouts/Base.astro';
   }
 
   // ---- 03 scatter + bucket counts ----
-  async function renderLease() {
+  function renderLease() {
     const bands = ['0-60 years', '61-80 years', '81-99 years'];
     const colors: Record<string, string> = { '0-60 years': palette[0], '61-80 years': palette[3], '81-99 years': palette[2] };
-    const pts = await query<any>(
-      `SELECT remaining_lease_years x, resale_price y, cat_remaining_lease_years band
-       FROM resale WHERE flat_type='4 ROOM' AND cat_remaining_lease_years IS NOT NULL
-       USING SAMPLE 1800 ROWS`,
-    );
+    const pts = OV.scatter;
     const scatter = echarts.init(q('chart-scatter'));
     scatter.setOption({
       ...baseOption(),
@@ -213,10 +199,7 @@ import Base from '../layouts/Base.astro';
       })),
     });
 
-    const counts = await query<any>(
-      `SELECT cat_remaining_lease_years band, count(*) n FROM resale
-       WHERE cat_remaining_lease_years IS NOT NULL GROUP BY 1 ORDER BY 1`,
-    );
+    const counts = OV.buckets;
     const buckets = echarts.init(q('chart-buckets'));
     buckets.setOption({
       ...baseOption(),
@@ -235,15 +218,8 @@ import Base from '../layouts/Base.astro';
   }
 
   // ---- 04 recent transactions ----
-  async function renderRecent() {
-    const rows = await query<any>(
-      `SELECT month, town, address, flat_type, floor_area_sqft, resale_price, psf
-       FROM resale WHERE month >= strftime(current_date - INTERVAL 12 MONTH, '%Y-%m')
-       ORDER BY month DESC, resale_price DESC LIMIT 8`,
-    );
-    const total = await query<any>(
-      `SELECT count(*) n FROM resale WHERE month >= strftime(current_date - INTERVAL 12 MONTH, '%Y-%m')`,
-    );
+  function renderRecent() {
+    const rows = OV.recent;
     q('tbody-recent').innerHTML = rows
       .map((r) => `<tr>
         <td class="num-cell">${r.month}</td>
@@ -256,14 +232,21 @@ import Base from '../layouts/Base.astro';
       </tr>`)
       .join('');
     q('recent-foot').innerHTML =
-      `Showing ${rows.length} of ${Number(total[0].n).toLocaleString()} in the last 12 months`;
+      `Showing ${rows.length} of ${Number(OV.recentTotal).toLocaleString()} in the last 12 months`;
   }
 
-  // boot
-  renderTrends('lease');
-  renderBox();
-  renderLease();
-  renderRecent();
+  // boot — one small fetch, no DuckDB-WASM
+  async function boot() {
+    OV = await fetch(`${import.meta.env.BASE_URL}data/overview.json`).then((r) => {
+      if (!r.ok) throw new Error(`overview.json ${r.status}`);
+      return r.json();
+    });
+    renderTrends('lease');
+    renderBox();
+    renderLease();
+    renderRecent();
+  }
+  boot();
   window.addEventListener('resize', () => {
     trendChart.resize();
     echarts.getInstanceByDom(q('chart-box'))?.resize();
