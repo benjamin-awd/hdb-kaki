@@ -1,6 +1,22 @@
 ---
 import Base from '../layouts/Base.astro';
+import { trendsSVG } from '../lib/echartsSSR';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 const base = import.meta.env.BASE_URL;
+
+// SSR the hero chart to inline SVG so it paints instantly — no JS, no fetch. The
+// client swaps in the interactive canvas chart after hydration. Falls back to a
+// client-only render if overview.json hasn't been generated yet (e.g. fresh clone).
+let heroSVG = '';
+try {
+  const path = fileURLToPath(new URL('../../public/data/overview.json', import.meta.url));
+  const ov = JSON.parse(fs.readFileSync(path, 'utf8'));
+  heroSVG = trendsSVG(ov.trends.lease, 1040, 380);
+} catch {
+  heroSVG = '';
+}
 ---
 
 <Base active="Resale Visualizations" title="Resale Visualizations — HDB Kaki">
@@ -32,7 +48,7 @@ const base = import.meta.env.BASE_URL;
     </div>
     <div class="card chart-card">
       <div class="chart-head"><div class="chart-title" id="trend-title">Median resale price by lease band</div></div>
-      <div id="chart-trends" class="chart-box"></div>
+      <div id="chart-trends" class="chart-box" set:html={heroSVG}></div>
     </div>
 
     <!-- 02 · DISTRIBUTION -->
@@ -77,6 +93,8 @@ const base = import.meta.env.BASE_URL;
 
 <style>
   .chart-box { width: 100%; height: 380px; }
+  /* Stretch the SSR placeholder SVG to fill the box until the canvas chart hydrates. */
+  #chart-trends svg { width: 100% !important; height: 100% !important; display: block; }
   #chart-scatter, #chart-buckets { height: 320px; }
 </style>
 
@@ -96,7 +114,9 @@ const base = import.meta.env.BASE_URL;
   const q = (id: string) => document.getElementById(id)!;
 
   // ---- 01 price trends (with lens toggle) ----
-  const trendChart = echarts.init(q('chart-trends'));
+  // Initialised in boot(), after data loads, so the SSR placeholder SVG stays
+  // visible until we can draw the interactive canvas chart in one step.
+  let trendChart: ReturnType<typeof echarts.init> | undefined;
   const trendTitle: Record<string, string> = {
     lease: 'Median resale price by lease band',
     flat: 'Median resale price by flat type',
@@ -104,6 +124,7 @@ const base = import.meta.env.BASE_URL;
   };
 
   function renderTrends(mode: string) {
+    if (!OV || !trendChart) return;
     q('trend-title').textContent = trendTitle[mode];
     const rows = OV.trends[mode];
     const quarters = [...new Set(rows.map((r) => r.quarter))].sort();
@@ -241,6 +262,9 @@ const base = import.meta.env.BASE_URL;
       if (!r.ok) throw new Error(`overview.json ${r.status}`);
       return r.json();
     });
+    // Replace the SSR placeholder SVG with the interactive canvas chart in one step.
+    q('chart-trends').innerHTML = '';
+    trendChart = echarts.init(q('chart-trends'));
     renderTrends('lease');
     renderBox();
     renderLease();
@@ -248,7 +272,7 @@ const base = import.meta.env.BASE_URL;
   }
   boot();
   window.addEventListener('resize', () => {
-    trendChart.resize();
+    trendChart?.resize();
     echarts.getInstanceByDom(q('chart-box'))?.resize();
     echarts.getInstanceByDom(q('chart-scatter'))?.resize();
     echarts.getInstanceByDom(q('chart-buckets'))?.resize();
