@@ -1,0 +1,291 @@
+---
+import Base from '../layouts/Base.astro';
+---
+
+<Base active="PSF Trends" title="PSF Trends — HDB Kaki">
+  <section class="hero">
+    <div class="wrap">
+      <span class="eyebrow rise"><span class="dot"></span> Price per Square Foot</span>
+      <h1 class="title rise" style="animation-delay:.05s">The PSF story,<br /><em>street by street</em>.</h1>
+      <p class="lede rise" style="animation-delay:.1s">
+        Fit a trend to price-per-square-foot over time for any town, street or storey band —
+        and read where it's heading.
+      </p>
+    </div>
+  </section>
+
+  <main class="wrap pagepad">
+    <div class="controls" style="margin:8px 0 22px">
+      <span class="field-select"><span class="lab">Town</span><select id="sel-town"></select></span>
+      <span class="field-select"><span class="lab">Street</span><select id="sel-street"></select></span>
+      <span class="field-select"><span class="lab">Storey</span>
+        <select id="sel-storey">
+          <option value="all" selected>All</option>
+          <option value="1-6">01–06</option>
+          <option value="7-12">07–12</option>
+          <option value="13-99">13+</option>
+        </select>
+      </span>
+      <div class="chipset" id="reg-toggle">
+        <button class="chip on" data-reg="ols">OLS</button>
+        <button class="chip" data-reg="loess">LOWESS</button>
+      </div>
+    </div>
+
+    <div class="bench-grid">
+      <div class="card bench"><div class="bk">Current month</div><div class="bv mono" id="stat-month">—</div><div class="bsub">latest registered data</div></div>
+      <div class="card bench"><div class="bk">Current PSF (trend)</div><div class="bv mono" id="stat-psf">—</div><div class="bsub" id="stat-delta">&nbsp;</div></div>
+      <div class="card bench"><div class="bk">Fit quality · R²</div><div class="bv mono" id="stat-r2">—</div><div class="bsub" id="stat-fit">&nbsp;</div></div>
+    </div>
+
+    <div class="sec-head"><span class="num">01</span><h2>PSF over time</h2>
+      <span class="hint">Each dot is a transaction (sampled); the line is the fitted trend on monthly medians.</span></div>
+    <div class="card chart-card">
+      <div class="chart-head"><div class="chart-title" id="chart-title">Price per sqft</div><div id="scatter-note" style="font-size:12.5px;color:var(--ink-3)"></div></div>
+      <div id="chart-psf" style="width:100%;height:420px"></div>
+    </div>
+
+    <div class="sec-head"><span class="num">02</span><h2>Fitted PSF by month</h2>
+      <span class="hint">Trend value read off the fit for each month.</span></div>
+    <div class="card" style="overflow:hidden">
+      <table class="comp">
+        <thead><tr><th>Month</th><th class="r">Trend PSF</th><th class="r">MoM change</th></tr></thead>
+        <tbody id="tbody-psf"><tr><td colspan="3" style="padding:22px 16px;color:var(--ink-3)">Loading…</td></tr></tbody>
+      </table>
+      <div class="tbl-foot"><span id="psf-foot">&nbsp;</span></div>
+    </div>
+  </main>
+</Base>
+
+<style>#chart-psf{min-height:420px}</style>
+
+<script>
+  import echarts from '../lib/echarts';
+  import { regressionLinear, regressionLoess } from 'd3-regression';
+  import { query } from '../lib/db';
+  import { baseOption, axisLabel, splitLine, axisLine, ink2, line as lineCol, red } from '../lib/echartsTheme';
+  import { money, psf as fpsf, titleCase } from '../lib/format';
+
+  const $ = (id: string) => document.getElementById(id)!;
+  const sql = (s: string) => s.replace(/'/g, "''");
+  const START = '2020-01';
+
+  const SCATTER_CAP = 6000; // reservoir-sample the dots above this; stats/trend use the full set
+  const idxOf = (m: string) => (+m.slice(0, 4) - 2017) * 12 + (+m.slice(5, 7) - 1);
+  const dateOf = (idx: number) => new Date(2017 + Math.floor(idx / 12), idx % 12, 1).getTime();
+  const monthLabel = (idx: number) => `${2017 + Math.floor(idx / 12)}-${String((idx % 12) + 1).padStart(2, '0')}`;
+
+  const chart = echarts.init($('chart-psf'));
+  let regType: 'ols' | 'loess' = 'ols';
+  let fullMinIdx = 0, fullMaxIdx = 0; // full x-extent, for mapping zoom % → months
+  let zoomTimer: ReturnType<typeof setTimeout>;
+
+  type ScatterRow = { month: string; psf: number; address: string; storey: string; price: number; lease: number };
+  const toScatter = (rows: ScatterRow[]) =>
+    rows.map((r) => ({
+      value: [dateOf(idxOf(r.month)), Number(r.psf)],
+      address: r.address, month: r.month, storey: r.storey, price: Number(r.price), psf: Number(r.psf), lease: Number(r.lease),
+    }));
+  const sampleSql = (where: string) =>
+    `SELECT month, psf, address, storey_range storey, resale_price price, remaining_lease_years lease
+     FROM resale WHERE ${where} USING SAMPLE ${SCATTER_CAP} ROWS`;
+  const noteText = (total: number, suffix = '') =>
+    (total > SCATTER_CAP ? `random sample of ${SCATTER_CAP.toLocaleString()} of ${total.toLocaleString()}` : `all ${total.toLocaleString()}`) + ` transactions${suffix}`;
+  if (import.meta.env.DEV) {
+    (window as any).__psfTip = (i: number) => chart.dispatchAction({ type: 'showTip', seriesIndex: 0, dataIndex: i });
+    (window as any).__psfLineTip = (i: number) => chart.dispatchAction({ type: 'showTip', seriesIndex: 2, dataIndex: i });
+    (window as any).__psfZoom = (s: number, e: number) => chart.dispatchAction({ type: 'dataZoom', start: s, end: e });
+  }
+
+  function whereClause(): string {
+    const town = ($('sel-town') as HTMLSelectElement).value;
+    const street = ($('sel-street') as HTMLSelectElement).value;
+    const storey = ($('sel-storey') as HTMLSelectElement).value;
+    let w = `town='${sql(town)}' AND month >= '${START}' AND psf IS NOT NULL`;
+    if (street && street !== '__all') w += ` AND street_name='${sql(street)}'`;
+    if (storey !== 'all') {
+      const [lo, hi] = storey.split('-').map(Number);
+      w += ` AND storey_lower_bound >= ${lo} AND storey_lower_bound <= ${hi}`;
+    }
+    return w;
+  }
+
+  async function render() {
+    const where = whereClause();
+    const [sample, monthly] = await Promise.all([
+      query<ScatterRow>(sampleSql(where)),
+      query<{ month: string; med: number; n: number }>(
+        `SELECT month, median(psf) med, count(*) n FROM resale WHERE ${where} GROUP BY month ORDER BY month`,
+      ),
+    ]);
+
+    const title = `Price per sqft · ${titleCase(($('sel-town') as HTMLSelectElement).value)}`
+      + (($('sel-street') as HTMLSelectElement).value !== '__all' ? ` · ${titleCase(($('sel-street') as HTMLSelectElement).value)}` : '');
+    $('chart-title').textContent = title;
+
+    const totalTx = monthly.reduce((s, r) => s + Number(r.n), 0);
+    $('scatter-note').textContent = noteText(totalTx);
+
+    const pts = monthly.map((r) => ({ idx: idxOf(r.month), med: Number(r.med), month: r.month }));
+    // fitted value per month index
+    let fitted = new Map<number, number>();
+    let r2 = NaN;
+    if (pts.length >= 2) {
+      if (regType === 'ols') {
+        const reg = regressionLinear().x((d: any) => d.idx).y((d: any) => d.med);
+        const line = reg(pts);
+        r2 = (line as any).rSquared;
+        pts.forEach((p) => fitted.set(p.idx, (line as any).predict(p.idx)));
+      } else {
+        const reg = regressionLoess().x((d: any) => d.idx).y((d: any) => d.med).bandwidth(0.35);
+        const smooth = reg(pts) as [number, number][];
+        smooth.forEach(([x, y]) => fitted.set(x, y));
+        // generic R² on monthly medians
+        const mean = pts.reduce((s, p) => s + p.med, 0) / pts.length;
+        let ssRes = 0, ssTot = 0;
+        pts.forEach((p) => { const f = fitted.get(p.idx) ?? p.med; ssRes += (p.med - f) ** 2; ssTot += (p.med - mean) ** 2; });
+        r2 = ssTot ? 1 - ssRes / ssTot : NaN;
+      }
+    }
+
+    if (pts.length) { fullMinIdx = pts[0].idx; fullMaxIdx = pts[pts.length - 1].idx; }
+    const lineData = pts.map((p) => [dateOf(p.idx), Math.round(fitted.get(p.idx) ?? p.med)]);
+    const scatterData = toScatter(sample);
+
+    chart.setOption(
+      {
+        ...baseOption(),
+        legend: { top: 0, right: 0, textStyle: { fontSize: 12 }, data: ['Transactions', regType === 'ols' ? 'OLS trend' : 'LOWESS trend'] },
+        grid: { left: 60, right: 24, top: 40, bottom: 70, containLabel: false },
+        dataZoom: [
+          { type: 'inside' },
+          {
+            type: 'slider', height: 18, bottom: 16, borderColor: lineCol, showDataShadow: false,
+            fillerColor: 'rgba(254,1,43,.10)', handleStyle: { color: red }, moveHandleStyle: { color: red },
+            textStyle: { color: ink2, fontSize: 10 },
+          },
+        ],
+        tooltip: {
+          trigger: 'item',
+          backgroundColor: '#fffdf8', borderColor: lineCol, borderWidth: 1,
+          textStyle: { color: '#181410', fontSize: 13 },
+          extraCssText: 'box-shadow:0 12px 30px -18px rgba(24,20,16,.35);border-radius:10px',
+          formatter: (p: any) => {
+            if (p.seriesName === 'Transactions') {
+              const d = p.data;
+              return `<b>${titleCase(d.address)}</b><br/>${d.month} · ${d.storey}<br/><b>${money(d.price)}</b> · ${fpsf(d.psf)} psf · ${d.lease} yrs left`;
+            }
+            const dt = new Date(p.value[0]);
+            const ml = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+            return `${ml}<br/><b>${fpsf(p.value[1])}</b> fitted trend`;
+          },
+        },
+        xAxis: { type: 'time', axisLabel, axisLine, splitLine: { show: false } },
+        yAxis: { type: 'value', scale: true, axisLabel: { ...axisLabel, formatter: (v: number) => fpsf(v) }, splitLine },
+        series: [
+          { name: 'Transactions', type: 'scatter', symbolSize: 7, itemStyle: { color: ink2, opacity: 0.42, borderColor: '#fffdf8', borderWidth: 0.5 }, data: scatterData, z: 1 },
+          {
+            name: regType === 'ols' ? 'OLS trend' : 'LOWESS trend', type: 'line', smooth: regType === 'loess',
+            showSymbol: false, lineStyle: { color: red, width: 3 }, itemStyle: { color: red },
+            emphasis: { disabled: true }, data: lineData, z: 3,
+          },
+          {
+            // invisible hover layer: gives the clean line a hoverable hit area for the
+            // fitted-value tooltip — no dot, no highlight animation. Not shown in the legend.
+            name: '_trendhover', type: 'scatter', data: lineData, symbolSize: 22,
+            itemStyle: { color: red, opacity: 0 },
+            emphasis: { disabled: true },
+            z: 4,
+          },
+        ],
+      },
+      true,
+    );
+
+    // stat tiles
+    if (pts.length) {
+      const last = pts[pts.length - 1], prev = pts[pts.length - 2];
+      const lastF = fitted.get(last.idx) ?? last.med;
+      $('stat-month').textContent = last.month;
+      $('stat-psf').textContent = fpsf(lastF);
+      if (prev) {
+        const prevF = fitted.get(prev.idx) ?? prev.med;
+        const d = ((lastF - prevF) / prevF) * 100;
+        const cls = d >= 0.5 ? 'up' : d <= -0.5 ? 'down' : 'flat';
+        const arrow = d >= 0 ? '▲' : '▼';
+        $('stat-delta').innerHTML = `<span class="pill ${cls}">${arrow} ${Math.abs(d).toFixed(1)}%</span> vs last month`;
+      }
+      $('stat-r2').textContent = isNaN(r2) ? '—' : r2.toFixed(2);
+      $('stat-fit').textContent = isNaN(r2) ? '' : r2 > 0.75 ? 'strong fit' : r2 > 0.4 ? 'moderate fit' : 'weak fit';
+    }
+
+    // table (latest 8, desc)
+    const desc = [...pts].reverse();
+    $('tbody-psf').innerHTML = desc.slice(0, 8).map((p, i) => {
+      const f = fitted.get(p.idx) ?? p.med;
+      const nxt = desc[i + 1];
+      let mom = '';
+      if (nxt) {
+        const fn = fitted.get(nxt.idx) ?? nxt.med;
+        const d = ((f - fn) / fn) * 100;
+        const cls = d >= 0.5 ? 'up' : d <= -0.5 ? 'down' : 'flat';
+        mom = `<span class="pill ${cls}">${d >= 0 ? '▲' : '▼'} ${Math.abs(d).toFixed(1)}%</span>`;
+      }
+      return `<tr><td class="num-cell">${p.month}</td><td class="r price">${fpsf(f)}</td><td class="r">${mom}</td></tr>`;
+    }).join('');
+    $('psf-foot').textContent = `Showing ${Math.min(8, pts.length)} of ${pts.length} months`;
+  }
+
+  document.querySelectorAll<HTMLButtonElement>('#reg-toggle .chip').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#reg-toggle .chip').forEach((b) => b.classList.remove('on'));
+      btn.classList.add('on');
+      regType = btn.dataset.reg as 'ols' | 'loess';
+      render();
+    });
+  });
+
+  async function loadStreets() {
+    const town = ($('sel-town') as HTMLSelectElement).value;
+    const streets = await query<{ street_name: string }>(
+      `SELECT DISTINCT street_name FROM resale WHERE town='${sql(town)}' ORDER BY street_name`,
+    );
+    ($('sel-street') as HTMLSelectElement).innerHTML =
+      `<option value="__all" selected>All streets</option>` +
+      streets.map((s) => `<option value="${s.street_name}">${titleCase(s.street_name)}</option>`).join('');
+  }
+
+  (async () => {
+    const towns = await query<{ town: string }>(`SELECT DISTINCT town FROM resale ORDER BY town`);
+    ($('sel-town') as HTMLSelectElement).innerHTML = towns.map((t) => `<option${t.town === 'ANG MO KIO' ? ' selected' : ''}>${t.town}</option>`).join('');
+    await loadStreets();
+    $('sel-town').addEventListener('change', async () => { await loadStreets(); render(); });
+    $('sel-street').addEventListener('change', render);
+    $('sel-storey').addEventListener('change', render);
+    render();
+  })();
+
+  // semantic zoom: re-sample the scatter to the visible date window so zooming in reveals more detail
+  async function resampleForZoom() {
+    const dz = (chart.getOption().dataZoom as any[] | undefined)?.[0];
+    if (!dz || fullMaxIdx <= fullMinIdx) return;
+    const startPct = dz.start ?? 0, endPct = dz.end ?? 100;
+    if (startPct <= 0.5 && endPct >= 99.5) { // back to full range — restore the full-range sample + note
+      render();
+      return;
+    }
+    const span = fullMaxIdx - fullMinIdx;
+    const a = monthLabel(Math.floor(fullMinIdx + (span * startPct) / 100));
+    const b = monthLabel(Math.ceil(fullMinIdx + (span * endPct) / 100));
+    const where = `${whereClause()} AND month >= '${a}' AND month <= '${b}'`;
+    const [rows, cnt] = await Promise.all([
+      query<ScatterRow>(sampleSql(where)),
+      query<{ n: number }>(`SELECT count(*) n FROM resale WHERE ${where}`),
+    ]);
+    chart.setOption({ series: [{ data: toScatter(rows) }] });
+    $('scatter-note').textContent = noteText(Number(cnt[0].n), ' in view');
+  }
+  chart.on('datazoom', () => { clearTimeout(zoomTimer); zoomTimer = setTimeout(resampleForZoom, 350); });
+
+  window.addEventListener('resize', () => chart.resize());
+</script>

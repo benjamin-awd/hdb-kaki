@@ -1,0 +1,25 @@
+---
+// Sticky top navigation. `active` matches the label of the current page.
+interface Props {
+  active?: string;
+}
+const { active = '' } = Astro.props;
+
+const links = [
+  { label: 'Resale Visualizations', href: '/' },
+  { label: 'Town Analysis', href: '/town-analysis' },
+  { label: 'PSF Trends', href: '/psf-trends' },
+  { label: 'My Flat Insights', href: '/my-flat-insights' },
+];
+---
+
+<header class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="/"><span class="key">🔑</span> HDB&nbsp;Kaki</a>
+    <nav class="nav-links">
+      {links.map((l) => (
+        <a href={l.href} class={l.label === active ? 'active' : ''}>{l.label}</a>
+      ))}
+    </nav>
+  </div>
+</header>
