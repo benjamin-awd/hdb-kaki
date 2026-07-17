@@ -1,8 +1,11 @@
 ---
 import Base from '../layouts/Base.astro';
+const base = import.meta.env.BASE_URL;
 ---
 
 <Base active="Resale Visualizations" title="Resale Visualizations — HDB Kaki">
+  <!-- Start the data fetch during HTML parse, parallel to the JS, so charts paint sooner. -->
+  <link slot="head" rel="preload" as="fetch" href={`${base}data/overview.json`} crossorigin="anonymous" />
   <section class="hero">
     <div class="wrap">
       <span class="eyebrow rise"><span class="dot"></span> Market Overview</span>
