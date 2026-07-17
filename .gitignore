@@ -3,3 +3,4 @@ __pycache__
 test.ipynb
 uv.lock
 data/df.parquet
+wireframes/

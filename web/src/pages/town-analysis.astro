@@ -1,0 +1,236 @@
+---
+import Base from '../layouts/Base.astro';
+---
+
+<Base active="Town Analysis" title="Town Analysis — HDB Kaki">
+  <section class="hero">
+    <div class="wrap">
+      <span class="eyebrow rise"><span class="dot"></span> Explore by Town</span>
+      <h1 class="title rise" style="animation-delay:.05s">Where the value<br /><em>hides</em>.</h1>
+      <p class="lede rise" style="animation-delay:.1s">
+        Map every recent transaction in a town, banded low / mid / high against its own median —
+        then see which flats fetch the very top prices.
+      </p>
+    </div>
+  </section>
+
+  <main class="wrap pagepad">
+    <!-- 01 · PRICE MAP -->
+    <div class="sec-head rise">
+      <span class="num">01</span><h2>Price map</h2>
+      <span class="hint">Each pin is a sale in the last 24 months, coloured relative to the town median.</span>
+    </div>
+
+    <div class="controls" style="margin-bottom:16px">
+      <span class="field-select"><span class="lab">Town</span><select id="sel-town"></select></span>
+      <span class="field-select"><span class="lab">Flat type</span><select id="sel-flat"></select></span>
+      <span class="field-select"><span class="lab">Threshold</span>
+        <select id="sel-thr"><option value="0.05">±5%</option><option value="0.1" selected>±10%</option><option value="0.15">±15%</option></select>
+      </span>
+    </div>
+
+    <div class="split" style="grid-template-columns:1.55fr 1fr">
+      <div id="map" class="map-real"></div>
+      <div class="card" style="padding:24px">
+        <div class="cap">Median resale price</div>
+        <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:4px">
+          <span id="median-price" style="font-family:'Fraunces';font-weight:600;font-size:38px;letter-spacing:-.02em">—</span>
+        </div>
+        <div id="map-sub" style="font-size:13px;color:var(--ink-3);margin-bottom:22px">&nbsp;</div>
+        <div style="height:1px;background:var(--line);margin:6px 0 18px"></div>
+        <div class="cap" style="margin-bottom:8px">Distribution</div>
+        <div class="cat-line"><span class="dot" style="background:var(--red)"></span>Above median<span class="bar"><span id="bar-above" style="background:var(--red)"></span></span><span class="amt" id="amt-above">—</span></div>
+        <div class="cat-line"><span class="dot" style="background:#d98a2b"></span>Around median<span class="bar"><span id="bar-around" style="background:#d98a2b"></span></span><span class="amt" id="amt-around">—</span></div>
+        <div class="cat-line"><span class="dot" style="background:var(--good)"></span>Below median<span class="bar"><span id="bar-below" style="background:var(--good)"></span></span><span class="amt" id="amt-below">—</span></div>
+      </div>
+    </div>
+
+    <!-- 02 · TOP SALE PER TOWN -->
+    <div class="sec-head"><span class="num">02</span><h2>Top sale in each town</h2>
+      <span class="hint">Highest resale price recorded per town for the selected flat type, vs the cross-town median.</span></div>
+    <div class="card chart-card">
+      <div class="chart-head"><div class="chart-title" id="highest-title">Highest recorded resale price by town</div></div>
+      <div id="chart-highest" style="width:100%;height:460px"></div>
+    </div>
+
+    <!-- 03 · DATA TABLE -->
+    <div class="sec-head"><span class="num">03</span><h2>Data behind the map</h2>
+      <span class="hint">Every point currently in view.</span></div>
+    <div class="card" style="overflow:hidden">
+      <table class="comp">
+        <thead><tr><th>Sold</th><th>Address</th><th class="r">Price</th><th class="r">PSF</th><th class="r">Lease left</th><th>Band</th></tr></thead>
+        <tbody id="tbody-town"><tr><td colspan="6" style="padding:22px 16px;color:var(--ink-3)">Loading…</td></tr></tbody>
+      </table>
+      <div class="tbl-foot"><span id="town-foot">&nbsp;</span><a class="ghost" href="#" id="dl-town">Download data in view (CSV) ↓</a></div>
+    </div>
+  </main>
+</Base>
+
+<style>
+  .map-real{height:472px;border-radius:var(--radius);border:1px solid var(--line);box-shadow:var(--shadow);overflow:hidden;z-index:0}
+  .cap{font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3)}
+  .cat-line{display:flex;align-items:center;gap:10px;margin:14px 0;font-size:13.5px}
+  .cat-line .dot{width:10px;height:10px;border-radius:50%;flex:none}
+  .cat-line .bar{flex:1;height:8px;border-radius:999px;background:#efeadf;overflow:hidden}
+  .cat-line .bar span{display:block;height:100%;width:0}
+  .cat-line .amt{width:52px;text-align:right;font-family:'IBM Plex Mono';font-size:12.5px;color:var(--ink-2)}
+  /* Leaflet hover tooltip on-brand */
+  :global(.leaflet-container){font-family:'Public Sans',sans-serif;background:#f3ede1}
+  :global(.leaflet-tooltip.hdb-tip){
+    background:var(--paper-2);border:1px solid var(--line);border-radius:10px;
+    box-shadow:var(--shadow);color:var(--ink);font-family:'Public Sans',sans-serif;
+    font-size:13px;padding:9px 12px;line-height:1.5;white-space:nowrap;
+  }
+  :global(.leaflet-tooltip.hdb-tip b){font-weight:600}
+  :global(.leaflet-tooltip-top.hdb-tip::before){border-top-color:var(--paper-2)}
+</style>
+
+<script>
+  import 'leaflet/dist/leaflet.css';
+  import 'leaflet.markercluster/dist/MarkerCluster.css';
+  import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
+  import L from 'leaflet';
+  import 'leaflet.markercluster';
+  import echarts from '../lib/echarts';
+  import { query } from '../lib/db';
+  import { baseOption, palette, axisLabel, splitLine, axisLine, ink3, ink } from '../lib/echartsTheme';
+  import { money, moneyShort, psf as fpsf, titleCase } from '../lib/format';
+
+  const $ = (id: string) => document.getElementById(id)!;
+  const BAND_COLOR: Record<string, string> = { above: '#fe012b', around: '#d98a2b', below: '#1f7a4d' };
+  const sql = (s: string) => s.replace(/'/g, "''");
+
+  type Row = { lat: number; lng: number; price: number; address: string; month: string; storey: string; psf: number; lease: number; band?: string };
+  let currentRows: Row[] = [];
+
+  // ---- Leaflet map (created once) ----
+  const map = L.map('map', { scrollWheelZoom: false, attributionControl: true }).setView([1.3521, 103.8198], 12);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    attribution: '© OpenStreetMap © CARTO', maxZoom: 19, subdomains: 'abcd',
+  }).addTo(map);
+  const cluster = (L as any).markerClusterGroup({ maxClusterRadius: 45, chunkedLoading: true });
+  map.addLayer(cluster);
+
+  function median(nums: number[]): number {
+    if (!nums.length) return 0;
+    const s = [...nums].sort((a, b) => a - b);
+    const m = Math.floor(s.length / 2);
+    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+  }
+
+  async function renderMap() {
+    const town = (($('sel-town') as HTMLSelectElement).value) || 'ANG MO KIO';
+    const flat = ($('sel-flat') as HTMLSelectElement).value;
+    const thr = parseFloat(($('sel-thr') as HTMLSelectElement).value);
+
+    const rows = await query<Row>(
+      `SELECT latitude lat, longitude lng, resale_price price, address, month,
+              storey_range storey, psf, remaining_lease_years lease
+       FROM resale
+       WHERE town='${sql(town)}' AND flat_type='${sql(flat)}'
+         AND month >= strftime(current_date - INTERVAL 24 MONTH, '%Y-%m')
+         AND latitude IS NOT NULL
+       ORDER BY month DESC, resale_price DESC`,
+    ).then((rs) => rs.map((r) => ({ ...r, price: Number(r.price), psf: Number(r.psf), lat: Number(r.lat), lng: Number(r.lng), lease: Number(r.lease) })));
+
+    const med = median(rows.map((r) => r.price));
+    const lo = med * (1 - thr), hi = med * (1 + thr);
+    for (const r of rows) r.band = r.price < lo ? 'below' : r.price > hi ? 'above' : 'around';
+    currentRows = rows;
+
+    // markers
+    cluster.clearLayers();
+    for (const r of rows) {
+      L.circleMarker([r.lat, r.lng], {
+        radius: 6, weight: 1.5, color: '#fff', fillColor: BAND_COLOR[r.band!], fillOpacity: 0.9,
+      })
+        .bindTooltip(
+          `<b>${titleCase(r.address)}</b><br/>${r.month} · ${r.storey}<br/><b>${money(r.price)}</b> · ${fpsf(r.psf)} psf · ${r.lease} yrs left`,
+          { direction: 'top', offset: [0, -6], opacity: 1, className: 'hdb-tip' },
+        )
+        .addTo(cluster);
+    }
+    if (rows.length) {
+      const b = L.latLngBounds(rows.map((r) => [r.lat, r.lng] as [number, number]));
+      map.fitBounds(b.pad(0.1));
+    }
+    setTimeout(() => map.invalidateSize(), 50);
+
+    // summary
+    const counts = { above: 0, around: 0, below: 0 } as Record<string, number>;
+    rows.forEach((r) => counts[r.band!]++);
+    const max = Math.max(1, ...Object.values(counts));
+    $('median-price').textContent = med ? money(med) : '—';
+    $('map-sub').textContent = `${titleCase(town)} · ${titleCase(flat)} · ${rows.length.toLocaleString()} sales (last 24 mo)`;
+    (['above', 'around', 'below'] as const).forEach((k) => {
+      ($('bar-' + k) as HTMLElement).style.width = (counts[k] / max) * 100 + '%';
+      $('amt-' + k).textContent = counts[k].toLocaleString();
+    });
+
+    // table (top 12)
+    $('tbody-town').innerHTML = rows.slice(0, 12).map((r) => {
+      const pill = r.band === 'below' ? 'up' : r.band === 'above' ? 'down' : 'flat';
+      const lbl = r.band![0].toUpperCase() + r.band!.slice(1);
+      return `<tr><td class="num-cell">${r.month}</td><td>${titleCase(r.address)}</td>
+        <td class="r price">${money(r.price)}</td><td class="r num-cell">${fpsf(r.psf)}</td>
+        <td class="r num-cell">${r.lease} yrs</td><td><span class="pill ${pill}">${lbl}</span></td></tr>`;
+    }).join('');
+    $('town-foot').textContent = `Showing ${Math.min(12, rows.length)} of ${rows.length.toLocaleString()} sales in view`;
+  }
+
+  // ---- highest sale per town ----
+  const highestChart = echarts.init($('chart-highest'));
+  async function renderHighest() {
+    const flat = ($('sel-flat') as HTMLSelectElement).value;
+    const rows = await query<{ town: string; mx: number }>(
+      `SELECT town, max(resale_price) mx FROM resale WHERE flat_type='${sql(flat)}' GROUP BY town ORDER BY mx DESC LIMIT 15`,
+    ).then((rs) => rs.map((r) => ({ town: r.town, mx: Number(r.mx) })));
+    const med = median(rows.map((r) => r.mx));
+    rows.reverse(); // ECharts horizontal bar draws bottom-up
+    highestChart.setOption({
+      ...baseOption(),
+      grid: { left: 120, right: 70, top: 12, bottom: 30, containLabel: false },
+      tooltip: { trigger: 'item', valueFormatter: (v: number) => money(v) },
+      xAxis: { type: 'value', axisLabel: { ...axisLabel, formatter: (v: number) => moneyShort(v) }, splitLine },
+      yAxis: { type: 'category', data: rows.map((r) => titleCase(r.town)), axisLabel: { color: '#5b544a', fontSize: 12 }, axisLine, axisTick: { show: false } },
+      series: [{
+        type: 'bar', barWidth: 16,
+        itemStyle: { color: (p: any) => (rows[p.dataIndex].mx >= med ? palette[0] : palette[5]), borderRadius: 4 },
+        label: { show: true, position: 'right', formatter: (p: any) => moneyShort(p.value), color: ink3, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 },
+        markLine: {
+          symbol: 'none', silent: true,
+          lineStyle: { color: ink3, type: 'dashed' },
+          data: [{ xAxis: med }],
+          label: { formatter: `median ${moneyShort(med)}`, color: ink3, fontSize: 11 },
+        },
+        data: rows.map((r) => r.mx),
+      }],
+    });
+  }
+
+  // ---- CSV download ----
+  $('dl-town').addEventListener('click', (e) => {
+    e.preventDefault();
+    const head = 'month,address,price,psf,remaining_lease_years,band\n';
+    const body = currentRows.map((r) => `${r.month},"${r.address}",${r.price},${r.psf.toFixed(0)},${r.lease},${r.band}`).join('\n');
+    const url = URL.createObjectURL(new Blob([head + body], { type: 'text/csv' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = 'town-analysis.csv'; a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  // ---- boot: populate selects then render ----
+  (async () => {
+    const towns = await query<{ town: string }>(`SELECT DISTINCT town FROM resale ORDER BY town`);
+    const flats = await query<{ flat_type: string }>(`SELECT DISTINCT flat_type FROM resale ORDER BY flat_type`);
+    ($('sel-town') as HTMLSelectElement).innerHTML = towns.map((t) => `<option${t.town === 'ANG MO KIO' ? ' selected' : ''}>${t.town}</option>`).join('');
+    ($('sel-flat') as HTMLSelectElement).innerHTML = flats.map((f) => `<option${f.flat_type === '4 ROOM' ? ' selected' : ''}>${f.flat_type}</option>`).join('');
+    $('sel-town').addEventListener('change', renderMap);
+    $('sel-thr').addEventListener('change', renderMap);
+    $('sel-flat').addEventListener('change', () => { renderMap(); renderHighest(); });
+    await renderMap();
+    await renderHighest();
+  })();
+
+  window.addEventListener('resize', () => { highestChart.resize(); map.invalidateSize(); });
+</script>

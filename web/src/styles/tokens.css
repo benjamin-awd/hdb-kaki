@@ -1,0 +1,18 @@
+/* Design tokens — extracted verbatim from wireframes/insights.html :root.
+   Single source of truth for the HDB Kaki visual system. */
+:root {
+  --paper: #f6f2ea;
+  --paper-2: #fffdf8;
+  --ink: #181410;
+  --ink-2: #5b544a;
+  --ink-3: #8c8479;
+  --line: #e4ddd0;
+  --red: #fe012b;
+  --red-ink: #c9001f;
+  --red-wash: #fdeef0;
+  --good: #1f7a4d;
+  --good-wash: #e6f2ea;
+  --radius: 14px;
+  --shadow: 0 1px 2px rgba(24, 20, 16, 0.04), 0 12px 30px -18px rgba(24, 20, 16, 0.35);
+  --shadow-lg: 0 2px 4px rgba(24, 20, 16, 0.05), 0 40px 80px -40px rgba(24, 20, 16, 0.4);
+}

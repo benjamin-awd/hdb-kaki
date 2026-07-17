@@ -1,0 +1,68 @@
+name: Deploy web
+
+# Builds the static Astro site (web/) and deploys it to Cloudflare Pages.
+#
+# Data shards are NOT committed (see web/.gitignore); they are regenerated here
+# from data/df.parquet, which the "Auto-update" ETL publishes to the `data`
+# GitHub Release. This means every deploy — whether triggered by fresh data or a
+# code change — rebuilds against the latest data without needing the ETL/API key.
+#
+# One-time setup required before this runs green:
+#   1. Create the Pages project once:  cd web && wrangler pages deploy
+#      (or `wrangler pages project create hdb-kaki`), production branch = main.
+#   2. Add repo secrets: CLOUDFLARE_API_TOKEN (Pages:Edit) and CLOUDFLARE_ACCOUNT_ID.
+
+on:
+  # Code changes to the site.
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - "webapp/update/emit_web.py"
+      - ".github/workflows/deploy.yaml"
+  # Fresh data: run after the daily ETL finishes.
+  workflow_run:
+    workflows: ["Auto-update"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Skip when chained off a failed ETL run; always run for push / manual.
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Download latest parquet from release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download data --pattern df.parquet --dir data --clobber
+
+      - name: Emit web data artifacts (year-sharded parquet + manifest)
+        run: uv run --with polars webapp/update/emit_web.py
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install and build site
+        working-directory: web
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: web
+          # Reads pages_build_output_dir (./dist) and project name from wrangler.toml.
+          command: pages deploy --branch=main
