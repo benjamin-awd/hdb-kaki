@@ -1,0 +1,7 @@
+# Cloudflare Pages config for the HDB Kaki static site.
+# Static-only project: Astro builds to ./dist, which Pages serves directly.
+# Deploy locally or from CI with:  wrangler pages deploy
+# (reads pages_build_output_dir below — no need to pass the dir explicitly).
+name = "hdb-kaki"
+compatibility_date = "2026-07-17"
+pages_build_output_dir = "./dist"
