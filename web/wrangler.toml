@@ -4,7 +4,9 @@
 # no `main` script, requests are answered purely from the asset store — the
 # `_headers` file in ./dist still drives our per-asset Cache-Control policy.
 # Deploy locally or from CI with:  wrangler deploy
-name = "hdb-kaki"
+# Worker name is the first URL label: app.<account-subdomain>.workers.dev
+# (account subdomain is "hdb-kaki"), i.e. https://app.hdb-kaki.workers.dev
+name = "app"
 compatibility_date = "2026-07-17"
 
 [assets]
