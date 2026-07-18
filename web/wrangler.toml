@@ -1,7 +1,13 @@
-# Cloudflare Pages config for the HDB Kaki static site.
-# Static-only project: Astro builds to ./dist, which Pages serves directly.
-# Deploy locally or from CI with:  wrangler pages deploy
-# (reads pages_build_output_dir below — no need to pass the dir explicitly).
+# Cloudflare Workers config for the HDB Kaki static site.
+# Assets-only Worker (no server code): Astro builds to ./dist, which the Workers
+# static-assets runtime serves directly from Cloudflare's edge. Because there is
+# no `main` script, requests are answered purely from the asset store — the
+# `_headers` file in ./dist still drives our per-asset Cache-Control policy.
+# Deploy locally or from CI with:  wrangler deploy
 name = "hdb-kaki"
 compatibility_date = "2026-07-17"
-pages_build_output_dir = "./dist"
+
+[assets]
+directory = "./dist"
+# Default html_handling ("auto-trailing-slash") maps /town-analysis ->
+# /town-analysis/index.html, matching Astro's directory-style static output.
