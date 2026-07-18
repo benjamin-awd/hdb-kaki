@@ -18,8 +18,10 @@ Planning-area -> HDB-town mapping (the price data's ``town`` values):
   * The 11 Central Area planning areas (flagged CA_IND='Y': Downtown Core, Outram,
     Rochor, Museum, Newton, Orchard, River Valley, Singapore River, Marina South,
     Marina East, Straits View) dissolve into the single HDB "CENTRAL AREA" town.
-Planning areas with no HDB resale town (Tuas, Changi, water catchments, offshore
-islands, ...) are dropped — they carry no resale data to colour.
+Planning areas with no HDB resale town (Tuas, Changi, Paya Lebar, water catchments,
+...) are kept as neutral "no data" base geometry so the map stays a complete island —
+many sit inside the landmass and dropping them would punch holes through it. Only the
+offshore island groups are dropped, to keep the map's frame tight on the mainland.
 """
 
 from __future__ import annotations
@@ -91,30 +93,51 @@ def build() -> None:
         "TOA PAYOH", "WOODLANDS", "YISHUN",
     }
 
-    # Collect each town's constituent planning-area polygons for dissolving.
+    # Collect each town's constituent planning-area polygons for dissolving, and keep
+    # the remaining (non-HDB) mainland areas so the map stays a complete island — many
+    # of them (Central Water Catchment, Paya Lebar, Novena, Tanglin, ...) sit *inside*
+    # the landmass, so dropping them would punch holes through it. They carry no resale
+    # data and render as neutral "no data" grey. The offshore island groups are dropped:
+    # they're small specks far from the mainland that would only widen the map's frame.
+    DROP = {"NORTH-EASTERN ISLANDS", "SOUTHERN ISLANDS", "WESTERN ISLANDS"}
+
     parts: dict[str, list] = {}
+    others: list[tuple[str, object]] = []
     for f in src["features"]:
-        town = _town_for(f["properties"])
+        props = f["properties"]
+        town = _town_for(props)
         if town in valid:
             parts.setdefault(town, []).append(shape(f["geometry"]))
+        elif props["PLN_AREA_N"].strip().upper() not in DROP:
+            others.append((props["PLN_AREA_N"].strip().upper(), shape(f["geometry"])))
 
     missing = valid - parts.keys()
     if missing:
         raise SystemExit(f"No planning-area geometry for towns: {sorted(missing)}")
 
     features = []
+    # HDB towns (dissolved) — hdb:true, keyed by town so overview.json medians join on.
     for town in sorted(parts):
         dissolved = unary_union(parts[town]).simplify(SIMPLIFY_TOLERANCE)
         features.append({
             "type": "Feature",
-            "properties": {"name": town},
+            "properties": {"name": town, "hdb": True},
             "geometry": _round(mapping(dissolved), COORD_PRECISION),
+        })
+    # Non-HDB areas — hdb:false, drawn as no-data base geometry only.
+    for name, geom in sorted(others):
+        features.append({
+            "type": "Feature",
+            "properties": {"name": name, "hdb": False},
+            "geometry": _round(mapping(geom.simplify(SIMPLIFY_TOLERANCE)), COORD_PRECISION),
         })
 
     fc = {"type": "FeatureCollection", "features": features}
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(fc, separators=(",", ":")))
-    print(f"Wrote {OUT.relative_to(ROOT)} ({OUT.stat().st_size / 1024:.1f} KB, {len(features)} towns)")
+    n_hdb = len(parts)
+    print(f"Wrote {OUT.relative_to(ROOT)} ({OUT.stat().st_size / 1024:.1f} KB, "
+          f"{n_hdb} towns + {len(features) - n_hdb} no-data areas)")
 
 
 if __name__ == "__main__":

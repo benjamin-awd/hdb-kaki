@@ -206,7 +206,7 @@ try {
         trigger: 'item',
         formatter: (p: any) => {
           const d = byName.get(p.name);
-          if (!d) return `<b>${titleCase(p.name)}</b><br/>No 4-room sales`;
+          if (!d) return `<b>${titleCase(p.name)}</b><br/>No HDB resale data`;
           return `<b>${titleCase(p.name)}</b><br/>Median ${money(d.value)}`
             + `<br/><span style="color:${ink3}">${d.n.toLocaleString()} sales · last 12 mo</span>`;
         },
