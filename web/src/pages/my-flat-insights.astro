@@ -255,10 +255,11 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
   const pillClass = (d: number) => (d >= 1 ? 'up' : d <= -1 ? 'down' : 'flat');
   const arrow = (d: number) => (d >= 0 ? '▲' : '▼');
 
-  // ---- Leaflet map ----
-  const map = L.map('ins-map', { scrollWheelZoom: false }).setView([1.3521, 103.8198], 12);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { attribution: '© OpenStreetMap © CARTO', maxZoom: 19, subdomains: 'abcd' }).addTo(map);
-  let layer = L.layerGroup().addTo(map);
+  // Instances persist across Astro client-side navigations; init() (re)creates them
+  // on each arrival and cleanup() tears them down. `active` gates the shared resize.
+  let map!: L.Map;
+  let layer!: L.LayerGroup;
+  let active = false;
 
   // ---- resolve a postal code → block metadata + populate dependent fields ----
   async function resolveBlock() {
@@ -326,6 +327,7 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
       `SELECT median(psf) psf, median(resale_price) price, median(floor_area_sqft) area
        FROM resale WHERE flat_type='${sql(flat)}' AND month >= strftime(current_date - INTERVAL 12 MONTH, '%Y-%m')`);
     const islandPsf = Number(island?.psf || 0), islandPrice = Number(island?.price || 0), islandArea = Number(island?.area || 0);
+    if (!active) return; // navigated away mid-query — don't touch the torn-down map/DOM
 
     // valuation — base median PSF over all comps, then adjust for the chosen storey band
     const baseMedPsf = med(comps.map((c) => c.psf));
@@ -414,30 +416,55 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
         .bindTooltip(`<b>Your flat</b> · ${titleCase(block.address)}<br/><b>${money(estimate)}</b> est · ${fpsf(medPsf)} psf`, { direction: 'top', offset: [0, -8], opacity: 1, className: 'hdb-tip' })
         .addTo(layer);
     }
-    if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.15));
-    setTimeout(() => map.invalidateSize(), 50);
+    if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.15), { animate: false }); // no rAF anim → no teardown race
+    setTimeout(() => { if (active) map.invalidateSize(); }, 50); // guard: may fire after teardown
   }
 
-  // ---- wiring ----
-  ($('f-postal') as HTMLInputElement).addEventListener('change', async () => { if (await resolveBlock()) compute(); });
-  $('f-flat').addEventListener('change', async () => { await onFlatChange(); compute(); });
-  ['f-storey', 'f-area', 'f-lease'].forEach((id) => $(id).addEventListener('change', compute));
-  $('get-insights').addEventListener('click', async () => {
-    const cur = parseInt(($('f-postal') as HTMLInputElement).value, 10);
-    // re-resolve only if the postal changed (avoid clobbering the user's edited fields)
-    if (cur !== resolvedPostal) { if (!(await resolveBlock())) return; }
-    await compute();
-    document.querySelector('.results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  });
+  // ---- lifecycle: (re)build on each navigation, tear down on departure ----
+  function onResize() {
+    if (!active) return;
+    map.invalidateSize();
+  }
 
-  (async () => {
+  function cleanup() {
+    if (!active) return; // only when leaving this page — before-swap is global, avoid double-teardown
+    active = false;
+    map?.remove();
+  }
+
+  async function init() {
+    if (!document.getElementById('ins-map')) return; // not this page — astro:page-load is global
+    active = true;
+    block = { town: '', street: '', address: '', model: '', lc: 0 };
+    userLatLng = null;
+    resolvedPostal = 0;
+
+    map = L.map('ins-map', { scrollWheelZoom: false }).setView([1.3521, 103.8198], 12);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { attribution: '© OpenStreetMap © CARTO', maxZoom: 19, subdomains: 'abcd' }).addTo(map);
+    layer = L.layerGroup().addTo(map);
+
+    // ---- wiring ----
+    ($('f-postal') as HTMLInputElement).addEventListener('change', async () => { if (await resolveBlock()) compute(); });
+    $('f-flat').addEventListener('change', async () => { await onFlatChange(); compute(); });
+    ['f-storey', 'f-area', 'f-lease'].forEach((id) => $(id).addEventListener('change', compute));
+    $('get-insights').addEventListener('click', async () => {
+      const cur = parseInt(($('f-postal') as HTMLInputElement).value, 10);
+      // re-resolve only if the postal changed (avoid clobbering the user's edited fields)
+      if (cur !== resolvedPostal) { if (!(await resolveBlock())) return; }
+      await compute();
+      document.querySelector('.results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    // ---- default valuation on load ----
     const [def] = await query<{ postal: number }>(`SELECT postal FROM resale WHERE postal IS NOT NULL GROUP BY postal ORDER BY count(*) DESC LIMIT 1`);
     ($('f-postal') as HTMLInputElement).value = String(def.postal);
     if (await resolveBlock()) {
       $('resolved').innerHTML = `Matched to <b>${titleCase(block.address)}</b>, ${titleCase(block.town)}`;
       await compute();
     }
-  })();
+  }
 
-  window.addEventListener('resize', () => map.invalidateSize());
+  window.addEventListener('resize', onResize);
+  document.addEventListener('astro:page-load', init);
+  document.addEventListener('astro:before-swap', cleanup);
 </script>

@@ -118,13 +118,13 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
   type Row = { lat: number; lng: number; price: number; address: string; month: string; storey: string; psf: number; lease: number; band?: string };
   let currentRows: Row[] = [];
 
-  // ---- Leaflet map (created once) ----
-  const map = L.map('map', { scrollWheelZoom: false, attributionControl: true }).setView([1.3521, 103.8198], 12);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-    attribution: '© OpenStreetMap © CARTO', maxZoom: 19, subdomains: 'abcd',
-  }).addTo(map);
-  const cluster = (L as any).markerClusterGroup({ maxClusterRadius: 45, chunkedLoading: true });
-  map.addLayer(cluster);
+  // Instances persist across Astro client-side navigations; init() (re)creates them
+  // on each arrival and cleanup() tears them down. `active` gates the shared resize
+  // handler so it never touches a torn-down map/chart.
+  let map!: L.Map;
+  let cluster: any;
+  let highestChart!: ReturnType<typeof echarts.init>;
+  let active = false;
 
   function median(nums: number[]): number {
     if (!nums.length) return 0;
@@ -152,6 +152,7 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
     const lo = med * (1 - thr), hi = med * (1 + thr);
     for (const r of rows) r.band = r.price < lo ? 'below' : r.price > hi ? 'above' : 'around';
     currentRows = rows;
+    if (!active) return; // navigated away mid-query — don't touch the torn-down map/DOM
 
     // markers
     cluster.clearLayers();
@@ -167,9 +168,9 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
     }
     if (rows.length) {
       const b = L.latLngBounds(rows.map((r) => [r.lat, r.lng] as [number, number]));
-      map.fitBounds(b.pad(0.1));
+      map.fitBounds(b.pad(0.1), { animate: false }); // no rAF anim → no race if we navigate away mid-zoom
     }
-    setTimeout(() => map.invalidateSize(), 50);
+    setTimeout(() => { if (active) map.invalidateSize(); }, 50); // guard: may fire after teardown
 
     // summary
     const counts = { above: 0, around: 0, below: 0 } as Record<string, number>;
@@ -194,7 +195,6 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
   }
 
   // ---- highest sale per town ----
-  const highestChart = echarts.init($('chart-highest'));
   async function renderHighest() {
     const flat = ($('sel-flat') as HTMLSelectElement).value;
     const rows = await query<{ town: string; mx: number }>(
@@ -223,19 +223,45 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
     });
   }
 
-  // ---- CSV download ----
-  $('dl-town').addEventListener('click', (e) => {
-    e.preventDefault();
-    const head = 'month,address,price,psf,remaining_lease_years,band\n';
-    const body = currentRows.map((r) => `${r.month},"${r.address}",${r.price},${r.psf.toFixed(0)},${r.lease},${r.band}`).join('\n');
-    const url = URL.createObjectURL(new Blob([head + body], { type: 'text/csv' }));
-    const a = document.createElement('a');
-    a.href = url; a.download = 'town-analysis.csv'; a.click();
-    URL.revokeObjectURL(url);
-  });
+  // ---- lifecycle: (re)build on each navigation, tear down on departure ----
+  function onResize() {
+    if (!active) return;
+    highestChart.resize();
+    map.invalidateSize();
+  }
 
-  // ---- boot: populate selects then render ----
-  (async () => {
+  function cleanup() {
+    if (!active) return; // only when leaving this page — before-swap is global, avoid double-teardown
+    active = false;
+    highestChart?.dispose();
+    map?.remove();
+  }
+
+  async function init() {
+    if (!document.getElementById('map')) return; // not this page — astro:page-load is global
+    active = true;
+    currentRows = [];
+
+    map = L.map('map', { scrollWheelZoom: false, attributionControl: true }).setView([1.3521, 103.8198], 12);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      attribution: '© OpenStreetMap © CARTO', maxZoom: 19, subdomains: 'abcd',
+    }).addTo(map);
+    cluster = (L as any).markerClusterGroup({ maxClusterRadius: 45, chunkedLoading: true });
+    map.addLayer(cluster);
+    highestChart = echarts.init($('chart-highest'));
+
+    // ---- CSV download ----
+    $('dl-town').addEventListener('click', (e) => {
+      e.preventDefault();
+      const head = 'month,address,price,psf,remaining_lease_years,band\n';
+      const body = currentRows.map((r) => `${r.month},"${r.address}",${r.price},${r.psf.toFixed(0)},${r.lease},${r.band}`).join('\n');
+      const url = URL.createObjectURL(new Blob([head + body], { type: 'text/csv' }));
+      const a = document.createElement('a');
+      a.href = url; a.download = 'town-analysis.csv'; a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    // ---- populate selects then render ----
     const towns = await query<{ town: string }>(`SELECT DISTINCT town FROM resale ORDER BY town`);
     const flats = await query<{ flat_type: string }>(`SELECT DISTINCT flat_type FROM resale ORDER BY flat_type`);
     ($('sel-town') as HTMLSelectElement).innerHTML = towns.map((t) => `<option${t.town === 'ANG MO KIO' ? ' selected' : ''}>${t.town}</option>`).join('');
@@ -245,7 +271,9 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
     $('sel-flat').addEventListener('change', () => { renderMap(); renderHighest(); });
     await renderMap();
     await renderHighest();
-  })();
+  }
 
-  window.addEventListener('resize', () => { highestChart.resize(); map.invalidateSize(); });
+  window.addEventListener('resize', onResize);
+  document.addEventListener('astro:page-load', init);
+  document.addEventListener('astro:before-swap', cleanup);
 </script>
