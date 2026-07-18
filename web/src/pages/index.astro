@@ -100,7 +100,7 @@ try {
 
 <script>
   import echarts from '../lib/echarts';
-  import { baseOption, palette, axisLabel, splitLine, axisLine, ink3 } from '../lib/echartsTheme';
+  import { baseOption, palette, axisLabel, splitLine, axisLine, ink3, mono } from '../lib/echartsTheme';
   import { money, moneyShort, psf as fpsf, titleCase } from '../lib/format';
 
   // Landing renders from a single precomputed aggregate (webapp/update/emit_web.py),
@@ -232,7 +232,7 @@ try {
       series: [{
         type: 'bar', barWidth: 22,
         itemStyle: { color: (p: any) => [palette[0], palette[3], palette[2]][p.dataIndex], borderRadius: 5 },
-        label: { show: true, position: 'right', formatter: (p: any) => Number(p.value).toLocaleString(), color: ink3, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 },
+        label: { show: true, position: 'right', formatter: (p: any) => Number(p.value).toLocaleString(), color: ink3, fontFamily: mono, fontSize: 11 },
         data: counts.map((c) => Number(c.n)),
       }],
     });

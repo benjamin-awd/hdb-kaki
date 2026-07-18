@@ -4,7 +4,7 @@
 *{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth}
 body{
-  font-family:'Public Sans',sans-serif;
+  font-family:var(--font-sans);
   background:var(--paper);
   color:var(--ink);
   line-height:1.5;
@@ -15,7 +15,7 @@ body{
   background-attachment:fixed;
   min-height:100vh;
 }
-.mono{font-family:'IBM Plex Mono',monospace;font-feature-settings:"tnum" 1}
+.mono{font-family:var(--font-mono);font-feature-settings:"tnum" 1}
 .wrap{max-width:1160px;margin:0 auto;padding:0 28px}
 
 /* ---------- top bar ---------- */
@@ -26,7 +26,7 @@ header.nav{
   position:sticky;top:0;z-index:50;
 }
 .nav-in{display:flex;align-items:center;justify-content:space-between;height:66px}
-.brand{display:flex;align-items:center;gap:11px;font-family:'Fraunces';font-weight:600;font-size:22px;letter-spacing:-.02em;color:var(--ink);text-decoration:none}
+.brand{display:flex;align-items:center;gap:11px;font-family:var(--font-fraunces);font-weight:600;font-size:22px;letter-spacing:-.02em;color:var(--ink);text-decoration:none}
 .brand .key{
   width:30px;height:30px;border-radius:9px;background:var(--red);color:#fff;
   display:grid;place-items:center;font-size:16px;box-shadow:0 6px 16px -6px rgba(254,1,43,.7)
@@ -57,7 +57,7 @@ body.nav-open .nav-toggle-bar:nth-child(3){transform:translateY(-7px) rotate(-45
 }
 .eyebrow .dot{width:6px;height:6px;border-radius:50%;background:var(--red)}
 h1.title{
-  font-family:'Fraunces';font-weight:600;font-size:clamp(38px,6vw,64px);
+  font-family:var(--font-fraunces);font-weight:600;font-size:clamp(38px,6vw,64px);
   line-height:1.02;letter-spacing:-.025em;margin:18px 0 12px;max-width:15ch;
 }
 h1.title em{font-style:italic;color:var(--red-ink)}
@@ -66,7 +66,7 @@ h1.title em{font-style:italic;color:var(--red-ink)}
 
 /* ---------- buttons ---------- */
 .cta{
-  font-family:'Public Sans';font-weight:600;font-size:15px;color:#fff;background:var(--ink);
+  font-family:var(--font-sans);font-weight:600;font-size:15px;color:#fff;background:var(--ink);
   border:none;border-radius:10px;padding:13px 24px;cursor:pointer;display:inline-flex;gap:9px;
   align-items:center;transition:transform .15s ease, background .2s ease;white-space:nowrap;text-decoration:none;
 }
@@ -75,7 +75,7 @@ h1.title em{font-style:italic;color:var(--red-ink)}
 .cta:hover .arrow{transform:translateX(3px)}
 .ghost{
   background:none;border:1px solid var(--line);border-radius:9px;padding:12px 20px;
-  font-family:'Public Sans';font-weight:600;font-size:14px;color:var(--ink);cursor:pointer;
+  font-family:var(--font-sans);font-weight:600;font-size:14px;color:var(--ink);cursor:pointer;
   text-decoration:none;display:inline-flex;align-items:center;gap:8px;transition:border-color .2s ease;
 }
 .ghost:hover{border-color:var(--ink)}
@@ -93,8 +93,8 @@ footer{border-top:1px solid var(--line);padding:26px 0;color:var(--ink-3);font-s
 
 /* ---------- section headers ---------- */
 .sec-head{display:flex;align-items:baseline;gap:14px;margin:44px 0 20px}
-.sec-head .num{font-family:'IBM Plex Mono';font-size:13px;color:var(--red-ink);font-weight:600;padding-top:4px}
-.sec-head h2{font-family:'Fraunces';font-weight:600;font-size:27px;letter-spacing:-.02em}
+.sec-head .num{font-family:var(--font-mono);font-size:13px;color:var(--red-ink);font-weight:600;padding-top:4px}
+.sec-head h2{font-family:var(--font-fraunces);font-weight:600;font-size:27px;letter-spacing:-.02em}
 .sec-head .hint{margin-left:auto;font-size:13px;color:var(--ink-3);max-width:40ch;text-align:right}
 
 /* ---------- cards ---------- */
@@ -123,13 +123,13 @@ footer{border-top:1px solid var(--line);padding:26px 0;color:var(--ink-3);font-s
 .bench-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
 .bench{padding:20px 22px}
 .bench .bk{font-size:13px;font-weight:600;color:var(--ink-2);letter-spacing:.02em}
-.bench .bv{font-family:'Fraunces';font-weight:600;font-size:34px;letter-spacing:-.02em;margin:8px 0 2px}
+.bench .bv{font-family:var(--font-fraunces);font-weight:600;font-size:34px;letter-spacing:-.02em;margin:8px 0 2px}
 .bench .bsub{font-size:12.5px;color:var(--ink-3)}
 
 /* ---------- chart cards ---------- */
 .chart-card{padding:22px 24px 18px}
 .chart-head{display:flex;justify-content:space-between;align-items:baseline;gap:16px;margin-bottom:14px}
-.chart-title{font-family:'Fraunces';font-weight:600;font-size:18px}
+.chart-title{font-family:var(--font-fraunces);font-weight:600;font-size:18px}
 
 /* ---------- tables ---------- */
 /* Table cards scroll horizontally on narrow screens instead of clipping the
@@ -142,8 +142,8 @@ table.comp thead th.r,table.comp td.r{text-align:right}
 table.comp tbody td{padding:13px 16px;border-bottom:1px solid var(--line)}
 table.comp tbody tr:last-child td{border-bottom:none}
 table.comp tbody tr:hover{background:#faf6ee}
-.price{font-family:'IBM Plex Mono';font-weight:600}
-.num-cell{font-family:'IBM Plex Mono';color:var(--ink-2)}
+.price{font-family:var(--font-mono);font-weight:600}
+.num-cell{font-family:var(--font-mono);color:var(--ink-2)}
 .tbl-foot{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-top:1px solid var(--line);font-size:13px;color:var(--ink-3)}
 
 /* ---------- responsive ---------- */
