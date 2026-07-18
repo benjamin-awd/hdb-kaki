@@ -1,14 +1,20 @@
 """Emit web artifacts for the static frontend (see wireframes/REBUILD_PLAN.md).
 
 Reads the combined ``data/df.parquet`` (produced by ``convert.csv_to_parquet``) and
-writes year-sharded, ZSTD-compressed, column-trimmed Parquet into ``web/public/data/``
-along with a ``manifest.json``. Standalone (polars only) so it does not depend on the
-Streamlit-Cloud path baked into ``webapp.utils.get_project_root``.
+writes a single ZSTD-compressed, column-trimmed ``resale.parquet`` into
+``web/public/data/`` along with a ``manifest.json``. Standalone (polars only) so it
+does not depend on the Streamlit-Cloud path baked into ``webapp.utils.get_project_root``.
 
-Also precomputes ``overview.json`` — the landing page's aggregates (price trends,
-distribution, lease relationship, recent transactions) so the landing renders from a
-single small fetch instead of booting DuckDB-WASM in the browser. The queries here
-mirror the SQL in ``web/src/pages/index.astro`` one-for-one so the numbers stay identical.
+The data is emitted as ONE file rather than year-shards: DuckDB-WASM reads it over HTTP
+range requests, and every query spans all years, so sharding only multiplied the
+sequential round-trips (footer + column reads per file) with no pruning benefit. A
+single file is read in one pass — far fewer requests, much faster first query.
+
+Also precomputes ``overview.json`` (landing page) and ``town-analysis.json`` (the
+town-analysis default view) so those pages paint from a single small fetch instead of
+booting DuckDB-WASM in the browser on load. The queries here mirror the SQL in the
+corresponding page one-for-one so the numbers stay identical; DuckDB is only booted
+in the browser when the visitor changes a filter.
 """
 
 from __future__ import annotations
@@ -23,6 +29,11 @@ ROOT = Path(__file__).resolve().parents[2]
 SRC_PARQUET = ROOT / "data" / "df.parquet"
 METADATA = ROOT / "data" / "metadata"
 OUT_DIR = ROOT / "web" / "public" / "data"
+
+# Default view the town-analysis page renders on load. MUST match the DEFAULT_TOWN /
+# DEFAULT_FLAT constants in web/src/pages/town-analysis.astro.
+TA_DEFAULT_TOWN = "ANG MO KIO"
+TA_DEFAULT_FLAT = "4 ROOM"
 
 # Columns dropped for the web: derivable or unused by any page.
 #   _id, _ts        — internal ETL bookkeeping
@@ -126,33 +137,82 @@ def emit_overview(df: pl.DataFrame) -> None:
     print(f"Wrote overview.json ({out.stat().st_size / 1024:.1f} KB)")
 
 
+def emit_town_analysis(df: pl.DataFrame) -> None:
+    """Precompute the town-analysis default view into town-analysis.json.
+
+    Mirrors the on-load queries in web/src/pages/town-analysis.astro: the town/flat
+    option lists, the default town/flat map rows (last 24 months), and the highest
+    recorded sale per town for the default flat. Rendering this lets the page paint
+    without DuckDB; the engine only boots when the visitor changes a filter.
+    """
+    today = date.today()
+    cutoff = f"{today.year - 2}-{today.month:02d}"  # 'YYYY-MM', 24 months back
+
+    # Map rows for the default town/flat — mirrors renderMap()'s SELECT one-for-one.
+    rows = (
+        df.filter(
+            (pl.col("town") == TA_DEFAULT_TOWN)
+            & (pl.col("flat_type") == TA_DEFAULT_FLAT)
+            & (pl.col("month") >= cutoff)
+            & pl.col("latitude").is_not_null()
+        )
+        .sort(["month", "resale_price"], descending=[True, True])
+        .select(
+            pl.col("latitude").alias("lat"),
+            pl.col("longitude").alias("lng"),
+            pl.col("resale_price").alias("price"),
+            "address",
+            "month",
+            pl.col("storey_range").alias("storey"),
+            "psf",
+            pl.col("remaining_lease_years").alias("lease"),
+        )
+        .to_dicts()
+    )
+
+    # Highest sale per town for the default flat — mirrors renderHighest()'s query.
+    highest = (
+        df.filter(pl.col("flat_type") == TA_DEFAULT_FLAT)
+        .group_by("town")
+        .agg(pl.col("resale_price").max().alias("mx"))
+        .sort("mx", descending=True)
+        .head(15)
+        .select(["town", "mx"])
+        .to_dicts()
+    )
+
+    payload = {
+        "default": {"town": TA_DEFAULT_TOWN, "flat": TA_DEFAULT_FLAT},
+        "towns": sorted(df["town"].unique().to_list()),
+        "flatTypes": sorted(df["flat_type"].unique().to_list()),
+        "rows": rows,
+        "highest": highest,
+    }
+    out = OUT_DIR / "town-analysis.json"
+    out.write_text(json.dumps(payload))
+    print(f"Wrote town-analysis.json ({out.stat().st_size / 1024:.1f} KB)")
+
+
 def emit() -> None:
     df = pl.read_parquet(SRC_PARQUET)
     df = df.drop([c for c in DROP_COLS if c in df.columns])
 
-    # year for sharding; sort so repeated low-cardinality values cluster (better compression)
-    df = df.with_columns(pl.col("month").str.slice(0, 4).alias("year")).sort(
-        ["town", "flat_type", "month"]
-    )
+    # Sort so repeated low-cardinality values cluster (better ZSTD compression) and so
+    # town-filtered queries can skip row groups via the town min/max statistics.
+    df = df.sort(["town", "flat_type", "month"])
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+    # Clean up the old year-shards from previous builds so nothing stale is served.
     for old in OUT_DIR.glob("resale-*.parquet"):
         old.unlink()
 
-    years = sorted(df["year"].unique().to_list())
-    files = []
-    for year in years:
-        shard = df.filter(pl.col("year") == year).drop("year")
-        out = OUT_DIR / f"resale-{year}.parquet"
-        shard.write_parquet(
-            out,
-            compression="zstd",
-            compression_level=19,
-            row_group_size=shard.height or 1,
-            statistics=True,
-        )
-        files.append({"year": year, "file": out.name, "rows": shard.height,
-                      "bytes": out.stat().st_size})
+    out = OUT_DIR / "resale.parquet"
+    df.write_parquet(
+        out,
+        compression="zstd",
+        compression_level=19,
+        statistics=True,
+    )
 
     epoch = int(METADATA.read_text().strip()) if METADATA.exists() else None
     manifest = {
@@ -161,18 +221,23 @@ def emit() -> None:
         if epoch
         else None,
         "rows": df.height,
-        "years": years,
-        "shards": files,
-        "columns": df.drop("year").columns,
+        "file": out.name,
+        "bytes": out.stat().st_size,
+        "columns": df.columns,
     }
     (OUT_DIR / "manifest.json").write_text(json.dumps(manifest, indent=2))
 
     emit_overview(df)
+    emit_town_analysis(df)
 
-    total = sum(f["bytes"] for f in files)
-    print(f"Wrote {len(files)} shards, {df.height:,} rows, {total/1e6:.2f} MB total")
-    for f in files:
-        print(f"  {f['file']:>18}  {f['rows']:>7,} rows  {f['bytes']/1e6:6.2f} MB")
+    size = out.stat().st_size
+    print(f"Wrote {out.name}, {df.height:,} rows, {size/1e6:.2f} MB")
+    # resale.parquet ships as a plain Cloudflare static asset, which caps individual
+    # files at 25 MiB. Warn well before that so growth doesn't silently break deploys;
+    # if we ever cross it, route the file through src/worker.ts (like the wasm) or R2.
+    if size > 20 * 1024 * 1024:
+        print(f"  WARNING: {out.name} is {size/1024/1024:.1f} MiB — approaching "
+              "Cloudflare's 25 MiB static-asset cap.")
 
 
 if __name__ == "__main__":
