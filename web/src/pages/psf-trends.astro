@@ -101,9 +101,16 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
       value: [dateOf(idxOf(r.month)), Number(r.psf)],
       address: r.address, month: r.month, storey: r.storey, price: Number(r.price), psf: Number(r.psf), lease: Number(r.lease),
     }));
+  // `USING SAMPLE n ROWS` binds to the table scan and runs BEFORE the WHERE filter,
+  // so sampling `resale` directly would draw n rows from the whole table and only
+  // then filter — leaving a handful of matches for a narrow filter (e.g. one street +
+  // storey band). Wrap the filtered query in a subquery so the sample applies to the
+  // already-filtered rows (returns all of them when the set is under the cap).
   const sampleSql = (where: string) =>
-    `SELECT month, psf, address, storey_range storey, resale_price price, remaining_lease_years lease
-     FROM resale WHERE ${where} USING SAMPLE ${SCATTER_CAP} ROWS`;
+    `SELECT * FROM (
+       SELECT month, psf, address, storey_range storey, resale_price price, remaining_lease_years lease
+       FROM resale WHERE ${where}
+     ) USING SAMPLE ${SCATTER_CAP} ROWS`;
   const noteText = (total: number, suffix = '') =>
     (total > SCATTER_CAP ? `random sample of ${SCATTER_CAP.toLocaleString()} of ${total.toLocaleString()}` : `all ${total.toLocaleString()}`) + ` transactions${suffix}`;
   if (import.meta.env.DEV) {
