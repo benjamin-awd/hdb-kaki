@@ -1,9 +1,11 @@
-"""Build the HDB-town boundary GeoJSON used by the landing-page choropleth.
+"""Build the boundary GeoJSON used by the landing-page choropleth.
 
-Fetches the URA Master Plan 2019 Planning Area boundaries from data.gov.sg, folds the
-55 planning areas into the 26 HDB resale "towns" the price data uses, dissolves each
-town into a single (multi)polygon, simplifies the geometry, and writes a compact
-``web/public/geo/sg-towns.geojson``.
+Fetches URA Master Plan 2019 boundaries from data.gov.sg and writes three compact,
+committed assets under ``web/public/geo/``:
+  * ``sg-towns.geojson``    — the 26 HDB resale "towns" the price data uses.
+  * ``sg-subzones.geojson`` — the ~330 URA subzones, for the finer choropleth level
+    (transactions are point-in-polygon'd into these by ``emit_web.py``).
+  * ``sg-outline.geojson``  — the dissolved coastline, drawn as a crisp country outline.
 
 Unlike the price artifacts (``web/public/data/``, regenerated daily by ``emit_web.py``),
 these boundaries change only when URA revises the Master Plan — a ~5-year statutory
@@ -34,13 +36,19 @@ from shapely.geometry import mapping, shape
 from shapely.ops import unary_union
 
 ROOT = Path(__file__).resolve().parents[2]
-OUT = ROOT / "web" / "public" / "geo" / "sg-towns.geojson"
-OUTLINE = ROOT / "web" / "public" / "geo" / "sg-outline.geojson"
+GEO_DIR = ROOT / "web" / "public" / "geo"
+OUT = GEO_DIR / "sg-towns.geojson"
+SUBZONES = GEO_DIR / "sg-subzones.geojson"
+OUTLINE = GEO_DIR / "sg-outline.geojson"
 
-# URA Master Plan 2019 Planning Area Boundary (No Sea), GEOJSON. The dataset id is
-# stable; data.gov.sg hands back a short-lived signed download URL via poll-download.
-DATASET_ID = "d_4765db0e87b9c86336792efe8a1f7a66"
-POLL_URL = f"https://api-open.data.gov.sg/v1/public/api/datasets/{DATASET_ID}/poll-download"
+# URA Master Plan 2019 boundary datasets (No Sea), GEOJSON. The dataset ids are stable;
+# data.gov.sg hands back a short-lived signed download URL via poll-download.
+DATASET_ID = "d_4765db0e87b9c86336792efe8a1f7a66"  # planning areas
+SUBZONE_DATASET_ID = "d_8594ae9ff96d0c708bc2af633048edfb"  # subzones
+
+# Offshore island planning areas — dropped from every layer: small specks far from the
+# mainland that would only widen the map's frame.
+DROP_AREAS = {"NORTH-EASTERN ISLANDS", "SOUTHERN ISLANDS", "WESTERN ISLANDS"}
 
 # HDB towns whose name is not identical to the URA planning area it comes from.
 RENAME = {"KALLANG": "KALLANG/WHAMPOA"}
@@ -58,8 +66,9 @@ def _get_json(url: str, timeout: int) -> dict:
         return json.load(r)
 
 
-def _fetch_planning_areas() -> dict:
-    url = _get_json(POLL_URL, 30)["data"]["url"]
+def _fetch_dataset(dataset_id: str) -> dict:
+    poll = f"https://api-open.data.gov.sg/v1/public/api/datasets/{dataset_id}/poll-download"
+    url = _get_json(poll, 30)["data"]["url"]
     return _get_json(url, 60)
 
 
@@ -82,8 +91,8 @@ def _round(geom: dict, ndigits: int) -> dict:
     return {"type": geom["type"], "coordinates": r(geom["coordinates"])}
 
 
-def build() -> None:
-    src = _fetch_planning_areas()
+def build_towns() -> None:
+    src = _fetch_dataset(DATASET_ID)
 
     # The 26 towns the price data uses — every HDB town must resolve to one of these.
     valid = {
@@ -98,10 +107,7 @@ def build() -> None:
     # the remaining (non-HDB) mainland areas so the map stays a complete island — many
     # of them (Central Water Catchment, Paya Lebar, Novena, Tanglin, ...) sit *inside*
     # the landmass, so dropping them would punch holes through it. They carry no resale
-    # data and render as neutral "no data" grey. The offshore island groups are dropped:
-    # they're small specks far from the mainland that would only widen the map's frame.
-    DROP = {"NORTH-EASTERN ISLANDS", "SOUTHERN ISLANDS", "WESTERN ISLANDS"}
-
+    # data and render as neutral "no data" grey. The offshore island groups are dropped.
     parts: dict[str, list] = {}
     others: list[tuple[str, object]] = []
     for f in src["features"]:
@@ -109,7 +115,7 @@ def build() -> None:
         town = _town_for(props)
         if town in valid:
             parts.setdefault(town, []).append(shape(f["geometry"]))
-        elif props["PLN_AREA_N"].strip().upper() not in DROP:
+        elif props["PLN_AREA_N"].strip().upper() not in DROP_AREAS:
             others.append((props["PLN_AREA_N"].strip().upper(), shape(f["geometry"])))
 
     missing = valid - parts.keys()
@@ -157,6 +163,41 @@ def build() -> None:
     }
     OUTLINE.write_text(json.dumps(outline_fc, separators=(",", ":")))
     print(f"Wrote {OUTLINE.relative_to(ROOT)} ({OUTLINE.stat().st_size / 1024:.1f} KB)")
+
+
+def build_subzones() -> None:
+    """Emit the ~330 URA subzones for the finer choropleth level.
+
+    Keyed by SUBZONE_N (unique across all subzones), with the parent planning area kept
+    for tooltip context. emit_web.py point-in-polygons transactions into these by name.
+    The offshore island groups are dropped to match the town layer's mainland frame.
+    """
+    src = _fetch_dataset(SUBZONE_DATASET_ID)
+    features = []
+    for f in src["features"]:
+        props = f["properties"]
+        if props["PLN_AREA_N"].strip().upper() in DROP_AREAS:
+            continue
+        geom = shape(f["geometry"]).simplify(SIMPLIFY_TOLERANCE)
+        features.append({
+            "type": "Feature",
+            "properties": {
+                "name": props["SUBZONE_N"].strip().upper(),
+                "area": props["PLN_AREA_N"].strip().upper(),
+            },
+            "geometry": _round(mapping(geom), COORD_PRECISION),
+        })
+
+    fc = {"type": "FeatureCollection", "features": features}
+    SUBZONES.write_text(json.dumps(fc, separators=(",", ":")))
+    print(f"Wrote {SUBZONES.relative_to(ROOT)} ({SUBZONES.stat().st_size / 1024:.1f} KB, "
+          f"{len(features)} subzones)")
+
+
+def build() -> None:
+    GEO_DIR.mkdir(parents=True, exist_ok=True)
+    build_towns()
+    build_subzones()
 
 
 if __name__ == "__main__":
