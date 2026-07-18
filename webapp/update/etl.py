@@ -1,10 +1,12 @@
 import sys
 from pathlib import Path
+
 import polars as pl
 
-from webapp.read import get_project_root, schema
+from webapp.read import schema
 from webapp.update.convert import csv_to_parquet
 from webapp.update.extract import extract, get_timestamps
+from webapp.utils import get_project_root
 
 
 def update_data():
