@@ -10,10 +10,11 @@ range requests, and every query spans all years, so sharding only multiplied the
 sequential round-trips (footer + column reads per file) with no pruning benefit. A
 single file is read in one pass — far fewer requests, much faster first query.
 
-Also precomputes ``overview.json`` — the landing page's aggregates (price trends,
-distribution, lease relationship, recent transactions) so the landing renders from a
-single small fetch instead of booting DuckDB-WASM in the browser. The queries here
-mirror the SQL in ``web/src/pages/index.astro`` one-for-one so the numbers stay identical.
+Also precomputes ``overview.json`` (landing page) and ``town-analysis.json`` (the
+town-analysis default view) so those pages paint from a single small fetch instead of
+booting DuckDB-WASM in the browser on load. The queries here mirror the SQL in the
+corresponding page one-for-one so the numbers stay identical; DuckDB is only booted
+in the browser when the visitor changes a filter.
 """
 
 from __future__ import annotations
@@ -28,6 +29,11 @@ ROOT = Path(__file__).resolve().parents[2]
 SRC_PARQUET = ROOT / "data" / "df.parquet"
 METADATA = ROOT / "data" / "metadata"
 OUT_DIR = ROOT / "web" / "public" / "data"
+
+# Default view the town-analysis page renders on load. MUST match the DEFAULT_TOWN /
+# DEFAULT_FLAT constants in web/src/pages/town-analysis.astro.
+TA_DEFAULT_TOWN = "ANG MO KIO"
+TA_DEFAULT_FLAT = "4 ROOM"
 
 # Columns dropped for the web: derivable or unused by any page.
 #   _id, _ts        — internal ETL bookkeeping
@@ -131,6 +137,62 @@ def emit_overview(df: pl.DataFrame) -> None:
     print(f"Wrote overview.json ({out.stat().st_size / 1024:.1f} KB)")
 
 
+def emit_town_analysis(df: pl.DataFrame) -> None:
+    """Precompute the town-analysis default view into town-analysis.json.
+
+    Mirrors the on-load queries in web/src/pages/town-analysis.astro: the town/flat
+    option lists, the default town/flat map rows (last 24 months), and the highest
+    recorded sale per town for the default flat. Rendering this lets the page paint
+    without DuckDB; the engine only boots when the visitor changes a filter.
+    """
+    today = date.today()
+    cutoff = f"{today.year - 2}-{today.month:02d}"  # 'YYYY-MM', 24 months back
+
+    # Map rows for the default town/flat — mirrors renderMap()'s SELECT one-for-one.
+    rows = (
+        df.filter(
+            (pl.col("town") == TA_DEFAULT_TOWN)
+            & (pl.col("flat_type") == TA_DEFAULT_FLAT)
+            & (pl.col("month") >= cutoff)
+            & pl.col("latitude").is_not_null()
+        )
+        .sort(["month", "resale_price"], descending=[True, True])
+        .select(
+            pl.col("latitude").alias("lat"),
+            pl.col("longitude").alias("lng"),
+            pl.col("resale_price").alias("price"),
+            "address",
+            "month",
+            pl.col("storey_range").alias("storey"),
+            "psf",
+            pl.col("remaining_lease_years").alias("lease"),
+        )
+        .to_dicts()
+    )
+
+    # Highest sale per town for the default flat — mirrors renderHighest()'s query.
+    highest = (
+        df.filter(pl.col("flat_type") == TA_DEFAULT_FLAT)
+        .group_by("town")
+        .agg(pl.col("resale_price").max().alias("mx"))
+        .sort("mx", descending=True)
+        .head(15)
+        .select(["town", "mx"])
+        .to_dicts()
+    )
+
+    payload = {
+        "default": {"town": TA_DEFAULT_TOWN, "flat": TA_DEFAULT_FLAT},
+        "towns": sorted(df["town"].unique().to_list()),
+        "flatTypes": sorted(df["flat_type"].unique().to_list()),
+        "rows": rows,
+        "highest": highest,
+    }
+    out = OUT_DIR / "town-analysis.json"
+    out.write_text(json.dumps(payload))
+    print(f"Wrote town-analysis.json ({out.stat().st_size / 1024:.1f} KB)")
+
+
 def emit() -> None:
     df = pl.read_parquet(SRC_PARQUET)
     df = df.drop([c for c in DROP_COLS if c in df.columns])
@@ -166,6 +228,7 @@ def emit() -> None:
     (OUT_DIR / "manifest.json").write_text(json.dumps(manifest, indent=2))
 
     emit_overview(df)
+    emit_town_analysis(df)
 
     size = out.stat().st_size
     print(f"Wrote {out.name}, {df.height:,} rows, {size/1e6:.2f} MB")
