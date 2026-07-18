@@ -51,16 +51,24 @@ try {
       <div id="chart-trends" class="chart-box" set:html={heroSVG}></div>
     </div>
 
-    <!-- 02 · DISTRIBUTION -->
-    <div class="sec-head"><span class="num">02</span><h2>Price distribution by town</h2>
+    <!-- 02 · PRICE MAP -->
+    <div class="sec-head"><span class="num">02</span><h2>Price map by town</h2>
+      <span class="hint">Median 4-room resale price by town, last 12 months — darker means pricier.</span></div>
+    <div class="card chart-card">
+      <div class="chart-head"><div class="chart-title">Median resale price · 4-room</div></div>
+      <div id="chart-map" class="chart-box map-box"></div>
+    </div>
+
+    <!-- 03 · DISTRIBUTION -->
+    <div class="sec-head"><span class="num">03</span><h2>Price distribution by town</h2>
       <span class="hint">Spread of 4-room resale prices, last 12 months — box shows the middle 50%.</span></div>
     <div class="card chart-card">
       <div class="chart-head"><div class="chart-title">Resale price spread · 4-room</div></div>
       <div id="chart-box" class="chart-box"></div>
     </div>
 
-    <!-- 03 · LEASE RELATIONSHIP -->
-    <div class="sec-head"><span class="num">03</span><h2>Price &amp; remaining lease</h2>
+    <!-- 04 · LEASE RELATIONSHIP -->
+    <div class="sec-head"><span class="num">04</span><h2>Price &amp; remaining lease</h2>
       <span class="hint">How 4-room resale price relates to years left on the lease.</span></div>
     <div class="split" style="grid-template-columns:1.5fr 1fr">
       <div class="card chart-card">
@@ -73,8 +81,8 @@ try {
       </div>
     </div>
 
-    <!-- 04 · RECENT TRANSACTIONS -->
-    <div class="sec-head"><span class="num">04</span><h2>Recent transactions</h2>
+    <!-- 05 · RECENT TRANSACTIONS -->
+    <div class="sec-head"><span class="num">05</span><h2>Recent transactions</h2>
       <span class="hint">Latest registered resale deals.</span></div>
     <div class="card" style="overflow:hidden">
       <table class="comp">
@@ -96,6 +104,8 @@ try {
   /* Stretch the SSR placeholder SVG to fill the box until the canvas chart hydrates. */
   #chart-trends svg { width: 100% !important; height: 100% !important; display: block; }
   #chart-scatter, #chart-buckets { height: 320px; }
+  /* Singapore is wide and short — give the choropleth more room than a plot box. */
+  .map-box { height: 460px; }
 </style>
 
 <script>
@@ -107,7 +117,8 @@ try {
   // so it never boots DuckDB-WASM — that engine loads only on the interactive pages.
   type Overview = {
     trends: Record<string, { quarter: string; series: string; v: number }[]>;
-    box: any[]; scatter: any[]; buckets: any[]; recent: any[]; recentTotal: number;
+    box: any[]; townMedians: { town: string; med: number; n: number }[];
+    scatter: any[]; buckets: any[]; recent: any[]; recentTotal: number;
   };
   let OV: Overview;
 
@@ -173,7 +184,55 @@ try {
     });
   });
 
-  // ---- 02 box plot by town ----
+  // ---- 02 price choropleth by town ----
+  // Median 4-room price per town over the last 12 months, painted onto the URA
+  // planning-area boundaries (public/geo/sg-towns.geojson, keyed by town name).
+  async function renderMap() {
+    const geo = await fetch(`${import.meta.env.BASE_URL}geo/sg-towns.geojson`).then((r) => {
+      if (!r.ok) throw new Error(`sg-towns.geojson ${r.status}`);
+      return r.json();
+    });
+    echarts.registerMap('sg-towns', geo);
+
+    const data = OV.townMedians.map((r) => ({ name: r.town, value: Number(r.med), n: r.n }));
+    const byName = new Map(data.map((d) => [d.name, d]));
+    const vals = data.map((d) => d.value);
+    const lo = Math.min(...vals), hi = Math.max(...vals);
+
+    const chart = echarts.init(q('chart-map'));
+    chart.setOption({
+      ...baseOption(),
+      tooltip: {
+        trigger: 'item',
+        formatter: (p: any) => {
+          const d = byName.get(p.name);
+          if (!d) return `<b>${titleCase(p.name)}</b><br/>No 4-room sales`;
+          return `<b>${titleCase(p.name)}</b><br/>Median ${money(d.value)}`
+            + `<br/><span style="color:${ink3}">${d.n.toLocaleString()} sales · last 12 mo</span>`;
+        },
+      },
+      // Sequential magnitude → single-hue red ramp (light → dark), matching the app's
+      // "red = pricier" convention. Never a rainbow.
+      visualMap: {
+        type: 'continuous', min: lo, max: hi, calculable: true,
+        left: 16, bottom: 24, itemHeight: 150,
+        inRange: { color: ['#fde8ec', '#f7b8c2', '#f07087', '#e11d3e', '#a80019'] },
+        textStyle: { color: ink3, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 },
+        formatter: (v: number) => moneyShort(v),
+      },
+      series: [{
+        type: 'map', map: 'sg-towns', nameProperty: 'name', roam: false,
+        aspectScale: 1, // Singapore sits on the equator — keep lon/lat 1:1, don't squash
+        itemStyle: { areaColor: '#efeadf', borderColor: '#fffdf8', borderWidth: 1 },
+        emphasis: { label: { show: false }, itemStyle: { borderColor: '#181410', borderWidth: 1.4 } },
+        select: { disabled: true },
+        label: { show: false },
+        data,
+      }],
+    });
+  }
+
+  // ---- 03 box plot by town ----
   function renderBox() {
     const rows = OV.box;
     const chart = echarts.init(q('chart-box'));
@@ -196,7 +255,7 @@ try {
     });
   }
 
-  // ---- 03 scatter + bucket counts ----
+  // ---- 04 scatter + bucket counts ----
   function renderLease() {
     const bands = ['0-60 years', '61-80 years', '81-99 years'];
     const colors: Record<string, string> = { '0-60 years': palette[0], '61-80 years': palette[3], '81-99 years': palette[2] };
@@ -238,7 +297,7 @@ try {
     });
   }
 
-  // ---- 04 recent transactions ----
+  // ---- 05 recent transactions ----
   function renderRecent() {
     const rows = OV.recent;
     q('tbody-recent').innerHTML = rows
@@ -266,6 +325,7 @@ try {
     q('chart-trends').innerHTML = '';
     trendChart = echarts.init(q('chart-trends'));
     renderTrends('lease');
+    renderMap().catch((e) => console.error(e));
     renderBox();
     renderLease();
     renderRecent();
@@ -290,6 +350,7 @@ try {
 
   window.addEventListener('resize', () => {
     trendChart?.resize();
+    echarts.getInstanceByDom(q('chart-map'))?.resize();
     echarts.getInstanceByDom(q('chart-box'))?.resize();
     echarts.getInstanceByDom(q('chart-scatter'))?.resize();
     echarts.getInstanceByDom(q('chart-buckets'))?.resize();
