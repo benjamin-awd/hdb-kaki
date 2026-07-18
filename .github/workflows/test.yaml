@@ -50,6 +50,29 @@ jobs:
         working-directory: web
         run: bun install --frozen-lockfile
 
+      # Guards the "no manual work" contract for fonts: the committed woff2 in
+      # src/assets/fonts/ must match what fonts.spec.mjs produces. Re-vendor and fail
+      # if they drift (someone changed the spec without running `bun run vendor-fonts`).
+      # This is the ONLY workflow that touches Google Fonts; deploy/lighthouse build
+      # purely from the committed files. A Google outage soft-skips (warn, don't fail)
+      # so it never reds an unrelated PR.
+      - name: Check vendored fonts are up to date
+        working-directory: web
+        run: |
+          if ! node scripts/vendor-fonts.mjs; then
+            echo "::warning::Could not reach Google Fonts; skipping font drift check."
+            git checkout -- src/assets/fonts 2>/dev/null || true
+            exit 0
+          fi
+          # --porcelain catches modified, added AND deleted files (git diff alone
+          # misses new untracked variants).
+          if [ -n "$(git status --porcelain -- src/assets/fonts)" ]; then
+            echo "::error::Vendored fonts are stale. Run 'bun run vendor-fonts' and commit src/assets/fonts/."
+            git --no-pager status --porcelain -- src/assets/fonts
+            exit 1
+          fi
+          echo "Vendored fonts match fonts.spec.mjs."
+
       - name: Install Playwright browser
         working-directory: web
         run: bunx playwright install --with-deps chromium
