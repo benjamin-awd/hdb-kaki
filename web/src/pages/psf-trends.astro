@@ -12,9 +12,8 @@ import Base from '../layouts/Base.astro';
     <div class="wrap">
       <span class="eyebrow rise"><span class="dot"></span> Price per Square Foot</span>
       <h1 class="title rise" style="animation-delay:.05s">The PSF story,<br /><em>street by street</em>.</h1>
-      <p class="lede rise" style="animation-delay:.1s">
-        Fit a trend to price-per-square-foot over time for any town, street or storey band —
-        and read where it's heading.
+      <p class="lede solo rise" style="animation-delay:.1s">
+        Fit a trend to price-per-square-foot over time for any town, street or storey band.
       </p>
     </div>
   </section>
@@ -318,10 +317,19 @@ import Base from '../layouts/Base.astro';
     if ((navigator as any).connection?.saveData) return;
     const idle: (cb: () => void) => void =
       (window as any).requestIdleCallback || ((cb: () => void) => setTimeout(cb, 1500));
-    idle(() => {
+    const warm = () => idle(() => {
       _db = import('../lib/db');
       _db.then((m) => m.prefetch()).catch(() => {});
     });
+    // This link is a clientPrerender target: while the page is only being speculatively
+    // prerendered (from a hover), don't download the ~4.7 MB DuckDB wasm — a hover
+    // shouldn't pull the engine for a page never visited. Defer the warm until the
+    // prerender is activated into a real navigation.
+    if ((document as any).prerendering) {
+      document.addEventListener('prerenderingchange', warm, { once: true });
+    } else {
+      warm();
+    }
   }
 
   // semantic zoom: re-sample the scatter to the visible date window so zooming in reveals more detail

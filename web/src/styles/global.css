@@ -49,7 +49,7 @@ body.nav-open .nav-toggle-bar:nth-child(2){opacity:0}
 body.nav-open .nav-toggle-bar:nth-child(3){transform:translateY(-7px) rotate(-45deg)}
 
 /* ---------- hero ---------- */
-.hero{padding:52px 0 64px}
+.hero{padding:52px 0 8px}
 .eyebrow{
   display:inline-flex;align-items:center;gap:8px;
   font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
@@ -58,10 +58,12 @@ body.nav-open .nav-toggle-bar:nth-child(3){transform:translateY(-7px) rotate(-45
 .eyebrow .dot{width:6px;height:6px;border-radius:50%;background:var(--red)}
 h1.title{
   font-family:var(--font-fraunces);font-weight:600;font-size:clamp(38px,6vw,64px);
-  line-height:1.02;letter-spacing:-.025em;margin:18px 0 12px;max-width:15ch;
+  line-height:1.02;letter-spacing:-.025em;margin:18px 0 12px;
 }
 h1.title em{font-style:italic;color:var(--red-ink)}
 .lede{font-size:18px;color:var(--ink-2);max-width:52ch}
+/* Homepage lede is short enough to sit on one line — opt out of the 52ch cap. */
+.lede.solo{max-width:none}
 .hero-actions{display:flex;gap:14px;margin-top:28px;flex-wrap:wrap}
 
 /* Hero KPI strip — Redfin-style row of headline metrics under the lede, each a
@@ -104,7 +106,7 @@ footer{border-top:1px solid var(--line);padding:26px 0;color:var(--ink-3);font-s
 /* ---------- section headers ---------- */
 /* Number in the gutter; heading and its deck stack in the second column so the
    deck reads as an intro under the title (left-aligned) rather than a floated caption. */
-.sec-head{display:grid;grid-template-columns:auto 1fr;column-gap:14px;align-items:baseline;margin:44px 0 20px}
+.sec-head{display:grid;grid-template-columns:auto 1fr;column-gap:14px;align-items:baseline;margin:40px 0 20px}
 .sec-head .num{grid-column:1;font-family:var(--font-mono);font-size:13px;color:var(--red-ink);font-weight:600;padding-top:4px}
 .sec-head h2{grid-column:2;font-family:var(--font-fraunces);font-weight:600;font-size:27px;letter-spacing:-.02em}
 .sec-head .hint{grid-column:2;margin-top:8px;font-size:14.5px;color:var(--ink-2);max-width:62ch}
