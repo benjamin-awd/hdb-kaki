@@ -1,6 +1,7 @@
 ---
 import Base from '../layouts/Base.astro';
 import { trendsSVG } from '../lib/echartsSSR';
+import { moneyShort, psf as fpsf } from '../lib/format';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -9,17 +10,34 @@ const base = import.meta.env.BASE_URL;
 // SSR the hero chart to inline SVG so it paints instantly — no JS, no fetch. The
 // client swaps in the interactive canvas chart after hydration. Falls back to a
 // client-only render if overview.json hasn't been generated yet (e.g. fresh clone).
+type Kpi = { value: number | null; yoy: number | null };
+type Stats = { medianPrice: Kpi; txns: Kpi; millionDollar: Kpi; medianPsf: Kpi };
 let heroSVG = '';
+let stats: Stats | null = null;
 try {
   const path = fileURLToPath(new URL('../../public/data/overview.json', import.meta.url));
   const ov = JSON.parse(fs.readFileSync(path, 'utf8'));
   heroSVG = trendsSVG(ov.trends.lease, 1040, 380);
+  stats = ov.stats ?? null;
 } catch {
   heroSVG = '';
 }
+
+// Redfin-style hero KPI strip: a headline value + its year-on-year delta each.
+const int = (n: number | null) => (n == null ? '—' : n.toLocaleString('en-SG'));
+const dCls = (n: number | null) => (n == null ? 'flat' : n >= 0 ? 'up' : 'down');
+const dTxt = (n: number | null) => (n == null ? 'n/a' : `${n >= 0 ? '▲' : '▼'} ${Math.abs(n).toFixed(1)}% YoY`);
+const kpis = stats
+  ? [
+      { cap: 'Median resale price', val: stats.medianPrice.value == null ? '—' : moneyShort(stats.medianPrice.value), yoy: stats.medianPrice.yoy },
+      { cap: 'Transactions · 12 mo', val: int(stats.txns.value), yoy: stats.txns.yoy },
+      { cap: 'Million-dollar flats · 12 mo', val: int(stats.millionDollar.value), yoy: stats.millionDollar.yoy },
+      { cap: 'Median PSF', val: stats.medianPsf.value == null ? '—' : fpsf(stats.medianPsf.value), yoy: stats.medianPsf.yoy },
+    ]
+  : [];
 ---
 
-<Base active="Resale Visualizations" title="Resale Visualizations — HDB Kaki">
+<Base active="Market Overview" title="Market Overview | HDB Kaki">
   <!-- Start the data fetch during HTML parse, parallel to the JS, so charts paint sooner. -->
   <link slot="head" rel="preload" as="fetch" href={`${base}data/overview.json`} crossorigin="anonymous" />
   <section class="hero">
@@ -30,6 +48,17 @@ try {
         Median prices, distributions and lease dynamics across every HDB resale transaction
         since 2017 — refreshed daily from data.gov.sg.
       </p>
+      {stats && (
+        <div class="kpi-strip rise" style="animation-delay:.15s" aria-label="Market at a glance, last 12 months">
+          {kpis.map((k) => (
+            <div class="kpi">
+              <span class="kpi-cap">{k.cap}</span>
+              <span class="kpi-val mono">{k.val}</span>
+              <span class={`pill ${dCls(k.yoy)}`}>{dTxt(k.yoy)}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   </section>
 
