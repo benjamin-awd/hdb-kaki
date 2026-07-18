@@ -23,3 +23,14 @@ export function duckdbBase(base: string = import.meta.env.BASE_URL): string {
 export function ehWasmUrl(base?: string): string {
   return `${duckdbBase(base)}duckdb-eh.wasm`;
 }
+
+/**
+ * Same-origin extension repository. DuckDB appends `/<core>/<platform>/<name>.wasm`,
+ * which src/worker.ts serves from the brotli-staged copy (scripts/compress-duckdb.mjs),
+ * so read_parquet() doesn't fetch the parquet extension cross-origin from
+ * extensions.duckdb.org. If a file is missing the Worker falls back to that upstream.
+ */
+export function duckdbExtRepo(base?: string): string {
+  // No trailing slash — DuckDB joins the version/platform path itself.
+  return `${duckdbBase(base)}ext`.replace(/\/$/, '');
+}
