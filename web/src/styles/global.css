@@ -35,6 +35,18 @@ header.nav{
 .nav-links a{color:inherit;text-decoration:none}
 .nav-links a.active{color:var(--ink);font-weight:600}
 .nav-links a:hover{color:var(--red-ink)}
+/* Hamburger toggle — hidden on desktop, shown in the mobile media query. */
+.nav-toggle{
+  display:none;width:40px;height:40px;padding:0;border:0;background:transparent;
+  cursor:pointer;flex-direction:column;justify-content:center;align-items:center;gap:5px
+}
+.nav-toggle-bar{
+  display:block;width:22px;height:2px;border-radius:2px;background:var(--ink);
+  transition:transform .2s ease,opacity .2s ease
+}
+body.nav-open .nav-toggle-bar:nth-child(1){transform:translateY(7px) rotate(45deg)}
+body.nav-open .nav-toggle-bar:nth-child(2){opacity:0}
+body.nav-open .nav-toggle-bar:nth-child(3){transform:translateY(-7px) rotate(-45deg)}
 
 /* ---------- hero ---------- */
 .hero{padding:52px 0 64px}
@@ -132,7 +144,17 @@ table.comp tbody tr:hover{background:#faf6ee}
 
 /* ---------- responsive ---------- */
 @media(max-width:900px){
-  .nav-links{display:none}
+  .nav-toggle{display:flex}
+  .nav-links{
+    display:flex;flex-direction:column;gap:0;
+    position:absolute;top:66px;left:0;right:0;
+    background:var(--paper);border-bottom:1px solid var(--line);
+    box-shadow:0 12px 24px -12px rgba(0,0,0,.2);
+    max-height:0;overflow:hidden;visibility:hidden;
+    transition:max-height .25s ease,visibility .25s ease
+  }
+  .nav-links a{padding:15px 24px;border-top:1px solid var(--line);font-size:16px}
+  body.nav-open .nav-links{max-height:80vh;visibility:visible}
   .split{grid-template-columns:1fr !important}
   .bench-grid{grid-template-columns:1fr}
   .sec-head .hint{display:none}
