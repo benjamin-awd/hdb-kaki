@@ -23,12 +23,56 @@ ROOT = Path(__file__).resolve().parents[2]
 SRC_PARQUET = ROOT / "data" / "df.parquet"
 METADATA = ROOT / "data" / "metadata"
 OUT_DIR = ROOT / "web" / "public" / "data"
+GEO_DIR = ROOT / "web" / "public" / "geo"  # committed boundary assets (build_town_geojson.py)
 
 # Columns dropped for the web: derivable or unused by any page.
 #   _id, _ts        — internal ETL bookkeeping
 #   remaining_lease — string form; kept as remaining_lease_years
 #   block           — redundant; address already begins with the block
 DROP_COLS = ["_id", "_ts", "remaining_lease", "block"]
+
+
+def _subzone_medians(df: pl.DataFrame, cutoff: str) -> list[dict]:
+    """Median 4-room price per URA subzone, for the finer choropleth level.
+
+    The resale ``town`` field is only town-level, but each sale carries lat/lon, so we
+    point-in-polygon transactions into web/public/geo/sg-subzones.geojson (built by
+    build_town_geojson.py) and aggregate by subzone. Same 12-month, 4-room slice as the
+    town map so switching levels is a true zoom-in. n is kept so the map can grey out
+    subzones with too few sales to rank.
+    """
+    # shapely is only needed for this block; imported lazily so the rest of the emitter
+    # stays polars-only. The deploy workflow installs it alongside polars.
+    import statistics
+    from collections import defaultdict
+
+    from shapely import STRtree
+    from shapely.geometry import Point, shape
+
+    geo = json.loads((GEO_DIR / "sg-subzones.geojson").read_text())
+    polys = [shape(f["geometry"]) for f in geo["features"]]
+    names = [f["properties"]["name"] for f in geo["features"]]
+    tree = STRtree(polys)
+
+    d = df.filter(
+        (pl.col("flat_type") == "4 ROOM")
+        & (pl.col("month") >= cutoff)
+        & pl.col("latitude").is_not_null()
+    ).select("latitude", "longitude", "resale_price")
+    lat = d["latitude"].to_list()
+    lng = d["longitude"].to_list()
+    price = d["resale_price"].to_list()
+
+    buckets: dict[str, list[float]] = defaultdict(list)
+    for la, lo, pr in zip(lat, lng, price):
+        hit = tree.query(Point(lo, la), predicate="within")
+        if len(hit):
+            buckets[names[hit[0]]].append(pr)
+
+    return sorted(
+        ({"sz": sz, "med": statistics.median(v), "n": len(v)} for sz, v in buckets.items()),
+        key=lambda r: r["sz"],
+    )
 
 
 def _quarter_expr() -> pl.Expr:
@@ -132,6 +176,7 @@ def emit_overview(df: pl.DataFrame) -> None:
         },
         "box": box,
         "townMedians": town_medians,
+        "subzoneMedians": _subzone_medians(df, cutoff),
         "scatter": scatter,
         "buckets": buckets,
         "recent": recent,
