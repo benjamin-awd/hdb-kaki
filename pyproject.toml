@@ -6,20 +6,14 @@ authors = [{ name = "Benjamin Dornel", email = "benjamindornel@gmail.com" }]
 requires-python = ">=3.12,<3.13"
 readme = "README.md"
 dependencies = [
-    "pandas>=2.2.2,<3",
     "streamlit",
-    "folium>=0.17.0,<0.18",
-    "altair>=5.4.1,<6",
-    "streamlit-folium>=0.22.0,<0.23",
-    "seaborn>=0.13.2,<0.14",
-    "tqdm>=4.66.5,<5",
     "polars>=1.7.1,<2",
-    "plotly>=5.24.1,<6",
+    "pandas>=2.2.2,<3",
+    "numpy>=2.0,<3",
+    "requests>=2.32,<3",
     "python-dateutil>=2.9.0.post0,<3",
-    "pybadges",
+    "tqdm>=4.66.5,<5",
     "setuptools>=75.1.0,<76",
-    "streamlit-searchbox>=0.1.17,<0.2",
-    "statsmodels>=0.14.4,<0.15",
 ]
 
 [project.scripts]
@@ -36,7 +30,6 @@ dev = [
 
 [tool.uv.sources]
 streamlit = { path = "./build/streamlit-1.43.2.tar.gz" }
-pybadges = { git = "https://github.com/benjamin-awd/pybadges" }
 
 [tool.hatch.build.targets.sdist]
 include = ["webapp"]

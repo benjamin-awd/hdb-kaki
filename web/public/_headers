@@ -19,13 +19,9 @@
 /duckdb/*
   Cache-Control: public, max-age=31536000, immutable
 
-# Data shard filenames are stable but their contents change on each daily ETL run,
-# so revalidate rather than pin. DuckDB fetches these via HTTP range requests.
-# Trailing splat (not `*.parquet`): Cloudflare's matcher allows one greedy splat
-# and doesn't reliably match text after it. Shards are all named resale-*.parquet,
-# so this catches them without overlapping the manifest.json rule below (overlapping
-# rules would comma-join their Cache-Control values).
-/data/resale-*
+# The data file's name is stable but its contents change on each daily ETL run, so
+# revalidate rather than pin. DuckDB fetches it via HTTP range requests.
+/data/resale.parquet
   Cache-Control: public, max-age=3600, must-revalidate
 
 # The manifest gates which shards load and carries lastUpdated — always revalidate
@@ -33,7 +29,14 @@
 /data/manifest.json
   Cache-Control: public, max-age=0, must-revalidate
 
-# The landing's precomputed aggregate. Stable name, changes daily — cache like the
-# shards so repeat visits paint from disk instead of a revalidation round-trip.
+# Precomputed page snapshots (landing + town-analysis default view). Stable names,
+# change daily — cache like the data file so repeat visits paint from disk instead of
+# a revalidation round-trip.
 /data/overview.json
+  Cache-Control: public, max-age=3600, must-revalidate
+
+/data/town-analysis.json
+  Cache-Control: public, max-age=3600, must-revalidate
+
+/data/psf-trends.json
   Cache-Control: public, max-age=3600, must-revalidate

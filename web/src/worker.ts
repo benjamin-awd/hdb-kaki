@@ -41,14 +41,15 @@ export default {
 };
 
 // `.wasm` comes from the brotli-compressed `<file>.br` asset, re-served with the
-// right encoding/type. Other engine files (workers) are small and pass through.
-// Missing assets fall back to jsDelivr so the engine still loads if a build ever
+// right encoding/type. This covers both the engine and the staged parquet extension
+// under /duckdb/<version>/ext/. Other engine files (workers) are small and pass
+// through. Missing assets fall back upstream so things still load if a build ever
 // skipped the compress step (also covers `wrangler dev` against an empty ./dist).
 async function serveEngine(request: Request, url: URL, env: Env): Promise<Response> {
   if (url.pathname.endsWith('.wasm')) {
     // Bare GET so the asset layer returns the raw brotli bytes rather than re-encoding.
     const asset = await env.ASSETS.fetch(new Request(`${url.origin}${url.pathname}.br`));
-    if (!asset.ok) return jsdelivrFallback(url.pathname);
+    if (!asset.ok) return upstreamFallback(url.pathname);
     return new Response(asset.body, {
       encodeBody: 'manual',
       headers: {
@@ -60,16 +61,22 @@ async function serveEngine(request: Request, url: URL, env: Env): Promise<Respon
   }
 
   const asset = await env.ASSETS.fetch(request);
-  if (!asset.ok) return jsdelivrFallback(url.pathname);
+  if (!asset.ok) return upstreamFallback(url.pathname);
   const headers = new Headers(asset.headers); // mutable copy; asset's are guarded
   headers.set('Cache-Control', IMMUTABLE);
   return new Response(asset.body, { status: asset.status, headers });
 }
 
-// "/duckdb/<version>/<file>" mirrors the npm layout -> jsDelivr's
-// "@<version>/dist/<file>". A 302 keeps the browser's fetch flowing; instantiation
-// follows redirects transparently.
-function jsdelivrFallback(pathname: string): Response {
+// Graceful fallback if a staged file is missing. Extension requests
+// (/duckdb/<version>/ext/<core>/<platform>/<name>) go to the upstream DuckDB
+// extension repo; everything else mirrors the npm layout on jsDelivr. A 302 keeps
+// the browser's fetch flowing; instantiation follows redirects transparently.
+function upstreamFallback(pathname: string): Response {
+  const extIdx = pathname.indexOf('/ext/');
+  if (extIdx !== -1) {
+    const rest = pathname.slice(extIdx + '/ext/'.length); // "<core>/<platform>/<name>"
+    return Response.redirect(`https://extensions.duckdb.org/${rest}`, 302);
+  }
   const key = pathname.slice('/duckdb/'.length); // "<version>/<file>"
   const slash = key.indexOf('/');
   if (slash === -1) return new Response('Not found', { status: 404 });

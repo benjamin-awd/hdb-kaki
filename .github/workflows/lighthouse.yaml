@@ -1,0 +1,68 @@
+name: Lighthouse
+
+# Performance budgets for the static Astro site (web/). Builds the REAL production
+# serving path — `bun run build` then `wrangler dev` (started by Lighthouse CI itself,
+# see web/lighthouserc.cjs) — and runs Lighthouse against all four pages.
+#
+# HARD-fails only on first-party resource-size budgets (script/css/font/document),
+# which are deterministic; field metrics (LCP/TBT/CLS) are warn-only because on CI
+# runners they're dominated by uncontrollable third-party map tiles. See the header
+# of web/lighthouserc.cjs for the full rationale and baselines.
+#
+# Data shards are NOT committed (web/.gitignore); like test.yaml/deploy.yaml we
+# regenerate them from data/df.parquet published to the `data` GitHub Release so the
+# engine can boot end-to-end.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - "webapp/update/emit_web.py"
+      - ".github/workflows/lighthouse.yaml"
+  pull_request:
+    paths:
+      - "web/**"
+      - "webapp/update/emit_web.py"
+      - ".github/workflows/lighthouse.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lighthouse:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Download latest parquet from release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download data --pattern df.parquet --dir data --clobber
+
+      - name: Emit web data artifacts (year-sharded parquet + manifest)
+        run: uv run --with polars webapp/update/emit_web.py
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        working-directory: web
+        run: bun install --frozen-lockfile
+
+      - name: Build site (compress DuckDB engine + emit ./dist)
+        working-directory: web
+        run: bun run build
+
+      - name: Run Lighthouse CI
+        working-directory: web
+        # autorun starts wrangler dev, collects, asserts the budgets, and uploads the
+        # reports to temporary public storage (URLs printed in the log).
+        run: bunx lhci autorun --config=lighthouserc.cjs
+        env:
+          WRANGLER_SEND_METRICS: "false"

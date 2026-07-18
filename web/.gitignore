@@ -17,3 +17,7 @@ public/duckdb/
 test-results/
 playwright-report/
 playwright/.cache/
+
+# Lighthouse CI reports (regenerated each run by `bun run lhci`).
+.lighthouseci/
+.lighthouseci-run.log

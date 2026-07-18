@@ -1,12 +1,12 @@
 ---
 import Base from '../layouts/Base.astro';
-import { ehWasmUrl } from '../lib/duckdbBundle';
 ---
 
-<Base active="My Flat Insights" title="My Flat Insights — HDB Kaki">
-  <!-- This page auto-computes a default valuation on load; warm the same-origin
-       DuckDB engine in parallel with parse so it isn't blocked on a cold fetch. -->
-  <link slot="head" rel="prefetch" href={ehWasmUrl()} as="fetch" />
+<Base active="My Flat Insights" title="My Flat Insights | HDB Kaki">
+  <!-- This page auto-computes a default valuation on load, so the script eagerly warms
+       the same-origin DuckDB engine. That warm downloads + instantiates the wasm, so we
+       deliberately do NOT also <link rel="prefetch"> it — that only double-downloaded
+       the ~4.7 MB wasm (prefetch cache isn't reused by the worker's instantiate fetch). -->
   <section class="hero">
     <div class="wrap">
       <span class="eyebrow rise"><span class="dot"></span> New · Personalised</span>
@@ -89,8 +89,33 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
         </div>
       </div>
 
-      <!-- 02 BENCHMARKING -->
-      <div class="sec-head"><span class="num">02</span><h2>How it benchmarks</h2>
+      <!-- 02 PRICE TRAJECTORY -->
+      <div class="sec-head"><span class="num">02</span><h2>Price trajectory</h2>
+        <span class="hint" id="traj-hint">How your flat type has moved here over the years.</span></div>
+
+      <div class="split" style="grid-template-columns:1.55fr 1fr">
+        <div class="card chart-card">
+          <div class="chart-head"><div class="chart-title" id="traj-title">Median PSF over time</div>
+            <span class="pill" id="traj-pill">—</span></div>
+          <div id="traj-chart" style="width:100%;height:300px"></div>
+        </div>
+        <div class="card returns">
+          <div class="ret-head">Already own it?</div>
+          <p class="ret-lede">Enter what you paid to see your gain and annualised return vs the town.</p>
+          <div class="ret-inputs">
+            <label>Purchase price
+              <input id="r-paid" type="number" inputmode="numeric" min="10000" step="1000" placeholder="e.g. 380000" /></label>
+            <label>Year bought
+              <input id="r-year" type="number" inputmode="numeric" min="1990" max="2026" placeholder="e.g. 2015" /></label>
+          </div>
+          <div class="ret-out" id="ret-out">
+            <div class="ret-empty">Your appreciation will appear here.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 03 BENCHMARKING -->
+      <div class="sec-head"><span class="num">03</span><h2>How it benchmarks</h2>
         <span class="hint" id="bench-hint">Your flat vs the town and island-wide market.</span></div>
 
       <div class="bench-grid">
@@ -111,6 +136,24 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
         </div>
       </div>
 
+      <div class="split" style="grid-template-columns:1.4fr 1fr;margin-top:18px">
+        <div class="card chart-card">
+          <div class="chart-head"><div class="chart-title">Where you sit in the market</div>
+            <span class="pill" id="pctile-pill">—</span></div>
+          <div id="dist-chart" style="width:100%;height:210px"></div>
+          <div class="dist-cap" id="dist-cap">&nbsp;</div>
+        </div>
+        <div class="market-tiles">
+          <div class="card mt"><div class="mt-k">Sales this window</div><div class="mt-v" id="mt-vel">—</div><div class="mt-s" id="mt-vel-s">&nbsp;</div></div>
+          <div class="card mt"><div class="mt-k">Priciest nearby sale</div><div class="mt-v" id="mt-hi">—</div><div class="mt-s" id="mt-hi-s">&nbsp;</div></div>
+          <div class="card mt"><div class="mt-k">Lowest nearby sale</div><div class="mt-v" id="mt-lo">—</div><div class="mt-s" id="mt-lo-s">&nbsp;</div></div>
+        </div>
+      </div>
+
+      <!-- 04 LEASE & VALUE RUNWAY -->
+      <div class="sec-head"><span class="num">04</span><h2>Lease &amp; value runway</h2>
+        <span class="hint">How prices soften as the lease runs down — and the ages that affect CPF &amp; loans.</span></div>
+
       <div class="card lease-card">
         <div class="lease-top"><span class="t">Lease position</span>
           <span class="r"><b id="lease-rem">—</b> of 99 years remaining · commenced <b id="lease-start">—</b></span></div>
@@ -119,10 +162,26 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
           <div class="ticks"><span>99</span><span>80</span><span>60</span><span>40</span><span>20</span><span>0</span></div>
           <div class="now" id="lease-now"></div>
         </div>
+        <div class="lease-flags" id="lease-flags"></div>
       </div>
 
-      <!-- 03 COMPARABLES -->
-      <div class="sec-head"><span class="num">03</span><h2>Nearby comparables</h2>
+      <div class="card chart-card" style="margin-top:18px">
+        <div class="chart-head"><div class="chart-title" id="leasecurve-title">Median PSF by remaining lease</div>
+          <span class="chart-sub">Same flat type, island-wide, last 24 months</span></div>
+        <div id="lease-chart" style="width:100%;height:260px"></div>
+      </div>
+
+      <!-- 05 STOREY PREMIUM -->
+      <div class="sec-head"><span class="num">05</span><h2>Storey premium</h2>
+        <span class="hint" id="storey-hint">What buyers pay to go up a floor, here.</span></div>
+      <div class="card chart-card">
+        <div class="chart-head"><div class="chart-title" id="storey-title">Median PSF by storey band</div>
+          <span class="pill" id="storey-pill">—</span></div>
+        <div id="storey-chart" style="width:100%;height:280px"></div>
+      </div>
+
+      <!-- 06 COMPARABLES -->
+      <div class="sec-head"><span class="num">06</span><h2>Nearby comparables</h2>
         <span class="hint" id="comp-hint">Recent sales of the same flat type in your town, same street first.</span></div>
 
       <div class="split">
@@ -203,13 +262,44 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
   .decay .now::after{content:attr(data-label);position:absolute;top:-1px;left:8px;font-size:11px;font-weight:600;background:var(--ink);color:#fff;padding:2px 7px;border-radius:6px;white-space:nowrap}
   .decay .ticks{position:absolute;inset:0;display:flex;justify-content:space-between;padding:0 10px;align-items:center;font-size:10.5px;color:#7a7264;font-family:'IBM Plex Mono'}
   /* comps */
-  .comp-wrap{overflow:hidden}
+  .comp-wrap{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch}
   /* :global — comparables rows are injected via innerHTML */
   :global(.addr b){font-weight:600}
   :global(.addr .st){color:var(--ink-3);font-size:12.5px}
   :global(table.comp tbody tr.you){background:var(--red-wash)}
   :global(.badge){font-size:10.5px;font-weight:700;letter-spacing:.04em;color:var(--red-ink);background:#fff;border:1px solid var(--red);padding:1px 6px;border-radius:5px;margin-left:8px;vertical-align:middle;display:inline-block}
   .comp-foot{display:flex;justify-content:space-between;align-items:center;padding:16px;font-size:13px;color:var(--ink-3);border-top:1px solid var(--line)}
+  .chart-sub{font-size:12px;color:var(--ink-3)}
+  /* returns / CAGR panel */
+  .returns{padding:22px 24px;display:flex;flex-direction:column}
+  .ret-head{font-family:'Fraunces';font-weight:600;font-size:18px}
+  .ret-lede{font-size:13px;color:var(--ink-3);margin:6px 0 16px;line-height:1.45}
+  .ret-inputs{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .ret-inputs label{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-3);display:flex;flex-direction:column;gap:6px}
+  .ret-inputs input{border:1px solid var(--line);background:var(--paper);border-radius:9px;padding:10px 12px;font-family:'IBM Plex Mono';font-size:15px;font-weight:600;color:var(--ink);outline:none}
+  .ret-inputs input:focus{border-color:var(--ink)}
+  .ret-out{margin-top:16px;padding-top:16px;border-top:1px solid var(--line);flex:1}
+  .ret-empty{font-size:13px;color:var(--ink-3)}
+  .ret-big{font-family:'Fraunces';font-weight:600;font-size:32px;letter-spacing:-.02em;line-height:1}
+  .ret-big.pos{color:var(--good)} .ret-big.neg{color:var(--red-ink)}
+  .ret-sub{font-size:13px;color:var(--ink-2);margin-top:6px}
+  .ret-rows{margin-top:14px}
+  .ret-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;font-size:13.5px;border-top:1px solid var(--line)}
+  .ret-row .k{color:var(--ink-3)} .ret-row .v{font-family:'IBM Plex Mono';font-weight:600}
+  /* distribution caption + market tiles */
+  .dist-cap{font-size:12.5px;color:var(--ink-3);margin-top:8px;text-align:center}
+  .market-tiles{display:flex;flex-direction:column;gap:14px}
+  .mt{padding:16px 20px;display:flex;flex-direction:column;justify-content:center;flex:1}
+  .mt-k{font-size:12px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-3)}
+  .mt-v{font-family:'Fraunces';font-weight:600;font-size:26px;letter-spacing:-.02em;margin:4px 0 2px}
+  .mt-s{font-size:12.5px;color:var(--ink-3)}
+  /* lease threshold flags */
+  .lease-flags{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+  .lease-flag{display:flex;flex-direction:column;gap:2px;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:var(--paper);min-width:150px}
+  .lease-flag .lf-k{font-size:11px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-3)}
+  .lease-flag .lf-v{font-size:13.5px;color:var(--ink)}
+  .lease-flag .lf-v b{font-family:'IBM Plex Mono'}
+  .lease-flag.warn{border-color:var(--red);background:var(--red-wash)}
   /* leaflet map */
   .map-real{min-height:340px;border-radius:var(--radius);border:1px solid var(--line);box-shadow:var(--shadow);overflow:hidden;z-index:0}
   :global(.leaflet-container){font-family:'Public Sans',sans-serif;background:#f3ede1}
@@ -240,6 +330,8 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
   // first query. (Idempotent: primes the same _db the query wrapper reuses.)
   _db = import('../lib/db');
   _db.then((m) => m.prefetch()).catch(() => {});
+  import echarts from '../lib/echarts';
+  import { baseOption, palette, axisLabel, splitLine, axisLine, ink3, ink, red } from '../lib/echartsTheme';
   import { money, moneyShort, psf as fpsf, titleCase } from '../lib/format';
 
   const $ = (id: string) => document.getElementById(id)!;
@@ -249,6 +341,14 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
   let block = { town: '', street: '', address: '', model: '', lc: 0 };
   let userLatLng: [number, number] | null = null;
   let resolvedPostal = 0; // the postal the form fields currently reflect
+
+  // ---- ECharts: init once per container, reuse across recomputes ----
+  const charts: Record<string, echarts.ECharts> = {};
+  const ec = (id: string) => (charts[id] ??= echarts.init($(id)));
+  // State the "returns" panel needs so it can recompute on input change without re-querying.
+  let currentEstimate = 0;
+  let townYearPrice: Record<string, number> = {}; // 'YYYY' -> town median price for the flat type
+  let latestYear = '';
 
   const med = (a: number[]) => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
   const quantile = (sorted: number[], p: number) => { if (!sorted.length) return 0; const i = (sorted.length - 1) * p, lo = Math.floor(i), hi = Math.ceil(i); return sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo); };
@@ -303,6 +403,176 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
     $('f-lease-sub').textContent = block.lc ? `Commenced ${block.lc}` : '';
   }
 
+  // ================= render helpers for the new insight sections =================
+
+  // 02 · price trajectory — median PSF by year for this town + flat type, with the
+  // user's storey-adjusted estimate drawn as a reference line.
+  function renderTrajectory(rows: any[], userPsf: number, flat: string, town: string) {
+    const el = ec('traj-chart');
+    if (!rows.length) { el.clear(); return; }
+    const first = rows[0], last = rows[rows.length - 1];
+    const growth = first.psf ? (last.psf / first.psf - 1) * 100 : 0;
+    $('traj-title').textContent = `Median PSF · ${titleCase(town)} ${flat.toLowerCase()}`;
+    $('traj-hint').textContent = `Median PSF for ${flat.toLowerCase()} flats in ${titleCase(town)}, ${first.yr}–${last.yr}.`;
+    const pill = $('traj-pill');
+    pill.className = `pill ${growth >= 0 ? 'up' : 'down'}`;
+    pill.textContent = `${growth >= 0 ? '▲' : '▼'} ${Math.abs(growth).toFixed(0)}% since ${first.yr}`;
+    el.setOption({
+      ...baseOption(),
+      grid: { left: 52, right: 18, top: 18, bottom: 30, containLabel: false },
+      tooltip: { trigger: 'axis', valueFormatter: (v: number) => `${fpsf(v)} psf` },
+      xAxis: { type: 'category', data: rows.map((r) => r.yr), axisLabel, axisLine, axisTick: { show: false } },
+      yAxis: { type: 'value', scale: true, axisLabel: { ...axisLabel, formatter: (v: number) => '$' + v }, splitLine },
+      series: [{
+        type: 'line', smooth: true, symbol: 'circle', symbolSize: 6,
+        data: rows.map((r) => Math.round(r.psf)),
+        lineStyle: { width: 2.5, color: red }, itemStyle: { color: red },
+        areaStyle: { color: 'rgba(254,1,43,.07)' },
+        markLine: userPsf ? {
+          symbol: 'none', silent: true, lineStyle: { color: ink3, type: 'dashed' },
+          data: [{ yAxis: Math.round(userPsf) }],
+          label: { formatter: `your est. ${fpsf(userPsf)}`, color: ink3, fontSize: 11, position: 'insideStartTop' },
+        } : undefined,
+      }],
+    });
+  }
+
+  // 02 · "already own it?" — annualised return vs the town over the same span.
+  function nearestYear(y: number): string {
+    const ys = Object.keys(townYearPrice).map(Number).sort((a, b) => a - b);
+    if (!ys.length) return '';
+    return String(Math.min(Math.max(y, ys[0]), ys[ys.length - 1]));
+  }
+  function renderReturns() {
+    const out = $('ret-out');
+    const paid = Number(($('r-paid') as HTMLInputElement).value) || 0;
+    const yr = parseInt(($('r-year') as HTMLInputElement).value, 10);
+    if (!paid || !yr || yr < 1990 || yr >= NOW_YEAR || !currentEstimate) {
+      out.innerHTML = '<div class="ret-empty">Your appreciation will appear here.</div>';
+      return;
+    }
+    const hold = NOW_YEAR - yr;
+    const gain = currentEstimate - paid;
+    const totRet = (currentEstimate / paid - 1) * 100;
+    const cagr = (Math.pow(currentEstimate / paid, 1 / hold) - 1) * 100;
+    // Town benchmark over the overlapping span we actually have data for.
+    const bYear = nearestYear(yr);
+    const py = townYearPrice[bYear], cy = townYearPrice[latestYear];
+    const span = Number(latestYear) - Number(bYear);
+    const townCagr = py && cy && span > 0 ? (Math.pow(cy / py, 1 / span) - 1) * 100 : NaN;
+    const beat = cagr - townCagr;
+    const cls = gain >= 0 ? 'pos' : 'neg';
+    out.innerHTML = `
+      <div class="ret-big ${cls}">${gain >= 0 ? '+' : '−'}${money(Math.abs(gain))}</div>
+      <div class="ret-sub">${totRet >= 0 ? '+' : ''}${totRet.toFixed(0)}% total over ${hold} year${hold > 1 ? 's' : ''}</div>
+      <div class="ret-rows">
+        <div class="ret-row"><span class="k">Annualised (CAGR)</span><span class="v">${cagr >= 0 ? '+' : ''}${cagr.toFixed(1)}%/yr</span></div>
+        ${isFinite(townCagr) ? `<div class="ret-row"><span class="k">${titleCase(block.town)} · ${bYear}→${latestYear}</span><span class="v">${townCagr >= 0 ? '+' : ''}${townCagr.toFixed(1)}%/yr</span></div>
+        <div class="ret-row"><span class="k">You vs town</span><span class="v" style="color:${beat >= 0 ? 'var(--good)' : 'var(--red-ink)'}">${beat >= 0 ? '▲' : '▼'} ${Math.abs(beat).toFixed(1)} pts/yr</span></div>` : ''}
+      </div>`;
+  }
+
+  // 03 · distribution — histogram of comparable PSF with the user's estimate marked,
+  // plus the percentile of comps it beats.
+  function renderDistribution(psfs: number[], userPsf: number, flat: string, town: string) {
+    const el = ec('dist-chart');
+    if (psfs.length < 4) { el.clear(); $('pctile-pill').textContent = '—'; $('dist-cap').textContent = 'Too few sales to plot a distribution.'; return; }
+    const min = Math.min(...psfs), max = Math.max(...psfs);
+    const nb = Math.min(16, Math.max(6, Math.round(Math.sqrt(psfs.length))));
+    const w = (max - min) / nb || 1;
+    const bins = new Array(nb).fill(0);
+    const centers = Array.from({ length: nb }, (_, i) => min + w * (i + 0.5));
+    psfs.forEach((p) => { bins[Math.min(nb - 1, Math.max(0, Math.floor((p - min) / w)))]++; });
+    const userBin = Math.min(nb - 1, Math.max(0, Math.floor((userPsf - min) / w)));
+    const pct = Math.round((psfs.filter((p) => p < userPsf).length / psfs.length) * 100);
+    const pill = $('pctile-pill');
+    pill.className = `pill ${pct >= 50 ? 'up' : 'flat'}`;
+    pill.textContent = `${pct}th percentile`;
+    $('dist-cap').textContent = `Your estimate (${fpsf(userPsf)}) is priced above ${pct}% of recent ${flat.toLowerCase()} sales in ${titleCase(town)}.`;
+    el.setOption({
+      ...baseOption(),
+      grid: { left: 18, right: 14, top: 14, bottom: 26, containLabel: false },
+      tooltip: {
+        trigger: 'axis',
+        formatter: (ps: any) => { const i = ps[0].dataIndex; return `${fpsf(centers[i] - w / 2)}–${fpsf(centers[i] + w / 2)} psf<br/><b>${bins[i]}</b> sales`; },
+      },
+      xAxis: { type: 'category', data: centers.map((c) => fpsf(c)), axisLabel: { ...axisLabel, interval: Math.ceil(nb / 6) - 1 }, axisLine, axisTick: { show: false } },
+      yAxis: { type: 'value', show: false },
+      series: [{
+        type: 'bar', barCategoryGap: '12%',
+        data: bins.map((v, i) => ({ value: v, itemStyle: { color: i === userBin ? red : '#d9cfbe', borderRadius: [3, 3, 0, 0] } })),
+      }],
+    });
+  }
+
+  // 04 · lease decay — how PSF softens as the lease runs down (island-wide, same type).
+  function renderLeaseCurve(rows: any[], userRem: number) {
+    const el = ec('lease-chart');
+    if (rows.length < 2) { el.clear(); return; }
+    const userBucket = `${Math.floor(userRem / 10) * 10}y`;
+    const cats = rows.map((r) => `${r.bucket}y`);
+    el.setOption({
+      ...baseOption(),
+      grid: { left: 54, right: 18, top: 18, bottom: 44, containLabel: false },
+      tooltip: { trigger: 'axis', valueFormatter: (v: number) => `${fpsf(v)} psf` },
+      xAxis: {
+        type: 'category', data: cats, axisLabel, axisLine, axisTick: { show: false },
+        name: 'remaining lease', nameLocation: 'middle', nameGap: 30, nameTextStyle: { color: ink3, fontSize: 11 },
+      },
+      yAxis: { type: 'value', scale: true, axisLabel: { ...axisLabel, formatter: (v: number) => '$' + v }, splitLine },
+      series: [{
+        type: 'line', smooth: true, symbol: 'circle', symbolSize: 6,
+        data: rows.map((r) => Math.round(r.psf)),
+        lineStyle: { width: 2.5, color: palette[4] }, itemStyle: { color: palette[4] },
+        areaStyle: { color: 'rgba(59,110,165,.07)' },
+        markLine: cats.includes(userBucket) ? {
+          symbol: 'none', silent: true, lineStyle: { color: red, type: 'dashed' },
+          data: [{ xAxis: userBucket }], label: { formatter: 'your flat', color: red, fontSize: 11 },
+        } : undefined,
+      }],
+    });
+  }
+
+  // 04 · CPF / financing thresholds keyed off remaining lease (informational).
+  function renderLeaseFlags(rem: number) {
+    const flags = [
+      { at: 60, k: 'Full CPF & HDB loan', ok: 'Available at your lease', warn: 'Restricted below 60 yrs' },
+      { at: 30, k: 'Bank loan tenure', ok: 'Longer tenures possible', warn: 'Tighter below 30 yrs' },
+      { at: 20, k: 'CPF usage floor', ok: 'CPF can be used', warn: 'Blocked below 20 yrs' },
+    ];
+    $('lease-flags').innerHTML = flags.map((f) => {
+      const ok = rem >= f.at;
+      const yrsTo = rem - f.at;
+      return `<div class="lease-flag ${ok ? '' : 'warn'}">
+        <span class="lf-k">${f.k}</span>
+        <span class="lf-v">${ok ? `${f.ok} · <b>${yrsTo}</b> yrs of headroom` : f.warn}</span></div>`;
+    }).join('');
+  }
+
+  // 05 · storey premium — median PSF by storey band, user's band highlighted.
+  function renderStorey(rows: any[], userStorey: string) {
+    const el = ec('storey-chart');
+    if (rows.length < 2) { el.clear(); $('storey-pill').textContent = '—'; $('storey-hint').textContent = 'Too few sales across storeys to compare.'; return; }
+    const lo = rows[0], hi = rows[rows.length - 1];
+    const spanFloors = (hi.lo - lo.lo) || 1;
+    const perFloor = (hi.psf - lo.psf) / spanFloors; // $ psf per storey climbed
+    const pill = $('storey-pill');
+    pill.className = 'pill up';
+    pill.textContent = `≈ +${fpsf(perFloor * 3)} psf per 3 floors`;
+    $('storey-hint').textContent = `Low floors ${fpsf(lo.psf)} → high floors ${fpsf(hi.psf)} psf.`;
+    el.setOption({
+      ...baseOption(),
+      grid: { left: 54, right: 18, top: 16, bottom: 42, containLabel: false },
+      tooltip: { trigger: 'axis', valueFormatter: (v: number) => `${fpsf(v)} psf` },
+      xAxis: { type: 'category', data: rows.map((r) => r.storey_range), axisLabel: { ...axisLabel, rotate: rows.length > 7 ? 38 : 0 }, axisLine, axisTick: { show: false } },
+      yAxis: { type: 'value', scale: true, axisLabel: { ...axisLabel, formatter: (v: number) => '$' + v }, splitLine },
+      series: [{
+        type: 'bar', barWidth: '56%',
+        data: rows.map((r) => ({ value: Math.round(r.psf), itemStyle: { color: r.storey_range === userStorey ? red : '#c9bfae', borderRadius: [4, 4, 0, 0] } })),
+      }],
+    });
+  }
+
   // ---- compute valuation + benchmarks + comparables ----
   async function compute() {
     const flat = ($('f-flat') as HTMLSelectElement).value;
@@ -337,6 +607,7 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
     const medPsf = med(psfs), q25 = quantile(psfs, 0.25), q75 = quantile(psfs, 0.75);
     const storeyAdjPct = baseMedPsf ? (medPsf / baseMedPsf - 1) * 100 : 0;
     const estimate = medPsf * area, low = q25 * area, high = q75 * area;
+    currentEstimate = estimate;
     const n = comps.length;
     const nb = basis.length;
     const [confLabel, confBars] = nb >= 30 ? ['High', 4] : nb >= 15 ? ['Medium-High', 3] : nb >= 5 ? ['Medium', 2] : ['Low', 1];
@@ -398,6 +669,42 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
     $('comp-body').innerHTML = youRow + rows;
     $('comp-foot').textContent = `Showing ${Math.min(8, comps.length)} of ${comps.length} comparable sales · last ${months} months · ${titleCase(block.town)}`;
 
+    // ---- new insight sections: trajectory, distribution, market tiles, lease, storey ----
+    // 03 · distribution + market texture tiles (derived from comps already fetched)
+    renderDistribution(comps.map((c) => c.psf), medPsf, flat, block.town);
+    const perMonth = comps.length / months;
+    $('mt-vel').textContent = comps.length.toLocaleString();
+    $('mt-vel-s').textContent = `${flat.toLowerCase()} in ${titleCase(block.town)} · ~${perMonth.toFixed(1)}/mo`;
+    const byPrice = [...comps].sort((a, b) => b.price - a.price);
+    const hiC = byPrice[0], loC = byPrice[byPrice.length - 1];
+    if (hiC) { $('mt-hi').textContent = moneyShort(hiC.price); $('mt-hi-s').textContent = `${titleCase(hiC.address)} · ${hiC.month}`; }
+    if (loC) { $('mt-lo').textContent = moneyShort(loC.price); $('mt-lo-s').textContent = `${titleCase(loC.address)} · ${loC.month}`; }
+
+    // 04 · lease thresholds (client-side, from remaining lease)
+    renderLeaseFlags(rem);
+
+    // 02/04/05 · queries that need wider history than the comps window
+    const [trajRows, storeyRows, leaseRows] = await Promise.all([
+      query<any>(`SELECT substr(month,1,4) yr, median(psf) psf, median(resale_price) price, count(*) n
+                  FROM resale WHERE town='${sql(block.town)}' AND flat_type='${sql(flat)}'
+                  GROUP BY yr ORDER BY yr`),
+      query<any>(`SELECT storey_range, min(storey_lower_bound) lo, median(psf) psf, count(*) n
+                  FROM resale WHERE town='${sql(block.town)}' AND flat_type='${sql(flat)}'
+                    AND month >= strftime(current_date - INTERVAL 36 MONTH, '%Y-%m')
+                  GROUP BY storey_range HAVING count(*) >= 5 ORDER BY lo`),
+      query<any>(`SELECT floor(remaining_lease_years/10)*10 bucket, median(psf) psf, count(*) n
+                  FROM resale WHERE flat_type='${sql(flat)}'
+                    AND month >= strftime(current_date - INTERVAL 24 MONTH, '%Y-%m')
+                  GROUP BY bucket HAVING count(*) >= 30 ORDER BY bucket`),
+    ]);
+    const traj = trajRows.map((r) => ({ yr: r.yr, psf: Number(r.psf), price: Number(r.price), n: Number(r.n) }));
+    townYearPrice = {}; traj.forEach((r) => { townYearPrice[r.yr] = r.price; });
+    latestYear = traj.length ? traj[traj.length - 1].yr : '';
+    renderTrajectory(traj, medPsf, flat, block.town);
+    renderReturns(); // reflects the refreshed estimate + town series
+    renderStorey(storeyRows.map((r) => ({ ...r, lo: Number(r.lo), psf: Number(r.psf) })), storey);
+    renderLeaseCurve(leaseRows.map((r) => ({ bucket: Number(r.bucket), psf: Number(r.psf) })), rem);
+
     // map: comps (grey) + your block (red)
     layer.clearLayers();
     const pts: [number, number][] = [];
@@ -422,6 +729,8 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
   ($('f-postal') as HTMLInputElement).addEventListener('change', async () => { if (await resolveBlock()) compute(); });
   $('f-flat').addEventListener('change', async () => { await onFlatChange(); compute(); });
   ['f-storey', 'f-area', 'f-lease'].forEach((id) => $(id).addEventListener('change', compute));
+  // Returns panel recomputes locally from the current estimate — no DuckDB round-trip.
+  ['r-paid', 'r-year'].forEach((id) => $(id).addEventListener('input', renderReturns));
   $('get-insights').addEventListener('click', async () => {
     const cur = parseInt(($('f-postal') as HTMLInputElement).value, 10);
     // re-resolve only if the postal changed (avoid clobbering the user's edited fields)
@@ -439,5 +748,5 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
     }
   })();
 
-  window.addEventListener('resize', () => map.invalidateSize());
+  window.addEventListener('resize', () => { map.invalidateSize(); Object.values(charts).forEach((c) => c.resize()); });
 </script>

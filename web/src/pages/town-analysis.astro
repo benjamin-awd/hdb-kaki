@@ -1,12 +1,11 @@
 ---
 import Base from '../layouts/Base.astro';
-import { ehWasmUrl } from '../lib/duckdbBundle';
 ---
 
-<Base active="Town Analysis" title="Town Analysis — HDB Kaki">
-  <!-- This page auto-runs a query on load; warm the same-origin DuckDB engine in
-       parallel with parse so the first query isn't blocked on a cold ~34 MiB fetch. -->
-  <link slot="head" rel="prefetch" href={ehWasmUrl()} as="fetch" />
+<Base active="Town Analysis" title="Town Analysis | HDB Kaki">
+  <!-- The default view paints from a precomputed JSON snapshot (town-analysis.json),
+       so DuckDB is NOT on the load path — the engine is warmed on idle and only booted
+       when the visitor changes a filter. -->
   <section class="hero">
     <div class="wrap">
       <span class="eyebrow rise"><span class="dot"></span> Explore by Town</span>
@@ -60,7 +59,7 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
     <!-- 03 · DATA TABLE -->
     <div class="sec-head"><span class="num">03</span><h2>Data behind the map</h2>
       <span class="hint">Every point currently in view.</span></div>
-    <div class="card" style="overflow:hidden">
+    <div class="card table-card">
       <table class="comp">
         <thead><tr><th>Sold</th><th>Address</th><th class="r">Price</th><th class="r">PSF</th><th class="r">Lease left</th><th>Band</th></tr></thead>
         <tbody id="tbody-town"><tr><td colspan="6" style="padding:22px 16px;color:var(--ink-3)">Loading…</td></tr></tbody>
@@ -96,27 +95,29 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
   import L from 'leaflet';
   import 'leaflet.markercluster';
   import echarts from '../lib/echarts';
-  // DuckDB-WASM is heavy; load it lazily so the page shell is interactive first and
-  // the engine only downloads when a query actually runs.
+  // DuckDB-WASM is heavy and NOT needed for first paint: the default view renders from
+  // a precomputed snapshot (town-analysis.json). The engine is imported lazily and only
+  // booted when the visitor changes a filter (warmed on idle so that first change is
+  // snappy). The query() wrapper primes the same lazy import the warm path reuses.
   let _db: Promise<typeof import('../lib/db')> | null = null;
   const query = async <T = any>(sql: string): Promise<T[]> => {
     if (!_db) _db = import('../lib/db');
     return (await _db).query<T>(sql);
   };
-  // This page renders a default view on load, so start warming the engine now —
-  // overlapping the WASM download with DOM wiring instead of waiting for the first
-  // query. (Idempotent: primes the same _db the query wrapper reuses.)
-  _db = import('../lib/db');
-  _db.then((m) => m.prefetch()).catch(() => {});
   import { baseOption, palette, axisLabel, splitLine, axisLine, ink3, ink } from '../lib/echartsTheme';
   import { money, moneyShort, psf as fpsf, titleCase } from '../lib/format';
 
+  const DEFAULT_TOWN = 'ANG MO KIO';
+  const DEFAULT_FLAT = '4 ROOM';
   const $ = (id: string) => document.getElementById(id)!;
   const BAND_COLOR: Record<string, string> = { above: '#fe012b', around: '#d98a2b', below: '#1f7a4d' };
   const sql = (s: string) => s.replace(/'/g, "''");
 
   type Row = { lat: number; lng: number; price: number; address: string; month: string; storey: string; psf: number; lease: number; band?: string };
+  type Hi = { town: string; mx: number };
   let currentRows: Row[] = [];
+  let currentTown = DEFAULT_TOWN;
+  let currentFlat = DEFAULT_FLAT;
 
   // ---- Leaflet map (created once) ----
   const map = L.map('map', { scrollWheelZoom: false, attributionControl: true }).setView([1.3521, 103.8198], 12);
@@ -133,25 +134,17 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
     return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
   }
 
-  async function renderMap() {
-    const town = (($('sel-town') as HTMLSelectElement).value) || 'ANG MO KIO';
-    const flat = ($('sel-flat') as HTMLSelectElement).value;
+  // Paint the map + summary + table from already-fetched rows. Pure client-side, so
+  // changing only the threshold re-bands the same rows without touching DuckDB.
+  function paintMap(rows: Row[], town: string, flat: string) {
+    currentRows = rows;
+    currentTown = town;
+    currentFlat = flat;
     const thr = parseFloat(($('sel-thr') as HTMLSelectElement).value);
-
-    const rows = await query<Row>(
-      `SELECT latitude lat, longitude lng, resale_price price, address, month,
-              storey_range storey, psf, remaining_lease_years lease
-       FROM resale
-       WHERE town='${sql(town)}' AND flat_type='${sql(flat)}'
-         AND month >= strftime(current_date - INTERVAL 24 MONTH, '%Y-%m')
-         AND latitude IS NOT NULL
-       ORDER BY month DESC, resale_price DESC`,
-    ).then((rs) => rs.map((r) => ({ ...r, price: Number(r.price), psf: Number(r.psf), lat: Number(r.lat), lng: Number(r.lng), lease: Number(r.lease) })));
 
     const med = median(rows.map((r) => r.price));
     const lo = med * (1 - thr), hi = med * (1 + thr);
     for (const r of rows) r.band = r.price < lo ? 'below' : r.price > hi ? 'above' : 'around';
-    currentRows = rows;
 
     // markers
     cluster.clearLayers();
@@ -193,15 +186,28 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
     $('town-foot').textContent = `Showing ${Math.min(12, rows.length)} of ${rows.length.toLocaleString()} sales in view`;
   }
 
+  // Fetch rows for the current town/flat from DuckDB, then paint. Mirrors the SQL the
+  // default snapshot was precomputed from (see webapp/update/emit_web.py).
+  async function loadMap() {
+    const town = (($('sel-town') as HTMLSelectElement).value) || DEFAULT_TOWN;
+    const flat = ($('sel-flat') as HTMLSelectElement).value;
+    const rows = await query<Row>(
+      `SELECT latitude lat, longitude lng, resale_price price, address, month,
+              storey_range storey, psf, remaining_lease_years lease
+       FROM resale
+       WHERE town='${sql(town)}' AND flat_type='${sql(flat)}'
+         AND month >= strftime(current_date - INTERVAL 24 MONTH, '%Y-%m')
+         AND latitude IS NOT NULL
+       ORDER BY month DESC, resale_price DESC`,
+    ).then((rs) => rs.map((r) => ({ ...r, price: Number(r.price), psf: Number(r.psf), lat: Number(r.lat), lng: Number(r.lng), lease: Number(r.lease) })));
+    paintMap(rows, town, flat);
+  }
+
   // ---- highest sale per town ----
   const highestChart = echarts.init($('chart-highest'));
-  async function renderHighest() {
-    const flat = ($('sel-flat') as HTMLSelectElement).value;
-    const rows = await query<{ town: string; mx: number }>(
-      `SELECT town, max(resale_price) mx FROM resale WHERE flat_type='${sql(flat)}' GROUP BY town ORDER BY mx DESC LIMIT 15`,
-    ).then((rs) => rs.map((r) => ({ town: r.town, mx: Number(r.mx) })));
-    const med = median(rows.map((r) => r.mx));
-    rows.reverse(); // ECharts horizontal bar draws bottom-up
+  function paintHighest(input: Hi[]) {
+    const med = median(input.map((r) => r.mx));
+    const rows = [...input].reverse(); // ECharts horizontal bar draws bottom-up
     highestChart.setOption({
       ...baseOption(),
       grid: { left: 120, right: 70, top: 12, bottom: 30, containLabel: false },
@@ -222,6 +228,13 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
       }],
     });
   }
+  async function loadHighest() {
+    const flat = ($('sel-flat') as HTMLSelectElement).value;
+    const rows = await query<Hi>(
+      `SELECT town, max(resale_price) mx FROM resale WHERE flat_type='${sql(flat)}' GROUP BY town ORDER BY mx DESC LIMIT 15`,
+    ).then((rs) => rs.map((r) => ({ town: r.town, mx: Number(r.mx) })));
+    paintHighest(rows);
+  }
 
   // ---- CSV download ----
   $('dl-town').addEventListener('click', (e) => {
@@ -234,18 +247,40 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
     URL.revokeObjectURL(url);
   });
 
-  // ---- boot: populate selects then render ----
+  // ---- boot: paint the default view from the precomputed snapshot, then wire filters ----
+  type Snapshot = { default: { town: string; flat: string }; towns: string[]; flatTypes: string[]; rows: Row[]; highest: Hi[] };
   (async () => {
-    const towns = await query<{ town: string }>(`SELECT DISTINCT town FROM resale ORDER BY town`);
-    const flats = await query<{ flat_type: string }>(`SELECT DISTINCT flat_type FROM resale ORDER BY flat_type`);
-    ($('sel-town') as HTMLSelectElement).innerHTML = towns.map((t) => `<option${t.town === 'ANG MO KIO' ? ' selected' : ''}>${t.town}</option>`).join('');
-    ($('sel-flat') as HTMLSelectElement).innerHTML = flats.map((f) => `<option${f.flat_type === '4 ROOM' ? ' selected' : ''}>${f.flat_type}</option>`).join('');
-    $('sel-town').addEventListener('change', renderMap);
-    $('sel-thr').addEventListener('change', renderMap);
-    $('sel-flat').addEventListener('change', () => { renderMap(); renderHighest(); });
-    await renderMap();
-    await renderHighest();
+    const data: Snapshot = await fetch(`${import.meta.env.BASE_URL}data/town-analysis.json`).then((r) => {
+      if (!r.ok) throw new Error(`town-analysis.json ${r.status}`);
+      return r.json();
+    });
+    ($('sel-town') as HTMLSelectElement).innerHTML = data.towns.map((t) => `<option${t === data.default.town ? ' selected' : ''}>${t}</option>`).join('');
+    ($('sel-flat') as HTMLSelectElement).innerHTML = data.flatTypes.map((f) => `<option${f === data.default.flat ? ' selected' : ''}>${f}</option>`).join('');
+
+    // Paint immediately from JSON — no DuckDB needed for the default view.
+    paintMap(data.rows, data.default.town, data.default.flat);
+    paintHighest(data.highest);
+
+    // Filters go through DuckDB. Threshold-only changes just re-band the rows we
+    // already have, so they never touch the engine.
+    $('sel-town').addEventListener('change', loadMap);
+    $('sel-thr').addEventListener('change', () => paintMap(currentRows, currentTown, currentFlat));
+    $('sel-flat').addEventListener('change', () => { loadMap(); loadHighest(); });
+
+    warmEngineWhenIdle();
   })();
+
+  // Boot DuckDB in the background once the default view is up, so the first filter
+  // change is snappy — without competing with first paint. Skipped under Save-Data.
+  function warmEngineWhenIdle() {
+    if ((navigator as any).connection?.saveData) return;
+    const idle: (cb: () => void) => void =
+      (window as any).requestIdleCallback || ((cb: () => void) => setTimeout(cb, 1500));
+    idle(() => {
+      _db = import('../lib/db');
+      _db.then((m) => m.prefetch()).catch(() => {});
+    });
+  }
 
   window.addEventListener('resize', () => { highestChart.resize(); map.invalidateSize(); });
 </script>
