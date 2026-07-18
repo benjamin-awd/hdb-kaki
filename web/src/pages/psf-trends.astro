@@ -90,6 +90,10 @@ import Base from '../layouts/Base.astro';
   let regType: 'ols' | 'loess' = 'ols';
   let fullMinIdx = 0, fullMaxIdx = 0; // full x-extent, for mapping zoom % → months
   let zoomTimer: ReturnType<typeof setTimeout>;
+  // Monotonic token: every async load claims the next value; when its query resolves it
+  // only paints if it's still the latest. Guards against a slow in-flight zoom resample
+  // landing after a newer full reload (or filter change) and clobbering the scatter.
+  let reqSeq = 0;
 
   type ScatterRow = { month: string; psf: number; address: string; storey: string; price: number; lease: number };
   const toScatter = (rows: ScatterRow[]) =>
@@ -127,6 +131,7 @@ import Base from '../layouts/Base.astro';
 
   // Fetch the scatter sample + monthly medians for the current filter, then paint.
   async function loadRender() {
+    const seq = ++reqSeq;
     const where = whereClause();
     const [sample, monthly] = await Promise.all([
       query<ScatterRow>(sampleSql(where)),
@@ -134,6 +139,7 @@ import Base from '../layouts/Base.astro';
         `SELECT month, median(psf) med, count(*) n FROM resale WHERE ${where} GROUP BY month ORDER BY month`,
       ),
     ]);
+    if (seq !== reqSeq) return; // a newer load started while we were waiting — drop this one
     paintChart(sample, monthly);
   }
 
@@ -325,6 +331,7 @@ import Base from '../layouts/Base.astro';
       loadRender();
       return;
     }
+    const seq = ++reqSeq;
     const span = fullMaxIdx - fullMinIdx;
     const a = monthLabel(Math.floor(fullMinIdx + (span * startPct) / 100));
     const b = monthLabel(Math.ceil(fullMinIdx + (span * endPct) / 100));
@@ -333,6 +340,7 @@ import Base from '../layouts/Base.astro';
       query<ScatterRow>(sampleSql(where)),
       query<{ n: number }>(`SELECT count(*) n FROM resale WHERE ${where}`),
     ]);
+    if (seq !== reqSeq) return; // superseded by a newer zoom/filter/reload — don't clobber it
     chart.setOption({ series: [{ data: toScatter(rows) }] });
     $('scatter-note').textContent = noteText(Number(cnt[0].n), ' in view');
   }
