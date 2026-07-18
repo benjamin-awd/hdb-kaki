@@ -126,6 +126,24 @@ def emit_overview(df: pl.DataFrame) -> None:
         .to_dicts()
     )
 
+    # ---- landing KPI strip (Redfin-style) ----
+    # Four headline metrics for the hero, each a last-12-month value paired with a
+    # year-on-year delta against the preceding 12 months (recent_window vs prev_window).
+    prev_cutoff = f"{today.year - 2}-{today.month:02d}"  # 24 months back
+    prev_window = df.filter((pl.col("month") >= prev_cutoff) & (pl.col("month") < cutoff))
+
+    def _kpi(now: float | None, prev: float | None) -> dict:
+        yoy = (now - prev) / prev * 100 if (now is not None and prev) else None
+        return {"value": now, "yoy": yoy}
+
+    million = pl.col("resale_price") >= 1_000_000
+    stats = {
+        "medianPrice": _kpi(recent_window["resale_price"].median(), prev_window["resale_price"].median()),
+        "txns": _kpi(recent_window.height, prev_window.height),
+        "millionDollar": _kpi(recent_window.filter(million).height, prev_window.filter(million).height),
+        "medianPsf": _kpi(recent_window["psf"].median(), prev_window["psf"].median()),
+    }
+
     overview = {
         "trends": {
             "lease": trend("cat_remaining_lease_years"),
@@ -137,6 +155,7 @@ def emit_overview(df: pl.DataFrame) -> None:
         "buckets": buckets,
         "recent": recent,
         "recentTotal": recent_window.height,
+        "stats": stats,
     }
     out = OUT_DIR / "overview.json"
     out.write_text(json.dumps(overview))
