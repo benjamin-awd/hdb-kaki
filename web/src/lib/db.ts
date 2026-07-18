@@ -1,5 +1,5 @@
-// Client-side data layer: DuckDB-WASM over the year-sharded Parquet in /data.
-// Lazily boots the WASM engine, registers every shard from manifest.json, and
+// Client-side data layer: DuckDB-WASM over the single Parquet file in /data.
+// Lazily boots the WASM engine, registers resale.parquet from manifest.json, and
 // exposes a typed query() helper. Runs entirely in the browser — no backend.
 import * as duckdb from '@duckdb/duckdb-wasm';
 import { duckdbBase } from './duckdbBundle';
@@ -7,8 +7,8 @@ import { duckdbBase } from './duckdbBundle';
 export interface Manifest {
   lastUpdated: string | null;
   rows: number;
-  years: string[];
-  shards: { year: string; file: string; rows: number; bytes: number }[];
+  file: string;
+  bytes: number;
   columns: string[];
 }
 
@@ -45,14 +45,11 @@ async function boot(): Promise<duckdb.AsyncDuckDBConnection> {
 
   const manifest = await getManifest();
   const base = new URL(`${import.meta.env.BASE_URL}data/`, window.location.href).href;
-  for (const s of manifest.shards) {
-    await db.registerFileURL(s.file, base + s.file, duckdb.DuckDBDataProtocol.HTTP, false);
-  }
+  await db.registerFileURL(manifest.file, base + manifest.file, duckdb.DuckDBDataProtocol.HTTP, false);
 
   const conn = await db.connect();
-  // A single view spanning every shard — query `resale` like one table.
-  const list = manifest.shards.map((s) => `'${s.file}'`).join(', ');
-  await conn.query(`CREATE VIEW resale AS SELECT * FROM read_parquet([${list}])`);
+  // Query the file as `resale`. DuckDB reads it lazily over HTTP range requests.
+  await conn.query(`CREATE VIEW resale AS SELECT * FROM read_parquet('${manifest.file}')`);
   return conn;
 }
 
