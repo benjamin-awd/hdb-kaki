@@ -1,12 +1,12 @@
 ---
 import Base from '../layouts/Base.astro';
-import { ehWasmUrl } from '../lib/duckdbBundle';
 ---
 
 <Base active="My Flat Insights" title="My Flat Insights — HDB Kaki">
-  <!-- This page auto-computes a default valuation on load; warm the same-origin
-       DuckDB engine in parallel with parse so it isn't blocked on a cold fetch. -->
-  <link slot="head" rel="prefetch" href={ehWasmUrl()} as="fetch" />
+  <!-- This page auto-computes a default valuation on load, so the script eagerly warms
+       the same-origin DuckDB engine. That warm downloads + instantiates the wasm, so we
+       deliberately do NOT also <link rel="prefetch"> it — that only double-downloaded
+       the ~4.7 MB wasm (prefetch cache isn't reused by the worker's instantiate fetch). -->
   <section class="hero">
     <div class="wrap">
       <span class="eyebrow rise"><span class="dot"></span> New · Personalised</span>
