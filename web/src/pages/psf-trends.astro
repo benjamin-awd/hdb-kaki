@@ -1,12 +1,13 @@
 ---
 import Base from '../layouts/Base.astro';
-import { ehWasmUrl } from '../lib/duckdbBundle';
 ---
 
-<Base active="PSF Trends" title="PSF Trends — HDB Kaki">
-  <!-- This page auto-runs a query on load; warm the same-origin DuckDB engine in
-       parallel with parse so the first query isn't blocked on a cold ~34 MiB fetch. -->
-  <link slot="head" rel="prefetch" href={ehWasmUrl()} as="fetch" />
+<Base active="PSF Trends" title="PSF Trends | HDB Kaki">
+  <!-- The default view paints from a precomputed JSON snapshot (psf-trends.json), so
+       DuckDB is NOT on the load path — the engine is warmed on idle and only booted when
+       the visitor changes a filter or zooms. No <link rel="prefetch"> for the wasm: the
+       idle warm downloads + instantiates it once (a prefetch link isn't reused by the
+       worker's instantiate fetch, so it only double-downloaded the ~4.7 MB engine). -->
   <section class="hero">
     <div class="wrap">
       <span class="eyebrow rise"><span class="dot"></span> Price per Square Foot</span>
@@ -51,7 +52,7 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
 
     <div class="sec-head"><span class="num">02</span><h2>Fitted PSF by month</h2>
       <span class="hint">Trend value read off the fit for each month.</span></div>
-    <div class="card" style="overflow:hidden">
+    <div class="card table-card">
       <table class="comp">
         <thead><tr><th>Month</th><th class="r">Trend PSF</th><th class="r">MoM change</th></tr></thead>
         <tbody id="tbody-psf"><tr><td colspan="3" style="padding:22px 16px;color:var(--ink-3)">Loading…</td></tr></tbody>
@@ -66,18 +67,14 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
 <script>
   import echarts from '../lib/echarts';
   import { regressionLinear, regressionLoess } from 'd3-regression';
-  // DuckDB-WASM is heavy; load it lazily so the page shell is interactive first and
-  // the engine only downloads when a query actually runs.
+  // DuckDB-WASM is heavy and NOT needed for first paint: the default view renders from
+  // a precomputed snapshot (psf-trends.json). The engine is imported lazily and only
+  // booted when the visitor changes a filter or zooms (warmed on idle so that's snappy).
   let _db: Promise<typeof import('../lib/db')> | null = null;
   const query = async <T = any>(sql: string): Promise<T[]> => {
     if (!_db) _db = import('../lib/db');
     return (await _db).query<T>(sql);
   };
-  // This page renders a default view on load, so start warming the engine now —
-  // overlapping the WASM download with DOM wiring instead of waiting for the first
-  // query. (Idempotent: primes the same _db the query wrapper reuses.)
-  _db = import('../lib/db');
-  _db.then((m) => m.prefetch()).catch(() => {});
   import { baseOption, axisLabel, splitLine, axisLine, ink2, line as lineCol, red } from '../lib/echartsTheme';
   import { money, psf as fpsf, titleCase } from '../lib/format';
 
@@ -132,14 +129,27 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
     return w;
   }
 
-  async function render() {
+  type Monthly = { month: string; med: number; n: number };
+  let curSample: ScatterRow[] = [];
+  let curMonthly: Monthly[] = [];
+
+  // Fetch the scatter sample + monthly medians for the current filter, then paint.
+  async function loadRender() {
     const where = whereClause();
     const [sample, monthly] = await Promise.all([
       query<ScatterRow>(sampleSql(where)),
-      query<{ month: string; med: number; n: number }>(
+      query<Monthly>(
         `SELECT month, median(psf) med, count(*) n FROM resale WHERE ${where} GROUP BY month ORDER BY month`,
       ),
     ]);
+    paintChart(sample, monthly);
+  }
+
+  // Render the chart, stats and table from already-fetched data. Pure client-side, so
+  // toggling the regression type re-fits the same data without touching DuckDB.
+  function paintChart(sample: ScatterRow[], monthly: Monthly[]) {
+    curSample = sample;
+    curMonthly = monthly;
 
     const title = `Price per sqft · ${titleCase(($('sel-town') as HTMLSelectElement).value)}`
       + (($('sel-street') as HTMLSelectElement).value !== '__all' ? ` · ${titleCase(($('sel-street') as HTMLSelectElement).value)}` : '');
@@ -263,29 +273,56 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
       document.querySelectorAll('#reg-toggle .chip').forEach((b) => b.classList.remove('on'));
       btn.classList.add('on');
       regType = btn.dataset.reg as 'ols' | 'loess';
-      render();
+      // Re-fit the data we already have — no query needed to switch OLS/LOWESS.
+      paintChart(curSample, curMonthly);
     });
   });
 
+  function setStreets(streets: string[]) {
+    ($('sel-street') as HTMLSelectElement).innerHTML =
+      `<option value="__all" selected>All streets</option>` +
+      streets.map((s) => `<option value="${s}">${titleCase(s)}</option>`).join('');
+  }
   async function loadStreets() {
     const town = ($('sel-town') as HTMLSelectElement).value;
     const streets = await query<{ street_name: string }>(
       `SELECT DISTINCT street_name FROM resale WHERE town='${sql(town)}' ORDER BY street_name`,
     );
-    ($('sel-street') as HTMLSelectElement).innerHTML =
-      `<option value="__all" selected>All streets</option>` +
-      streets.map((s) => `<option value="${s.street_name}">${titleCase(s.street_name)}</option>`).join('');
+    setStreets(streets.map((s) => s.street_name));
   }
 
+  // ---- boot: paint the default view from the precomputed snapshot, then wire filters ----
+  type Snapshot = { default: { town: string }; towns: string[]; streets: string[]; sample: ScatterRow[]; monthly: Monthly[] };
   (async () => {
-    const towns = await query<{ town: string }>(`SELECT DISTINCT town FROM resale ORDER BY town`);
-    ($('sel-town') as HTMLSelectElement).innerHTML = towns.map((t) => `<option${t.town === 'ANG MO KIO' ? ' selected' : ''}>${t.town}</option>`).join('');
-    await loadStreets();
-    $('sel-town').addEventListener('change', async () => { await loadStreets(); render(); });
-    $('sel-street').addEventListener('change', render);
-    $('sel-storey').addEventListener('change', render);
-    render();
+    const data: Snapshot = await fetch(`${import.meta.env.BASE_URL}data/psf-trends.json`).then((r) => {
+      if (!r.ok) throw new Error(`psf-trends.json ${r.status}`);
+      return r.json();
+    });
+    ($('sel-town') as HTMLSelectElement).innerHTML = data.towns.map((t) => `<option${t === data.default.town ? ' selected' : ''}>${t}</option>`).join('');
+    setStreets(data.streets);
+
+    // Paint immediately from JSON — no DuckDB needed for the default view.
+    paintChart(data.sample, data.monthly);
+
+    // Filters (and the semantic-zoom resample) go through DuckDB.
+    $('sel-town').addEventListener('change', async () => { await loadStreets(); loadRender(); });
+    $('sel-street').addEventListener('change', loadRender);
+    $('sel-storey').addEventListener('change', loadRender);
+
+    warmEngineWhenIdle();
   })();
+
+  // Boot DuckDB in the background once the default view is up, so the first filter change
+  // or zoom is snappy — without competing with first paint. Skipped under Save-Data.
+  function warmEngineWhenIdle() {
+    if ((navigator as any).connection?.saveData) return;
+    const idle: (cb: () => void) => void =
+      (window as any).requestIdleCallback || ((cb: () => void) => setTimeout(cb, 1500));
+    idle(() => {
+      _db = import('../lib/db');
+      _db.then((m) => m.prefetch()).catch(() => {});
+    });
+  }
 
   // semantic zoom: re-sample the scatter to the visible date window so zooming in reveals more detail
   async function resampleForZoom() {
@@ -293,7 +330,7 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
     if (!dz || fullMaxIdx <= fullMinIdx) return;
     const startPct = dz.start ?? 0, endPct = dz.end ?? 100;
     if (startPct <= 0.5 && endPct >= 99.5) { // back to full range — restore the full-range sample + note
-      render();
+      loadRender();
       return;
     }
     const span = fullMaxIdx - fullMinIdx;
