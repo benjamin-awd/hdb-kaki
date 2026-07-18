@@ -26,8 +26,9 @@ export function getManifest(): Promise<Manifest> {
 }
 
 async function boot(): Promise<duckdb.AsyncDuckDBConnection> {
-  // Self-hosted engine served same-origin from R2 via src/worker.ts (see
-  // src/lib/duckdbBundle.ts). selectBundle picks eh vs. mvp from browser features;
+  // Self-hosted engine served same-origin by src/worker.ts, which re-serves the
+  // brotli-compressed .wasm with Content-Encoding: br (see src/lib/duckdbBundle.ts).
+  // selectBundle picks eh vs. mvp from browser features;
   // both are absolute URLs so the blob worker's importScripts resolves them.
   const dir = new URL(duckdbBase(), window.location.href).href;
   const bundle = await duckdb.selectBundle({
@@ -56,8 +57,28 @@ async function boot(): Promise<duckdb.AsyncDuckDBConnection> {
 }
 
 function getConn(): Promise<duckdb.AsyncDuckDBConnection> {
-  if (!connPromise) connPromise = boot();
+  if (!connPromise) {
+    const p = boot();
+    // Don't cache a failed boot for the rest of the session: if a transient error
+    // (wasm/worker/manifest/parquet fetch) rejects it, drop the cached promise so
+    // the next getConn() retries instead of re-throwing the same rejection forever.
+    p.catch(() => {
+      if (connPromise === p) connPromise = null;
+    });
+    connPromise = p;
+  }
   return connPromise;
+}
+
+/**
+ * Eagerly boot the engine (download + instantiate + register shards + create the
+ * `resale` view) so the first query() resolves instantly. Pages that render a
+ * default view on load call this to overlap the WASM download with DOM wiring.
+ * Idempotent — reuses the cached connection; boot errors are swallowed here and
+ * surface on the actual query() instead.
+ */
+export function prefetch(): void {
+  void getConn().catch(() => {});
 }
 
 /** Run SQL against the `resale` view and return plain JS row objects. */
