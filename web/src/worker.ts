@@ -3,11 +3,16 @@
 //
 // The raw engine is 34-39 MiB — over Cloudflare's 25 MiB static-asset cap, so it
 // can't ship as a plain asset. Instead scripts/compress-duckdb.mjs brotli-compresses
-// it to ~4.4 MiB (well under the cap) and ships THAT as `<file>.wasm.br`. This Worker
-// serves it back with the `Content-Encoding: br` and `Content-Type: application/wasm`
-// that WebAssembly.instantiateStreaming needs — set in code, so we don't depend on
-// Cloudflare's asset layer honouring a hand-rolled Content-Encoding. See
-// src/lib/duckdbBundle.ts for the URL scheme.
+// it to ~4.5 MiB (well under the cap) and ships THAT as `<file>.wasm.br`. This Worker
+// serves it back with the `Content-Encoding: br` + `Content-Type: application/wasm`
+// that WebAssembly.instantiateStreaming needs, using `encodeBody: "manual"` so the
+// runtime treats the body as already-encoded and doesn't re-compress it.
+//
+// NB: we deliberately do NOT run these through the Cache API. The Cache API doesn't
+// preserve Content-Encoding / the encodeBody flag, so a cached copy gets served with
+// the encoding stripped — the browser then hands raw brotli to WebAssembly and it
+// fails to compile. Serving fresh from ASSETS every time keeps the encoding intact
+// (ASSETS reads are edge-local and cheap); the browser still caches immutably below.
 //
 // Every other request is a static asset served before this Worker runs; we only see
 // the engine requests and 404 misses, which we forward to env.ASSETS untouched.
@@ -16,52 +21,35 @@ interface Env {
   ASSETS: { fetch(request: Request): Promise<Response> };
 }
 
-// Minimal shapes for the Workers-runtime bits the DOM lib doesn't declare, so we
-// avoid pulling in @cloudflare/workers-types for a ~70-line Worker.
-interface ExecutionContext {
-  waitUntil(promise: Promise<unknown>): void;
-}
-// `encodeBody: "manual"` tells the runtime the body is ALREADY in its final encoding
-// — don't re-compress it. Without this, Workers gzip-wraps our brotli bytes and the
-// browser hands garbage to WebAssembly. Not in the DOM lib's ResponseInit.
+// `encodeBody: "manual"` (a Workers ResponseInit extension not in the DOM lib) tells
+// the runtime the body is already in its final encoding — don't compress it again.
 interface CfResponseInit extends ResponseInit {
   encodeBody?: 'automatic' | 'manual';
 }
 
-// no-transform belts-and-braces against any further edge recompression.
+// no-transform belts-and-braces against any edge recompression of the wasm.
 const IMMUTABLE = 'public, max-age=31536000, immutable, no-transform';
 
 export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname.startsWith('/duckdb/')) {
-      return serveEngine(request, url, env, ctx);
+      return serveEngine(request, url, env);
     }
     return env.ASSETS.fetch(request);
   },
 };
 
-// Serve `/duckdb/<version>/<file>`, cached at the edge and immutably in the browser.
-// `.wasm` comes from the brotli-compressed `<file>.br` asset; workers/other files are
-// small and pass through as-is. Missing assets fall back to jsDelivr so the engine
-// still loads if a build ever skipped the compress step.
-async function serveEngine(
-  request: Request,
-  url: URL,
-  env: Env,
-  ctx: ExecutionContext,
-): Promise<Response> {
-  const cache = (caches as unknown as { default: Cache }).default;
-  const hit = await cache.match(request);
-  if (hit) return hit;
-
-  let res: Response;
+// `.wasm` comes from the brotli-compressed `<file>.br` asset, re-served with the
+// right encoding/type. Other engine files (workers) are small and pass through.
+// Missing assets fall back to jsDelivr so the engine still loads if a build ever
+// skipped the compress step (also covers `wrangler dev` against an empty ./dist).
+async function serveEngine(request: Request, url: URL, env: Env): Promise<Response> {
   if (url.pathname.endsWith('.wasm')) {
-    // Fetch the pre-compressed twin with a bare GET so the asset layer returns the
-    // raw brotli bytes rather than trying to re-encode them.
+    // Bare GET so the asset layer returns the raw brotli bytes rather than re-encoding.
     const asset = await env.ASSETS.fetch(new Request(`${url.origin}${url.pathname}.br`));
     if (!asset.ok) return jsdelivrFallback(url.pathname);
-    res = new Response(asset.body, {
+    return new Response(asset.body, {
       encodeBody: 'manual',
       headers: {
         'Content-Type': 'application/wasm',
@@ -69,16 +57,13 @@ async function serveEngine(
         'Cache-Control': IMMUTABLE,
       },
     } as CfResponseInit);
-  } else {
-    const asset = await env.ASSETS.fetch(request);
-    if (!asset.ok) return jsdelivrFallback(url.pathname);
-    const headers = new Headers(asset.headers); // mutable copy; asset's are guarded
-    headers.set('Cache-Control', IMMUTABLE);
-    res = new Response(asset.body, { status: asset.status, headers });
   }
 
-  ctx.waitUntil(cache.put(request, res.clone()));
-  return res;
+  const asset = await env.ASSETS.fetch(request);
+  if (!asset.ok) return jsdelivrFallback(url.pathname);
+  const headers = new Headers(asset.headers); // mutable copy; asset's are guarded
+  headers.set('Cache-Control', IMMUTABLE);
+  return new Response(asset.body, { status: asset.status, headers });
 }
 
 // "/duckdb/<version>/<file>" mirrors the npm layout -> jsDelivr's
