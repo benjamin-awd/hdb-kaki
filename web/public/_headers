@@ -37,3 +37,6 @@
 
 /data/town-analysis.json
   Cache-Control: public, max-age=3600, must-revalidate
+
+/data/psf-trends.json
+  Cache-Control: public, max-age=3600, must-revalidate
