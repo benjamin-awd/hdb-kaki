@@ -52,10 +52,16 @@ try {
     </div>
 
     <!-- 02 · PRICE MAP -->
-    <div class="sec-head"><span class="num">02</span><h2>Price map by town</h2>
-      <span class="hint">Median 4-room resale price by town, last 12 months — darker means pricier.</span></div>
+    <div class="sec-head"><span class="num">02</span><h2>Price map</h2>
+      <span class="hint">Median 4-room resale price, last 12 months — darker means pricier. Switch to subzones for a finer view; areas with fewer than 10 sales are left blank.</span></div>
+    <div class="controls" style="margin-bottom:16px">
+      <div class="chipset" id="map-toggle">
+        <button class="chip on" data-level="town">By town</button>
+        <button class="chip" data-level="subzone">By subzone</button>
+      </div>
+    </div>
     <div class="card chart-card">
-      <div class="chart-head"><div class="chart-title">Median resale price · 4-room</div></div>
+      <div class="chart-head"><div class="chart-title" id="map-title">Median resale price · 4-room · by town</div></div>
       <div id="chart-map" class="chart-box map-box"></div>
     </div>
 
@@ -118,6 +124,7 @@ try {
   type Overview = {
     trends: Record<string, { quarter: string; series: string; v: number }[]>;
     box: any[]; townMedians: { town: string; med: number; n: number }[];
+    subzoneMedians: { sz: string; med: number; n: number }[];
     scatter: any[]; buckets: any[]; recent: any[]; recentTotal: number;
   };
   let OV: Overview;
@@ -184,26 +191,48 @@ try {
     });
   });
 
-  // ---- 02 price choropleth by town ----
-  // Median 4-room price per town over the last 12 months, painted onto the URA
-  // planning-area boundaries (public/geo/sg-towns.geojson, keyed by town name).
-  async function renderMap() {
-    const [geo, outline] = await Promise.all([
-      fetch(`${import.meta.env.BASE_URL}geo/sg-towns.geojson`).then((r) => {
-        if (!r.ok) throw new Error(`sg-towns.geojson ${r.status}`);
-        return r.json();
-      }),
-      fetch(`${import.meta.env.BASE_URL}geo/sg-outline.geojson`).then((r) => {
-        if (!r.ok) throw new Error(`sg-outline.geojson ${r.status}`);
-        return r.json();
-      }),
-    ]);
-    echarts.registerMap('sg-towns', geo);
-    echarts.registerMap('sg-outline', outline);
+  // ---- 02 price choropleth (town / subzone) ----
+  // Median 4-room price over the last 12 months, painted onto URA boundaries. Two
+  // levels share the same slice so switching is a true zoom-in: towns join by name;
+  // subzones are point-in-polygon'd in emit_web.py and greyed out below minN sales.
+  const MAP_LEVELS = {
+    town: {
+      geo: 'geo/sg-towns.geojson', mapName: 'sg-towns', minN: 0,
+      title: 'Median resale price · 4-room · by town',
+      rows: () => OV.townMedians.map((r) => ({ name: r.town, med: Number(r.med), n: r.n })),
+    },
+    subzone: {
+      geo: 'geo/sg-subzones.geojson', mapName: 'sg-subzones', minN: 10,
+      title: 'Median resale price · 4-room · by subzone',
+      rows: () => OV.subzoneMedians.map((r) => ({ name: r.sz, med: Number(r.med), n: r.n })),
+    },
+  } as const;
+  type Level = keyof typeof MAP_LEVELS;
 
-    const data = OV.townMedians.map((r) => ({ name: r.town, value: Number(r.med), n: r.n }));
-    const byName = new Map(data.map((d) => [d.name, d]));
-    const vals = data.map((d) => d.value);
+  let mapChart: ReturnType<typeof echarts.init> | undefined;
+  const geoReady = new Set<string>();
+
+  async function registerGeo(url: string, name: string) {
+    if (geoReady.has(name)) return;
+    const g = await fetch(`${import.meta.env.BASE_URL}${url}`).then((r) => {
+      if (!r.ok) throw new Error(`${url} ${r.status}`);
+      return r.json();
+    });
+    echarts.registerMap(name, g);
+    geoReady.add(name);
+  }
+
+  async function renderMap(level: Level) {
+    const cfg = MAP_LEVELS[level];
+    // Subzone geometry is only fetched the first time it's viewed, keeping initial load
+    // light. The outline layer is shared across levels.
+    await Promise.all([registerGeo(cfg.geo, cfg.mapName), registerGeo('geo/sg-outline.geojson', 'sg-outline')]);
+    q('map-title').textContent = cfg.title;
+
+    const rows = cfg.rows();
+    const byName = new Map(rows.map((r) => [r.name, r]));
+    const colored = rows.filter((r) => r.n >= cfg.minN);
+    const vals = colored.map((r) => r.med);
     const lo = Math.min(...vals), hi = Math.max(...vals);
 
     // Shared placement — zoomed to fill the card, and identical on both layers so the
@@ -213,15 +242,16 @@ try {
       zoom: 1.28, layoutCenter: ['50%', '54%'], layoutSize: '96%',
     } as const;
 
-    const chart = echarts.init(q('chart-map'));
-    chart.setOption({
+    mapChart ??= echarts.init(q('chart-map'));
+    mapChart.setOption({
       ...baseOption(),
       tooltip: {
         trigger: 'item',
         formatter: (p: any) => {
           const d = byName.get(p.name);
-          if (!d) return `<b>${titleCase(p.name)}</b><br/>No HDB resale data`;
-          return `<b>${titleCase(p.name)}</b><br/>Median ${money(d.value)}`
+          if (!d || d.n === 0) return `<b>${titleCase(p.name)}</b><br/>No HDB resale data`;
+          if (d.n < cfg.minN) return `<b>${titleCase(p.name)}</b><br/><span style="color:${ink3}">${d.n} sales · too few to rank</span>`;
+          return `<b>${titleCase(p.name)}</b><br/>Median ${money(d.med)}`
             + `<br/><span style="color:${ink3}">${d.n.toLocaleString()} sales · last 12 mo</span>`;
         },
       },
@@ -236,14 +266,14 @@ try {
       },
       series: [
         {
-          type: 'map', map: 'sg-towns', nameProperty: 'name', roam: false, ...layout,
+          type: 'map', map: cfg.mapName, nameProperty: 'name', roam: false, ...layout,
           // No-data areas: a muted warm grey; light dividers between regions (the crisp
           // coast is drawn by the outline layer below).
           itemStyle: { areaColor: '#d8cfbe', borderColor: '#f3eee3', borderWidth: 0.8 },
           emphasis: { label: { show: false }, itemStyle: { borderColor: '#181410', borderWidth: 1.2 } },
           select: { disabled: true },
           label: { show: false },
-          data,
+          data: colored.map((r) => ({ name: r.name, value: r.med })),
         },
         {
           // Coastline only (all internal borders dissolved away) → a clean country outline.
@@ -253,8 +283,17 @@ try {
           label: { show: false },
         },
       ],
-    });
+    }, true);
   }
+
+  document.querySelectorAll<HTMLButtonElement>('#map-toggle .chip').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (btn.classList.contains('on')) return;
+      document.querySelectorAll('#map-toggle .chip').forEach((b) => b.classList.remove('on'));
+      btn.classList.add('on');
+      renderMap(btn.dataset.level as Level).catch((e) => console.error(e));
+    });
+  });
 
   // ---- 03 box plot by town ----
   function renderBox() {
@@ -349,7 +388,7 @@ try {
     q('chart-trends').innerHTML = '';
     trendChart = echarts.init(q('chart-trends'));
     renderTrends('lease');
-    renderMap().catch((e) => console.error(e));
+    renderMap('town').catch((e) => console.error(e));
     renderBox();
     renderLease();
     renderRecent();
