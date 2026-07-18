@@ -188,16 +188,30 @@ try {
   // Median 4-room price per town over the last 12 months, painted onto the URA
   // planning-area boundaries (public/geo/sg-towns.geojson, keyed by town name).
   async function renderMap() {
-    const geo = await fetch(`${import.meta.env.BASE_URL}geo/sg-towns.geojson`).then((r) => {
-      if (!r.ok) throw new Error(`sg-towns.geojson ${r.status}`);
-      return r.json();
-    });
+    const [geo, outline] = await Promise.all([
+      fetch(`${import.meta.env.BASE_URL}geo/sg-towns.geojson`).then((r) => {
+        if (!r.ok) throw new Error(`sg-towns.geojson ${r.status}`);
+        return r.json();
+      }),
+      fetch(`${import.meta.env.BASE_URL}geo/sg-outline.geojson`).then((r) => {
+        if (!r.ok) throw new Error(`sg-outline.geojson ${r.status}`);
+        return r.json();
+      }),
+    ]);
     echarts.registerMap('sg-towns', geo);
+    echarts.registerMap('sg-outline', outline);
 
     const data = OV.townMedians.map((r) => ({ name: r.town, value: Number(r.med), n: r.n }));
     const byName = new Map(data.map((d) => [d.name, d]));
     const vals = data.map((d) => d.value);
     const lo = Math.min(...vals), hi = Math.max(...vals);
+
+    // Shared placement — zoomed to fill the card, and identical on both layers so the
+    // coastline outline overlays the choropleth exactly.
+    const layout = {
+      aspectScale: 1, // Singapore sits on the equator — keep lon/lat 1:1, don't squash
+      zoom: 1.28, layoutCenter: ['50%', '54%'], layoutSize: '96%',
+    } as const;
 
     const chart = echarts.init(q('chart-map'));
     chart.setOption({
@@ -212,23 +226,33 @@ try {
         },
       },
       // Sequential magnitude → single-hue red ramp (light → dark), matching the app's
-      // "red = pricier" convention. Never a rainbow.
+      // "red = pricier" convention. Never a rainbow. Only paints the choropleth layer.
       visualMap: {
-        type: 'continuous', min: lo, max: hi, calculable: true,
+        type: 'continuous', min: lo, max: hi, calculable: true, seriesIndex: 0,
         left: 16, bottom: 24, itemHeight: 150,
         inRange: { color: ['#fde8ec', '#f7b8c2', '#f07087', '#e11d3e', '#a80019'] },
         textStyle: { color: ink3, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 },
         formatter: (v: number) => moneyShort(v),
       },
-      series: [{
-        type: 'map', map: 'sg-towns', nameProperty: 'name', roam: false,
-        aspectScale: 1, // Singapore sits on the equator — keep lon/lat 1:1, don't squash
-        itemStyle: { areaColor: '#efeadf', borderColor: '#fffdf8', borderWidth: 1 },
-        emphasis: { label: { show: false }, itemStyle: { borderColor: '#181410', borderWidth: 1.4 } },
-        select: { disabled: true },
-        label: { show: false },
-        data,
-      }],
+      series: [
+        {
+          type: 'map', map: 'sg-towns', nameProperty: 'name', roam: false, ...layout,
+          // No-data areas: a muted warm grey; light dividers between regions (the crisp
+          // coast is drawn by the outline layer below).
+          itemStyle: { areaColor: '#d8cfbe', borderColor: '#f3eee3', borderWidth: 0.8 },
+          emphasis: { label: { show: false }, itemStyle: { borderColor: '#181410', borderWidth: 1.2 } },
+          select: { disabled: true },
+          label: { show: false },
+          data,
+        },
+        {
+          // Coastline only (all internal borders dissolved away) → a clean country outline.
+          type: 'map', map: 'sg-outline', nameProperty: 'name', roam: false, silent: true, z: 5, ...layout,
+          itemStyle: { areaColor: 'transparent', borderColor: '#8c8479', borderWidth: 1.4 },
+          emphasis: { disabled: true },
+          label: { show: false },
+        },
+      ],
     });
   }
 
