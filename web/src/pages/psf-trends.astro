@@ -90,7 +90,10 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
   const dateOf = (idx: number) => new Date(2017 + Math.floor(idx / 12), idx % 12, 1).getTime();
   const monthLabel = (idx: number) => `${2017 + Math.floor(idx / 12)}-${String((idx % 12) + 1).padStart(2, '0')}`;
 
-  const chart = echarts.init($('chart-psf'));
+  // Instances persist across Astro client-side navigations; init() (re)creates the
+  // chart on each arrival and cleanup() disposes it. `active` gates the shared resize.
+  let chart!: ReturnType<typeof echarts.init>;
+  let active = false;
   let regType: 'ols' | 'loess' = 'ols';
   let fullMinIdx = 0, fullMaxIdx = 0; // full x-extent, for mapping zoom % → months
   let zoomTimer: ReturnType<typeof setTimeout>;
@@ -133,6 +136,7 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
         `SELECT month, median(psf) med, count(*) n FROM resale WHERE ${where} GROUP BY month ORDER BY month`,
       ),
     ]);
+    if (!active) return; // navigated away mid-query — don't touch the torn-down chart/DOM
 
     const title = `Price per sqft · ${titleCase(($('sel-town') as HTMLSelectElement).value)}`
       + (($('sel-street') as HTMLSelectElement).value !== '__all' ? ` · ${titleCase(($('sel-street') as HTMLSelectElement).value)}` : '');
@@ -251,15 +255,6 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
     $('psf-foot').textContent = `Showing ${Math.min(8, pts.length)} of ${pts.length} months`;
   }
 
-  document.querySelectorAll<HTMLButtonElement>('#reg-toggle .chip').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('#reg-toggle .chip').forEach((b) => b.classList.remove('on'));
-      btn.classList.add('on');
-      regType = btn.dataset.reg as 'ols' | 'loess';
-      render();
-    });
-  });
-
   async function loadStreets() {
     const town = ($('sel-town') as HTMLSelectElement).value;
     const streets = await query<{ street_name: string }>(
@@ -269,16 +264,6 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
       `<option value="__all" selected>All streets</option>` +
       streets.map((s) => `<option value="${s.street_name}">${titleCase(s.street_name)}</option>`).join('');
   }
-
-  (async () => {
-    const towns = await query<{ town: string }>(`SELECT DISTINCT town FROM resale ORDER BY town`);
-    ($('sel-town') as HTMLSelectElement).innerHTML = towns.map((t) => `<option${t.town === 'ANG MO KIO' ? ' selected' : ''}>${t.town}</option>`).join('');
-    await loadStreets();
-    $('sel-town').addEventListener('change', async () => { await loadStreets(); render(); });
-    $('sel-street').addEventListener('change', render);
-    $('sel-storey').addEventListener('change', render);
-    render();
-  })();
 
   // semantic zoom: re-sample the scatter to the visible date window so zooming in reveals more detail
   async function resampleForZoom() {
@@ -300,7 +285,45 @@ import { ehWasmUrl } from '../lib/duckdbBundle';
     chart.setOption({ series: [{ data: toScatter(rows) }] });
     $('scatter-note').textContent = noteText(Number(cnt[0].n), ' in view');
   }
-  chart.on('datazoom', () => { clearTimeout(zoomTimer); zoomTimer = setTimeout(resampleForZoom, 350); });
+  // ---- lifecycle: (re)build on each navigation, tear down on departure ----
+  function onResize() {
+    if (!active) return;
+    chart.resize();
+  }
 
-  window.addEventListener('resize', () => chart.resize());
+  function cleanup() {
+    if (!active) return; // only when leaving this page — before-swap is global, avoid double-teardown
+    active = false;
+    clearTimeout(zoomTimer);
+    chart?.dispose();
+  }
+
+  async function init() {
+    if (!document.getElementById('chart-psf')) return; // not this page — astro:page-load is global
+    active = true;
+    regType = 'ols';
+    chart = echarts.init($('chart-psf'));
+    chart.on('datazoom', () => { clearTimeout(zoomTimer); zoomTimer = setTimeout(resampleForZoom, 350); });
+
+    document.querySelectorAll<HTMLButtonElement>('#reg-toggle .chip').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#reg-toggle .chip').forEach((b) => b.classList.remove('on'));
+        btn.classList.add('on');
+        regType = btn.dataset.reg as 'ols' | 'loess';
+        render();
+      });
+    });
+
+    const towns = await query<{ town: string }>(`SELECT DISTINCT town FROM resale ORDER BY town`);
+    ($('sel-town') as HTMLSelectElement).innerHTML = towns.map((t) => `<option${t.town === 'ANG MO KIO' ? ' selected' : ''}>${t.town}</option>`).join('');
+    await loadStreets();
+    $('sel-town').addEventListener('change', async () => { await loadStreets(); render(); });
+    $('sel-street').addEventListener('change', render);
+    $('sel-storey').addEventListener('change', render);
+    render();
+  }
+
+  window.addEventListener('resize', onResize);
+  document.addEventListener('astro:page-load', init);
+  document.addEventListener('astro:before-swap', cleanup);
 </script>
