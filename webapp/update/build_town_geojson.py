@@ -35,6 +35,7 @@ from shapely.ops import unary_union
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "web" / "public" / "geo" / "sg-towns.geojson"
+OUTLINE = ROOT / "web" / "public" / "geo" / "sg-outline.geojson"
 
 # URA Master Plan 2019 Planning Area Boundary (No Sea), GEOJSON. The dataset id is
 # stable; data.gov.sg hands back a short-lived signed download URL via poll-download.
@@ -116,16 +117,19 @@ def build() -> None:
         raise SystemExit(f"No planning-area geometry for towns: {sorted(missing)}")
 
     features = []
+    all_geoms = []
     # HDB towns (dissolved) — hdb:true, keyed by town so overview.json medians join on.
     for town in sorted(parts):
-        dissolved = unary_union(parts[town]).simplify(SIMPLIFY_TOLERANCE)
+        dissolved = unary_union(parts[town])
+        all_geoms.append(dissolved)
         features.append({
             "type": "Feature",
             "properties": {"name": town, "hdb": True},
-            "geometry": _round(mapping(dissolved), COORD_PRECISION),
+            "geometry": _round(mapping(dissolved.simplify(SIMPLIFY_TOLERANCE)), COORD_PRECISION),
         })
     # Non-HDB areas — hdb:false, drawn as no-data base geometry only.
     for name, geom in sorted(others):
+        all_geoms.append(geom)
         features.append({
             "type": "Feature",
             "properties": {"name": name, "hdb": False},
@@ -138,6 +142,21 @@ def build() -> None:
     n_hdb = len(parts)
     print(f"Wrote {OUT.relative_to(ROOT)} ({OUT.stat().st_size / 1024:.1f} KB, "
           f"{n_hdb} towns + {len(features) - n_hdb} no-data areas)")
+
+    # Dissolve everything into one coastline-only polygon (internal town/area borders
+    # removed) so the map can draw a crisp country outline as its own layer, distinct
+    # from the lighter internal dividers.
+    outline = unary_union(all_geoms).simplify(SIMPLIFY_TOLERANCE)
+    outline_fc = {
+        "type": "FeatureCollection",
+        "features": [{
+            "type": "Feature",
+            "properties": {"name": "Singapore"},
+            "geometry": _round(mapping(outline), COORD_PRECISION),
+        }],
+    }
+    OUTLINE.write_text(json.dumps(outline_fc, separators=(",", ":")))
+    print(f"Wrote {OUTLINE.relative_to(ROOT)} ({OUTLINE.stat().st_size / 1024:.1f} KB)")
 
 
 if __name__ == "__main__":
