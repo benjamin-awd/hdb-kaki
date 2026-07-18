@@ -117,6 +117,10 @@ import Base from '../layouts/Base.astro';
   type Hi = { town: string; mx: number };
   let currentRows: Row[] = [];
   let currentTown = DEFAULT_TOWN;
+  // The "last 24 months" cutoff ('YYYY-MM'), shipped in the snapshot so the live
+  // re-query below uses the exact window the JSON was precomputed from (anchored to
+  // the data's last-updated month, not wall-clock). Assigned once the snapshot loads.
+  let cutoff = '';
   let currentFlat = DEFAULT_FLAT;
 
   // ---- Leaflet map (created once) ----
@@ -187,7 +191,8 @@ import Base from '../layouts/Base.astro';
   }
 
   // Fetch rows for the current town/flat from DuckDB, then paint. Mirrors the SQL the
-  // default snapshot was precomputed from (see webapp/update/emit_web.py).
+  // default snapshot was precomputed from (see webapp/update/emit_web.py) — including
+  // the same `cutoff` window, so the live query and the default snapshot agree.
   async function loadMap() {
     const town = (($('sel-town') as HTMLSelectElement).value) || DEFAULT_TOWN;
     const flat = ($('sel-flat') as HTMLSelectElement).value;
@@ -196,7 +201,7 @@ import Base from '../layouts/Base.astro';
               storey_range storey, psf, remaining_lease_years lease
        FROM resale
        WHERE town='${sql(town)}' AND flat_type='${sql(flat)}'
-         AND month >= strftime(current_date - INTERVAL 24 MONTH, '%Y-%m')
+         AND month >= '${cutoff}'
          AND latitude IS NOT NULL
        ORDER BY month DESC, resale_price DESC`,
     ).then((rs) => rs.map((r) => ({ ...r, price: Number(r.price), psf: Number(r.psf), lat: Number(r.lat), lng: Number(r.lng), lease: Number(r.lease) })));
@@ -248,12 +253,18 @@ import Base from '../layouts/Base.astro';
   });
 
   // ---- boot: paint the default view from the precomputed snapshot, then wire filters ----
-  type Snapshot = { default: { town: string; flat: string }; towns: string[]; flatTypes: string[]; rows: Row[]; highest: Hi[] };
+  type Snapshot = { default: { town: string; flat: string }; cutoff?: string; towns: string[]; flatTypes: string[]; rows: Row[]; highest: Hi[] };
   (async () => {
     const data: Snapshot = await fetch(`${import.meta.env.BASE_URL}data/town-analysis.json`).then((r) => {
       if (!r.ok) throw new Error(`town-analysis.json ${r.status}`);
       return r.json();
     });
+    // Reuse the snapshot's cutoff so live re-queries match it exactly. Fall back to a
+    // wall-clock 24-month window only if an older snapshot without the field is served.
+    cutoff = data.cutoff ?? (() => {
+      const d = new Date(); d.setMonth(d.getMonth() - 24);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    })();
     ($('sel-town') as HTMLSelectElement).innerHTML = data.towns.map((t) => `<option${t === data.default.town ? ' selected' : ''}>${t}</option>`).join('');
     ($('sel-flat') as HTMLSelectElement).innerHTML = data.flatTypes.map((f) => `<option${f === data.default.flat ? ' selected' : ''}>${f}</option>`).join('');
 

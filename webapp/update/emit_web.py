@@ -56,15 +56,16 @@ def _quarter_expr() -> pl.Expr:
     return (year + pl.lit(" Q") + quarter).alias("quarter")
 
 
-def emit_overview(df: pl.DataFrame) -> None:
+def emit_overview(df: pl.DataFrame, anchor: date) -> None:
     """Precompute the four landing-page charts + recent table into overview.json.
 
     Each block mirrors the corresponding query in web/src/pages/index.astro. The
-    12-month window uses today's date (recomputed each ETL run), matching the app's
-    original ``current_date - INTERVAL 12 MONTH`` behaviour.
+    12-month window is measured back from ``anchor`` — the data's last-updated date
+    (data/metadata), not wall-clock — so it tracks the data's own age and stays put
+    on days the data doesn't change. The landing page renders entirely from this JSON
+    with no client-side re-query, so the window can never diverge in the browser.
     """
-    today = date.today()
-    cutoff = f"{today.year - 1}-{today.month:02d}"  # 'YYYY-MM', 12 months back
+    cutoff = f"{anchor.year - 1}-{anchor.month:02d}"  # 'YYYY-MM', 12 months back
 
     def trend(col: str) -> list[dict]:
         return (
@@ -143,16 +144,20 @@ def emit_overview(df: pl.DataFrame) -> None:
     print(f"Wrote overview.json ({out.stat().st_size / 1024:.1f} KB)")
 
 
-def emit_town_analysis(df: pl.DataFrame) -> None:
+def emit_town_analysis(df: pl.DataFrame, anchor: date) -> None:
     """Precompute the town-analysis default view into town-analysis.json.
 
     Mirrors the on-load queries in web/src/pages/town-analysis.astro: the town/flat
     option lists, the default town/flat map rows (last 24 months), and the highest
     recorded sale per town for the default flat. Rendering this lets the page paint
     without DuckDB; the engine only boots when the visitor changes a filter.
+
+    The 24-month window is measured back from ``anchor`` (the data's last-updated
+    date, not wall-clock) and the resolved ``cutoff`` is shipped in the JSON. The
+    page binds its live DuckDB re-query to that same cutoff, so the default snapshot
+    and a filter-triggered query resolve the identical window — they can't diverge.
     """
-    today = date.today()
-    cutoff = f"{today.year - 2}-{today.month:02d}"  # 'YYYY-MM', 24 months back
+    cutoff = f"{anchor.year - 2}-{anchor.month:02d}"  # 'YYYY-MM', 24 months back
 
     # Map rows for the default town/flat — mirrors renderMap()'s SELECT one-for-one.
     rows = (
@@ -189,6 +194,7 @@ def emit_town_analysis(df: pl.DataFrame) -> None:
 
     payload = {
         "default": {"town": TA_DEFAULT_TOWN, "flat": TA_DEFAULT_FLAT},
+        "cutoff": cutoff,  # 'YYYY-MM'; the page reuses this for its live re-query
         "towns": sorted(df["town"].unique().to_list()),
         "flatTypes": sorted(df["flat_type"].unique().to_list()),
         "rows": rows,
@@ -275,6 +281,12 @@ def emit() -> None:
     )
 
     epoch = int(METADATA.read_text().strip()) if METADATA.exists() else None
+    # Anchor the rolling windows to the data's last-updated date rather than wall-clock,
+    # so the precomputed snapshots and the browser's live re-query resolve the SAME
+    # window (see emit_town_analysis / town-analysis.astro) and staleness tracks the
+    # data's age, not how long ago the site was rebuilt. Falls back to today when the
+    # metadata stamp is absent (e.g. a fresh clone with no ETL run yet).
+    anchor = datetime.fromtimestamp(epoch, tz=timezone.utc).date() if epoch else date.today()
     manifest = {
         "lastUpdatedEpoch": epoch,
         "lastUpdated": datetime.fromtimestamp(epoch, tz=timezone.utc).strftime("%Y-%m-%d")
@@ -287,8 +299,8 @@ def emit() -> None:
     }
     (OUT_DIR / "manifest.json").write_text(json.dumps(manifest, indent=2))
 
-    emit_overview(df)
-    emit_town_analysis(df)
+    emit_overview(df, anchor)
+    emit_town_analysis(df, anchor)
     emit_psf_trends(df)
 
     size = out.stat().st_size
