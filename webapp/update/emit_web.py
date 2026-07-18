@@ -35,6 +35,12 @@ OUT_DIR = ROOT / "web" / "public" / "data"
 TA_DEFAULT_TOWN = "ANG MO KIO"
 TA_DEFAULT_FLAT = "4 ROOM"
 
+# Default view psf-trends renders on load. MUST match DEFAULT_TOWN / START / SCATTER_CAP
+# in web/src/pages/psf-trends.astro.
+PSF_DEFAULT_TOWN = "ANG MO KIO"
+PSF_START = "2020-01"
+PSF_SCATTER_CAP = 6000
+
 # Columns dropped for the web: derivable or unused by any page.
 #   _id, _ts        — internal ETL bookkeeping
 #   remaining_lease — string form; kept as remaining_lease_years
@@ -193,6 +199,60 @@ def emit_town_analysis(df: pl.DataFrame) -> None:
     print(f"Wrote town-analysis.json ({out.stat().st_size / 1024:.1f} KB)")
 
 
+def emit_psf_trends(df: pl.DataFrame) -> None:
+    """Precompute the psf-trends default view into psf-trends.json.
+
+    Mirrors the on-load queries in web/src/pages/psf-trends.astro for the default
+    filter (default town, all streets/storeys, since PSF_START): the town list, the
+    default town's street list, the scatter sample, and the monthly median PSF. The
+    regression fit + chart rendering are done client-side from these.
+    """
+    scope = df.filter(
+        (pl.col("town") == PSF_DEFAULT_TOWN)
+        & (pl.col("month") >= PSF_START)
+        & pl.col("psf").is_not_null()
+    )
+
+    # Scatter sample — mirrors sampleSql(): all matching rows, or a random sample once
+    # over the cap (matching the app's `USING SAMPLE n ROWS`).
+    # Round the floats: the client formats psf/prices for display anyway, so trimming
+    # 17-digit noise shrinks the JSON a lot with no visible change to the chart.
+    sample_df = scope.select(
+        "month",
+        pl.col("psf").round(1),
+        "address",
+        pl.col("storey_range").alias("storey"),
+        pl.col("resale_price").cast(pl.Int64).alias("price"),
+        pl.col("remaining_lease_years").alias("lease"),
+    )
+    if sample_df.height > PSF_SCATTER_CAP:
+        sample_df = sample_df.sample(n=PSF_SCATTER_CAP, seed=42)
+
+    # Monthly median PSF + count — mirrors the median-by-month query.
+    monthly = (
+        scope.group_by("month")
+        .agg(pl.col("psf").median().round(1).alias("med"), pl.len().alias("n"))
+        .sort("month")
+        .select(["month", "med", "n"])
+        .to_dicts()
+    )
+
+    streets = (
+        df.filter(pl.col("town") == PSF_DEFAULT_TOWN)["street_name"].unique().sort().to_list()
+    )
+
+    payload = {
+        "default": {"town": PSF_DEFAULT_TOWN},
+        "towns": sorted(df["town"].unique().to_list()),
+        "streets": streets,
+        "sample": sample_df.to_dicts(),
+        "monthly": monthly,
+    }
+    out = OUT_DIR / "psf-trends.json"
+    out.write_text(json.dumps(payload))
+    print(f"Wrote psf-trends.json ({out.stat().st_size / 1024:.1f} KB)")
+
+
 def emit() -> None:
     df = pl.read_parquet(SRC_PARQUET)
     df = df.drop([c for c in DROP_COLS if c in df.columns])
@@ -229,6 +289,7 @@ def emit() -> None:
 
     emit_overview(df)
     emit_town_analysis(df)
+    emit_psf_trends(df)
 
     size = out.stat().st_size
     print(f"Wrote {out.name}, {df.height:,} rows, {size/1e6:.2f} MB")
