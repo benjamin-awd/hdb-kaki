@@ -15,7 +15,7 @@ import { test, expect } from '@playwright/test';
 test('landing pre-warms the DuckDB engine on load, with no interaction', async ({ page }) => {
   const wasmReq = page.waitForRequest(/\/duckdb\/.*\/duckdb-eh\.wasm$/, { timeout: 45_000 });
   const manifestReq = page.waitForRequest(/\/data\/manifest\.json$/, { timeout: 45_000 });
-  const parquetReq = page.waitForRequest(/\/data\/resale-.*\.parquet$/, { timeout: 45_000 });
+  const parquetReq = page.waitForRequest(/\/data\/resale\.parquet$/, { timeout: 45_000 });
 
   await page.goto('/');
   // Deliberately NO clicks or typing — the warm must happen on its own.
@@ -36,6 +36,6 @@ test('landing pre-warms the DuckDB engine on load, with no interaction', async (
   //    fetch — and that the brotli-served wasm actually compiled.
   await manifestReq;
 
-  // 3. read_parquet(...) in the CREATE VIEW pulls shard data: full end-to-end boot.
+  // 3. read_parquet(...) in the CREATE VIEW pulls the data file: full end-to-end boot.
   await parquetReq;
 });
