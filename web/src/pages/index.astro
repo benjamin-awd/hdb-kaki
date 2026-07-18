@@ -79,16 +79,30 @@ const kpis = stats
       <div id="chart-trends" class="chart-box" set:html={heroSVG}></div>
     </div>
 
-    <!-- 02 · DISTRIBUTION -->
-    <div class="sec-head"><span class="num">02</span><h2>Price distribution by town</h2>
+    <!-- 02 · PRICE MAP -->
+    <div class="sec-head"><span class="num">02</span><h2>Price map</h2>
+      <span class="hint">Median 4-room resale price, last 12 months — darker means pricier. Switch to subzones for a finer view; areas with fewer than 10 sales are left blank.</span></div>
+    <div class="controls" style="margin-bottom:16px">
+      <div class="chipset" id="map-toggle">
+        <button class="chip on" data-level="town">By town</button>
+        <button class="chip" data-level="subzone">By subzone</button>
+      </div>
+    </div>
+    <div class="card chart-card">
+      <div class="chart-head"><div class="chart-title" id="map-title">Median resale price · 4-room · by town</div></div>
+      <div id="chart-map" class="chart-box map-box"></div>
+    </div>
+
+    <!-- 03 · DISTRIBUTION -->
+    <div class="sec-head"><span class="num">03</span><h2>Price distribution by town</h2>
       <span class="hint">Spread of 4-room resale prices, last 12 months — box shows the middle 50%.</span></div>
     <div class="card chart-card">
       <div class="chart-head"><div class="chart-title">Resale price spread · 4-room</div></div>
       <div id="chart-box" class="chart-box"></div>
     </div>
 
-    <!-- 03 · LEASE RELATIONSHIP -->
-    <div class="sec-head"><span class="num">03</span><h2>Price &amp; remaining lease</h2>
+    <!-- 04 · LEASE RELATIONSHIP -->
+    <div class="sec-head"><span class="num">04</span><h2>Price &amp; remaining lease</h2>
       <span class="hint">How 4-room resale price relates to years left on the lease.</span></div>
     <div class="split" style="grid-template-columns:1.5fr 1fr">
       <div class="card chart-card">
@@ -101,8 +115,8 @@ const kpis = stats
       </div>
     </div>
 
-    <!-- 04 · RECENT TRANSACTIONS -->
-    <div class="sec-head"><span class="num">04</span><h2>Recent transactions</h2>
+    <!-- 05 · RECENT TRANSACTIONS -->
+    <div class="sec-head"><span class="num">05</span><h2>Recent transactions</h2>
       <span class="hint">Latest registered resale deals.</span></div>
     <div class="card table-card">
       <table class="comp">
@@ -124,6 +138,8 @@ const kpis = stats
   /* Stretch the SSR placeholder SVG to fill the box until the canvas chart hydrates. */
   #chart-trends svg { width: 100% !important; height: 100% !important; display: block; }
   #chart-scatter, #chart-buckets { height: 320px; }
+  /* Singapore is wide and short — give the choropleth more room than a plot box. */
+  .map-box { height: 460px; }
 </style>
 
 <script>
@@ -135,7 +151,9 @@ const kpis = stats
   // so it never boots DuckDB-WASM — that engine loads only on the interactive pages.
   type Overview = {
     trends: Record<string, { quarter: string; series: string; v: number }[]>;
-    box: any[]; scatter: any[]; buckets: any[]; recent: any[]; recentTotal: number;
+    box: any[]; townMedians: { town: string; med: number; n: number }[];
+    subzoneMedians: { sz: string; med: number; n: number }[];
+    scatter: any[]; buckets: any[]; recent: any[]; recentTotal: number;
   };
   let OV: Overview;
 
@@ -201,7 +219,111 @@ const kpis = stats
     });
   });
 
-  // ---- 02 box plot by town ----
+  // ---- 02 price choropleth (town / subzone) ----
+  // Median 4-room price over the last 12 months, painted onto URA boundaries. Two
+  // levels share the same slice so switching is a true zoom-in: towns join by name;
+  // subzones are point-in-polygon'd in emit_web.py and greyed out below minN sales.
+  const MAP_LEVELS = {
+    town: {
+      geo: 'geo/sg-towns.geojson', mapName: 'sg-towns', minN: 0,
+      title: 'Median resale price · 4-room · by town',
+      rows: () => OV.townMedians.map((r) => ({ name: r.town, med: Number(r.med), n: r.n })),
+    },
+    subzone: {
+      geo: 'geo/sg-subzones.geojson', mapName: 'sg-subzones', minN: 10,
+      title: 'Median resale price · 4-room · by subzone',
+      rows: () => OV.subzoneMedians.map((r) => ({ name: r.sz, med: Number(r.med), n: r.n })),
+    },
+  } as const;
+  type Level = keyof typeof MAP_LEVELS;
+
+  let mapChart: ReturnType<typeof echarts.init> | undefined;
+  const geoReady = new Set<string>();
+
+  async function registerGeo(url: string, name: string) {
+    if (geoReady.has(name)) return;
+    const g = await fetch(`${import.meta.env.BASE_URL}${url}`).then((r) => {
+      if (!r.ok) throw new Error(`${url} ${r.status}`);
+      return r.json();
+    });
+    echarts.registerMap(name, g);
+    geoReady.add(name);
+  }
+
+  async function renderMap(level: Level) {
+    const cfg = MAP_LEVELS[level];
+    // Subzone geometry is only fetched the first time it's viewed, keeping initial load
+    // light. The outline layer is shared across levels.
+    await Promise.all([registerGeo(cfg.geo, cfg.mapName), registerGeo('geo/sg-outline.geojson', 'sg-outline')]);
+    q('map-title').textContent = cfg.title;
+
+    const rows = cfg.rows();
+    const byName = new Map(rows.map((r) => [r.name, r]));
+    const colored = rows.filter((r) => r.n >= cfg.minN);
+    const vals = colored.map((r) => r.med);
+    const lo = Math.min(...vals), hi = Math.max(...vals);
+
+    // Shared placement — zoomed to fill the card, and identical on both layers so the
+    // coastline outline overlays the choropleth exactly.
+    const layout = {
+      aspectScale: 1, // Singapore sits on the equator — keep lon/lat 1:1, don't squash
+      zoom: 1.28, layoutCenter: ['50%', '54%'], layoutSize: '96%',
+    } as const;
+
+    mapChart ??= echarts.init(q('chart-map'));
+    mapChart.setOption({
+      ...baseOption(),
+      tooltip: {
+        trigger: 'item',
+        formatter: (p: any) => {
+          const d = byName.get(p.name);
+          if (!d || d.n === 0) return `<b>${titleCase(p.name)}</b><br/>No HDB resale data`;
+          if (d.n < cfg.minN) return `<b>${titleCase(p.name)}</b><br/><span style="color:${ink3}">${d.n} sales · too few to rank</span>`;
+          return `<b>${titleCase(p.name)}</b><br/>Median ${money(d.med)}`
+            + `<br/><span style="color:${ink3}">${d.n.toLocaleString()} sales · last 12 mo</span>`;
+        },
+      },
+      // Sequential magnitude → single-hue red ramp (light → dark), matching the app's
+      // "red = pricier" convention. Never a rainbow. Only paints the choropleth layer.
+      visualMap: {
+        type: 'continuous', min: lo, max: hi, calculable: true, seriesIndex: 0,
+        left: 16, bottom: 24, itemHeight: 150,
+        inRange: { color: ['#fde8ec', '#f7b8c2', '#f07087', '#e11d3e', '#a80019'] },
+        textStyle: { color: ink3, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 },
+        formatter: (v: number) => moneyShort(v),
+      },
+      series: [
+        {
+          type: 'map', map: cfg.mapName, nameProperty: 'name', roam: false, ...layout,
+          // No-data areas: a muted warm grey; light dividers between regions (the crisp
+          // coast is drawn by the outline layer below).
+          itemStyle: { areaColor: '#efeadf', borderColor: '#f3eee3', borderWidth: 0.8 },
+          emphasis: { label: { show: false }, itemStyle: { borderColor: '#181410', borderWidth: 1.2 } },
+          select: { disabled: true },
+          label: { show: false },
+          data: colored.map((r) => ({ name: r.name, value: r.med })),
+        },
+        {
+          // Coastline only (all internal borders dissolved away) → a clean country outline.
+          type: 'map', map: 'sg-outline', nameProperty: 'name', roam: false, silent: true, z: 5, ...layout,
+          itemStyle: { areaColor: 'transparent', borderColor: '#8c8479', borderWidth: 1.4 },
+          emphasis: { disabled: true },
+          label: { show: false },
+        },
+      ],
+    }, true);
+  }
+
+  document.querySelectorAll<HTMLButtonElement>('#map-toggle .chip').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (btn.classList.contains('on')) return;
+      document.querySelectorAll('#map-toggle .chip').forEach((b) => b.classList.remove('on'));
+      btn.classList.add('on');
+      renderMap(btn.dataset.level as Level).catch((e) => console.error(e));
+    });
+  });
+
+  // ---- 03 box plot by town ----
   function renderBox() {
     const rows = OV.box;
     const chart = echarts.init(q('chart-box'));
@@ -224,7 +346,7 @@ const kpis = stats
     });
   }
 
-  // ---- 03 scatter + bucket counts ----
+  // ---- 04 scatter + bucket counts ----
   function renderLease() {
     const bands = ['0-60 years', '61-80 years', '81-99 years'];
     const colors: Record<string, string> = { '0-60 years': palette[0], '61-80 years': palette[3], '81-99 years': palette[2] };
@@ -266,7 +388,7 @@ const kpis = stats
     });
   }
 
-  // ---- 04 recent transactions ----
+  // ---- 05 recent transactions ----
   function renderRecent() {
     const rows = OV.recent;
     q('tbody-recent').innerHTML = rows
@@ -294,6 +416,7 @@ const kpis = stats
     q('chart-trends').innerHTML = '';
     trendChart = echarts.init(q('chart-trends'));
     renderTrends('lease');
+    renderMap('town').catch((e) => console.error(e));
     renderBox();
     renderLease();
     renderRecent();
@@ -327,6 +450,7 @@ const kpis = stats
 
   window.addEventListener('resize', () => {
     trendChart?.resize();
+    echarts.getInstanceByDom(q('chart-map'))?.resize();
     echarts.getInstanceByDom(q('chart-box'))?.resize();
     echarts.getInstanceByDom(q('chart-scatter'))?.resize();
     echarts.getInstanceByDom(q('chart-buckets'))?.resize();
