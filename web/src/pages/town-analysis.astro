@@ -36,7 +36,7 @@ import Base from '../layouts/Base.astro';
       <div class="card" style="padding:24px">
         <div class="cap">Median resale price</div>
         <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:4px">
-          <span id="median-price" style="font-family:'Fraunces';font-weight:600;font-size:38px;letter-spacing:-.02em">—</span>
+          <span id="median-price" style="font-family:var(--font-fraunces);font-weight:600;font-size:38px;letter-spacing:-.02em">—</span>
         </div>
         <div id="map-sub" style="font-size:13px;color:var(--ink-3);margin-bottom:22px">&nbsp;</div>
         <div style="height:1px;background:var(--line);margin:6px 0 18px"></div>
@@ -75,12 +75,12 @@ import Base from '../layouts/Base.astro';
   .cat-line .dot{width:10px;height:10px;border-radius:50%;flex:none}
   .cat-line .bar{flex:1;height:8px;border-radius:999px;background:#efeadf;overflow:hidden}
   .cat-line .bar span{display:block;height:100%;width:0}
-  .cat-line .amt{width:52px;text-align:right;font-family:'IBM Plex Mono';font-size:12.5px;color:var(--ink-2)}
+  .cat-line .amt{width:52px;text-align:right;font-family:var(--font-mono);font-size:12.5px;color:var(--ink-2)}
   /* Leaflet hover tooltip on-brand */
-  :global(.leaflet-container){font-family:'Public Sans',sans-serif;background:#f3ede1}
+  :global(.leaflet-container){font-family:var(--font-sans);background:#f3ede1}
   :global(.leaflet-tooltip.hdb-tip){
     background:var(--paper-2);border:1px solid var(--line);border-radius:10px;
-    box-shadow:var(--shadow);color:var(--ink);font-family:'Public Sans',sans-serif;
+    box-shadow:var(--shadow);color:var(--ink);font-family:var(--font-sans);
     font-size:13px;padding:9px 12px;line-height:1.5;white-space:nowrap;
   }
   :global(.leaflet-tooltip.hdb-tip b){font-weight:600}
@@ -103,7 +103,7 @@ import Base from '../layouts/Base.astro';
     if (!_db) _db = import('../lib/db');
     return (await _db).query<T>(sql);
   };
-  import { baseOption, palette, axisLabel, splitLine, axisLine, ink3, ink } from '../lib/echartsTheme';
+  import { baseOption, palette, axisLabel, splitLine, axisLine, ink3, ink, mono } from '../lib/echartsTheme';
   import { money, moneyShort, psf as fpsf, titleCase } from '../lib/format';
 
   const DEFAULT_TOWN = 'ANG MO KIO';
@@ -216,7 +216,7 @@ import Base from '../layouts/Base.astro';
       series: [{
         type: 'bar', barWidth: 16,
         itemStyle: { color: (p: any) => (rows[p.dataIndex].mx >= med ? palette[0] : palette[5]), borderRadius: 4 },
-        label: { show: true, position: 'right', formatter: (p: any) => moneyShort(p.value), color: ink3, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 },
+        label: { show: true, position: 'right', formatter: (p: any) => moneyShort(p.value), color: ink3, fontFamily: mono, fontSize: 11 },
         markLine: {
           symbol: 'none', silent: true,
           lineStyle: { color: ink3, type: 'dashed' },

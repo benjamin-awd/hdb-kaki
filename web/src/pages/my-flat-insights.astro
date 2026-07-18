@@ -207,7 +207,7 @@ import Base from '../layouts/Base.astro';
   .field label{display:block;font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3);margin-bottom:9px}
   .field .val{font-size:17px;font-weight:500}
   .field input, .field select{width:100%;border:none;background:none;font-family:inherit;font-size:17px;font-weight:500;color:var(--ink);outline:none;padding:0}
-  .field input.big{font-family:'IBM Plex Mono';font-size:26px;font-weight:600;letter-spacing:.02em}
+  .field input.big{font-family:var(--font-mono);font-size:26px;font-weight:600;letter-spacing:.02em}
   .field select{cursor:pointer}
   .field .sub{font-size:12.5px;color:var(--ink-3);margin-top:5px}
   .form-foot{display:flex;align-items:center;justify-content:space-between;padding:16px 22px;gap:16px;flex-wrap:wrap}
@@ -219,9 +219,9 @@ import Base from '../layouts/Base.astro';
   .val-main{padding:34px 36px}
   .val-side{background:linear-gradient(160deg,#1c1712,#241d16);color:#f4efe6;padding:34px}
   .val-label{font-size:13px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
-  .val-big{font-family:'Fraunces';font-weight:600;font-size:clamp(46px,7vw,68px);letter-spacing:-.03em;line-height:1;margin:8px 0 4px}
+  .val-big{font-family:var(--font-fraunces);font-weight:600;font-size:clamp(46px,7vw,68px);letter-spacing:-.03em;line-height:1;margin:8px 0 4px}
   .val-range-txt{font-size:15px;color:var(--ink-2)}
-  .val-range-txt b{color:var(--ink);font-family:'IBM Plex Mono';font-weight:600}
+  .val-range-txt b{color:var(--ink);font-family:var(--font-mono);font-weight:600}
   .rangebar{margin-top:26px}
   .rangebar .track{position:relative;height:10px;border-radius:999px;background:linear-gradient(90deg,#f0e7d8,#e9dcc7)}
   .rangebar .fill{position:absolute;top:0;bottom:0;left:12%;right:12%;border-radius:999px;background:linear-gradient(90deg,rgba(254,1,43,.25),rgba(254,1,43,.55))}
@@ -231,7 +231,7 @@ import Base from '../layouts/Base.astro';
   .val-side .vs-label{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#b9ae9c}
   .vs-row{display:flex;align-items:center;justify-content:space-between;padding:13px 0;border-bottom:1px solid rgba(255,255,255,.08)}
   .vs-row .k{font-size:14px;color:#d8cfc0}
-  .vs-row .v{font-family:'IBM Plex Mono';font-weight:600;font-size:15px}
+  .vs-row .v{font-family:var(--font-mono);font-weight:600;font-size:15px}
   .conf{display:inline-flex;align-items:center;gap:8px;margin-top:14px;font-size:13px;color:#e8e0d2}
   .conf .bars{display:flex;gap:3px}
   :global(.conf .bars i){width:5px;height:14px;border-radius:2px;background:rgba(255,255,255,.22)}
@@ -239,7 +239,7 @@ import Base from '../layouts/Base.astro';
   .disclaimer{font-size:11.5px;color:#a49a89;margin-top:18px;line-height:1.4}
   /* bench minibars */
   .bench{padding:24px 24px 22px}
-  .bench .bv{font-family:'Fraunces';font-weight:600;font-size:34px;letter-spacing:-.02em;margin:8px 0 10px}
+  .bench .bv{font-family:var(--font-fraunces);font-weight:600;font-size:34px;letter-spacing:-.02em;margin:8px 0 10px}
   /* :global — these rows are injected via innerHTML, so scoped selectors would miss them */
   .minibar{margin-top:12px}
   :global(.minibar .row){display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:12.5px}
@@ -248,18 +248,18 @@ import Base from '../layouts/Base.astro';
   :global(.minibar .row .bar span){display:block;height:100%;border-radius:999px}
   :global(.minibar .row .bar span.you){background:var(--red)}
   :global(.minibar .row .bar span.ctx){background:#c9bfae}
-  :global(.minibar .row .amt){width:60px;text-align:right;color:var(--ink-2);font-family:'IBM Plex Mono';font-size:12px}
+  :global(.minibar .row .amt){width:60px;text-align:right;color:var(--ink-2);font-family:var(--font-mono);font-size:12px}
   /* lease decay */
   .lease-card{padding:24px 26px;margin-top:18px}
   .lease-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:16px;gap:12px;flex-wrap:wrap}
   .lease-top .t{font-size:13px;font-weight:600;color:var(--ink-2)}
   .lease-top .r{font-size:13px;color:var(--ink-3)}
-  .lease-top .r b{color:var(--ink);font-family:'IBM Plex Mono'}
+  .lease-top .r b{color:var(--ink);font-family:var(--font-mono)}
   .decay{position:relative;height:34px;border-radius:10px;overflow:hidden}
   .decay .grad{position:absolute;inset:0;background:linear-gradient(90deg,#cfe7d7,#f0dfc0 55%,#f2c9c2)}
   .decay .now{position:absolute;top:0;bottom:0;width:3px;background:var(--ink)}
   .decay .now::after{content:attr(data-label);position:absolute;top:-1px;left:8px;font-size:11px;font-weight:600;background:var(--ink);color:#fff;padding:2px 7px;border-radius:6px;white-space:nowrap}
-  .decay .ticks{position:absolute;inset:0;display:flex;justify-content:space-between;padding:0 10px;align-items:center;font-size:10.5px;color:#7a7264;font-family:'IBM Plex Mono'}
+  .decay .ticks{position:absolute;inset:0;display:flex;justify-content:space-between;padding:0 10px;align-items:center;font-size:10.5px;color:#7a7264;font-family:var(--font-mono)}
   /* comps */
   .comp-wrap{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch}
   /* :global — comparables rows are injected via innerHTML */
@@ -271,38 +271,38 @@ import Base from '../layouts/Base.astro';
   .chart-sub{font-size:12px;color:var(--ink-3)}
   /* returns / CAGR panel */
   .returns{padding:22px 24px;display:flex;flex-direction:column}
-  .ret-head{font-family:'Fraunces';font-weight:600;font-size:18px}
+  .ret-head{font-family:var(--font-fraunces);font-weight:600;font-size:18px}
   .ret-lede{font-size:13px;color:var(--ink-3);margin:6px 0 16px;line-height:1.45}
   .ret-inputs{display:grid;grid-template-columns:1fr 1fr;gap:12px}
   .ret-inputs label{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-3);display:flex;flex-direction:column;gap:6px}
-  .ret-inputs input{border:1px solid var(--line);background:var(--paper);border-radius:9px;padding:10px 12px;font-family:'IBM Plex Mono';font-size:15px;font-weight:600;color:var(--ink);outline:none}
+  .ret-inputs input{border:1px solid var(--line);background:var(--paper);border-radius:9px;padding:10px 12px;font-family:var(--font-mono);font-size:15px;font-weight:600;color:var(--ink);outline:none}
   .ret-inputs input:focus{border-color:var(--ink)}
   .ret-out{margin-top:16px;padding-top:16px;border-top:1px solid var(--line);flex:1}
   .ret-empty{font-size:13px;color:var(--ink-3)}
-  .ret-big{font-family:'Fraunces';font-weight:600;font-size:32px;letter-spacing:-.02em;line-height:1}
+  .ret-big{font-family:var(--font-fraunces);font-weight:600;font-size:32px;letter-spacing:-.02em;line-height:1}
   .ret-big.pos{color:var(--good)} .ret-big.neg{color:var(--red-ink)}
   .ret-sub{font-size:13px;color:var(--ink-2);margin-top:6px}
   .ret-rows{margin-top:14px}
   .ret-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;font-size:13.5px;border-top:1px solid var(--line)}
-  .ret-row .k{color:var(--ink-3)} .ret-row .v{font-family:'IBM Plex Mono';font-weight:600}
+  .ret-row .k{color:var(--ink-3)} .ret-row .v{font-family:var(--font-mono);font-weight:600}
   /* distribution caption + market tiles */
   .dist-cap{font-size:12.5px;color:var(--ink-3);margin-top:8px;text-align:center}
   .market-tiles{display:flex;flex-direction:column;gap:14px}
   .mt{padding:16px 20px;display:flex;flex-direction:column;justify-content:center;flex:1}
   .mt-k{font-size:12px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-3)}
-  .mt-v{font-family:'Fraunces';font-weight:600;font-size:26px;letter-spacing:-.02em;margin:4px 0 2px}
+  .mt-v{font-family:var(--font-fraunces);font-weight:600;font-size:26px;letter-spacing:-.02em;margin:4px 0 2px}
   .mt-s{font-size:12.5px;color:var(--ink-3)}
   /* lease threshold flags */
   .lease-flags{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
   .lease-flag{display:flex;flex-direction:column;gap:2px;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:var(--paper);min-width:150px}
   .lease-flag .lf-k{font-size:11px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-3)}
   .lease-flag .lf-v{font-size:13.5px;color:var(--ink)}
-  .lease-flag .lf-v b{font-family:'IBM Plex Mono'}
+  .lease-flag .lf-v b{font-family:var(--font-mono)}
   .lease-flag.warn{border-color:var(--red);background:var(--red-wash)}
   /* leaflet map */
   .map-real{min-height:340px;border-radius:var(--radius);border:1px solid var(--line);box-shadow:var(--shadow);overflow:hidden;z-index:0}
-  :global(.leaflet-container){font-family:'Public Sans',sans-serif;background:#f3ede1}
-  :global(.leaflet-tooltip.hdb-tip){background:var(--paper-2);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);color:var(--ink);font-family:'Public Sans',sans-serif;font-size:13px;padding:9px 12px;line-height:1.5;white-space:nowrap}
+  :global(.leaflet-container){font-family:var(--font-sans);background:#f3ede1}
+  :global(.leaflet-tooltip.hdb-tip){background:var(--paper-2);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);color:var(--ink);font-family:var(--font-sans);font-size:13px;padding:9px 12px;line-height:1.5;white-space:nowrap}
   :global(.leaflet-tooltip.hdb-tip b){font-weight:600}
   :global(.leaflet-tooltip-top.hdb-tip::before){border-top-color:var(--paper-2)}
   @media(max-width:900px){
