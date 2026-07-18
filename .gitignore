@@ -4,3 +4,4 @@ test.ipynb
 uv.lock
 data/df.parquet
 wireframes/
+.claude
