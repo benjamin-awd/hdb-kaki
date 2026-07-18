@@ -2,16 +2,17 @@ import { defineConfig } from 'astro/config';
 import { readFileSync } from 'node:fs';
 
 // Read straight from the installed package's manifest so the version can never
-// drift from what upload-duckdb-r2.mjs pushes to R2. Exposed to client code as
-// import.meta.env.PUBLIC_DUCKDB_VERSION, which src/lib/duckdbBundle.ts uses to
-// build the version-pinned /duckdb/<version>/ URLs.
+// drift from what scripts/compress-duckdb.mjs stages for the build. Exposed to
+// client code as import.meta.env.PUBLIC_DUCKDB_VERSION, which src/lib/duckdbBundle.ts
+// uses to build the version-pinned /duckdb/<version>/ URLs.
 const duckdbVersion = JSON.parse(
   readFileSync(new URL('./node_modules/@duckdb/duckdb-wasm/package.json', import.meta.url), 'utf8'),
 ).version;
 
-// `astro dev` doesn't run src/worker.ts, so /duckdb/* would 404 locally. Mirror the
-// Worker's jsDelivr fallback here so the engine loads in dev exactly as it does in
-// production before R2 is populated. Key format matches: "/duckdb/<version>/<file>".
+// `astro dev` doesn't run src/worker.ts, so /duckdb/* would 404 locally (the build
+// only emits the compressed `<file>.br`, not the `<file>.wasm` the client requests).
+// Mirror the Worker's jsDelivr fallback here so the engine loads in dev exactly as
+// its production fallback does. Key format matches: "/duckdb/<version>/<file>".
 const duckdbDevFallback = {
   name: 'duckdb-dev-fallback',
   configureServer(server) {

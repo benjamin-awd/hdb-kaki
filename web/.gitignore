@@ -12,3 +12,8 @@ public/data/
 # Brotli-compressed DuckDB-WASM engine, staged from node_modules by
 # scripts/compress-duckdb.mjs on every build. Regenerated, so not committed.
 public/duckdb/
+
+# Playwright E2E output.
+test-results/
+playwright-report/
+playwright/.cache/
