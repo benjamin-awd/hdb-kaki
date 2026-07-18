@@ -58,7 +58,8 @@ jobs:
         git config user.name 'GitHub Actions'
         git config user.email 'actions@github.com'
 
-        echo $(date +%s) > data/metadata
+        # data/metadata (the last-updated stamp) is written by etl.py when the data
+        # changed; here we just stage and commit it alongside the refreshed CSVs.
         git add data/*.csv data/metadata
 
         git commit -m "chore: update data"
