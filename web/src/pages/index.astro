@@ -117,6 +117,7 @@ try {
   // Initialised in boot(), after data loads, so the SSR placeholder SVG stays
   // visible until we can draw the interactive canvas chart in one step.
   let trendChart: ReturnType<typeof echarts.init> | undefined;
+  let active = false; // gates the shared resize/cleanup to when the landing is mounted
   const trendTitle: Record<string, string> = {
     lease: 'Median resale price by lease band',
     flat: 'Median resale price by flat type',
@@ -164,14 +165,6 @@ try {
       true,
     );
   }
-
-  document.querySelectorAll<HTMLButtonElement>('#trend-toggle .chip').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('#trend-toggle .chip').forEach((b) => b.classList.remove('on'));
-      btn.classList.add('on');
-      renderTrends(btn.dataset.mode!);
-    });
-  });
 
   // ---- 02 box plot by town ----
   function renderBox() {
@@ -270,15 +263,12 @@ try {
     renderLease();
     renderRecent();
   }
-  boot();
-
   // Pre-warm the DuckDB engine while the visitor reads the landing, so the first
   // click into an interactive page skips the cold start. Full warm (not just a byte
   // fetch): it downloads + instantiates, populating both the HTTP cache and the
   // browser's compiled-wasm code cache, which carries across the navigation. Dynamic-
   // imported to stay out of the landing bundle and deferred to idle so it never
   // competes with the landing's own render. Skipped under Save-Data.
-  warmEngineWhenIdle();
   function warmEngineWhenIdle() {
     if ((navigator as any).connection?.saveData) return;
     const idle: (cb: () => void) => void =
@@ -288,10 +278,40 @@ try {
     });
   }
 
-  window.addEventListener('resize', () => {
+  // ---- lifecycle: (re)build on each navigation, tear down on departure ----
+  function onResize() {
+    if (!active) return;
     trendChart?.resize();
     echarts.getInstanceByDom(q('chart-box'))?.resize();
     echarts.getInstanceByDom(q('chart-scatter'))?.resize();
     echarts.getInstanceByDom(q('chart-buckets'))?.resize();
-  });
+  }
+
+  function cleanup() {
+    if (!active) return; // only when leaving the landing (charts still in the live DOM)
+    active = false;
+    trendChart?.dispose();
+    trendChart = undefined;
+    echarts.getInstanceByDom(q('chart-box'))?.dispose();
+    echarts.getInstanceByDom(q('chart-scatter'))?.dispose();
+    echarts.getInstanceByDom(q('chart-buckets'))?.dispose();
+  }
+
+  async function init() {
+    if (!document.getElementById('chart-trends')) return; // not the landing
+    active = true;
+    document.querySelectorAll<HTMLButtonElement>('#trend-toggle .chip').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#trend-toggle .chip').forEach((b) => b.classList.remove('on'));
+        btn.classList.add('on');
+        renderTrends(btn.dataset.mode!);
+      });
+    });
+    await boot();
+    warmEngineWhenIdle();
+  }
+
+  window.addEventListener('resize', onResize);
+  document.addEventListener('astro:page-load', init);
+  document.addEventListener('astro:before-swap', cleanup);
 </script>
