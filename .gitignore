@@ -5,3 +5,4 @@ uv.lock
 data/df.parquet
 wireframes/
 .claude
+.astro

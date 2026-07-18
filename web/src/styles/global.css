@@ -64,6 +64,16 @@ h1.title em{font-style:italic;color:var(--red-ink)}
 .lede{font-size:18px;color:var(--ink-2);max-width:52ch}
 .hero-actions{display:flex;gap:14px;margin-top:28px;flex-wrap:wrap}
 
+/* Hero KPI strip — Redfin-style row of headline metrics under the lede, each a
+   last-12-month value with its own year-on-year delta. */
+.kpi-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:34px}
+.kpi{
+  background:var(--paper-2);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow);padding:18px 20px;display:flex;flex-direction:column;align-items:flex-start;gap:9px;
+}
+.kpi-cap{font-size:12.5px;color:var(--ink-3);letter-spacing:.01em}
+.kpi-val{font-weight:600;font-size:clamp(24px,2.6vw,30px);line-height:1;letter-spacing:-.01em;color:var(--ink)}
+
 /* ---------- buttons ---------- */
 .cta{
   font-family:'Public Sans';font-weight:600;font-size:15px;color:#fff;background:var(--ink);
@@ -92,10 +102,12 @@ footer{border-top:1px solid var(--line);padding:26px 0;color:var(--ink-3);font-s
 }
 
 /* ---------- section headers ---------- */
-.sec-head{display:flex;align-items:baseline;gap:14px;margin:44px 0 20px}
-.sec-head .num{font-family:'IBM Plex Mono';font-size:13px;color:var(--red-ink);font-weight:600;padding-top:4px}
-.sec-head h2{font-family:'Fraunces';font-weight:600;font-size:27px;letter-spacing:-.02em}
-.sec-head .hint{margin-left:auto;font-size:13px;color:var(--ink-3);max-width:40ch;text-align:right}
+/* Number in the gutter; heading and its deck stack in the second column so the
+   deck reads as an intro under the title (left-aligned) rather than a floated caption. */
+.sec-head{display:grid;grid-template-columns:auto 1fr;column-gap:14px;align-items:baseline;margin:44px 0 20px}
+.sec-head .num{grid-column:1;font-family:'IBM Plex Mono';font-size:13px;color:var(--red-ink);font-weight:600;padding-top:4px}
+.sec-head h2{grid-column:2;font-family:'Fraunces';font-weight:600;font-size:27px;letter-spacing:-.02em}
+.sec-head .hint{grid-column:2;margin-top:8px;font-size:14.5px;color:var(--ink-2);max-width:62ch}
 
 /* ---------- cards ---------- */
 .card{background:var(--paper-2);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
@@ -132,6 +144,10 @@ footer{border-top:1px solid var(--line);padding:26px 0;color:var(--ink-3);font-s
 .chart-title{font-family:'Fraunces';font-weight:600;font-size:18px}
 
 /* ---------- tables ---------- */
+/* Table cards scroll horizontally on narrow screens instead of clipping the
+   right-hand columns (Price/PSF were unreachable on mobile). Rounded corners
+   are still clipped via overflow-y. */
+.card.table-card{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch}
 table.comp{width:100%;border-collapse:collapse;font-size:14px}
 table.comp thead th{text-align:left;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);padding:14px 16px;border-bottom:1px solid var(--line);background:#faf6ee}
 table.comp thead th.r,table.comp td.r{text-align:right}
@@ -158,4 +174,5 @@ table.comp tbody tr:hover{background:#faf6ee}
   .split{grid-template-columns:1fr !important}
   .bench-grid{grid-template-columns:1fr}
   .sec-head .hint{display:none}
+  .kpi-strip{grid-template-columns:1fr 1fr;gap:12px}
 }
