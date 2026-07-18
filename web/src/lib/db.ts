@@ -2,7 +2,7 @@
 // Lazily boots the WASM engine, registers resale.parquet from manifest.json, and
 // exposes a typed query() helper. Runs entirely in the browser — no backend.
 import * as duckdb from '@duckdb/duckdb-wasm';
-import { duckdbBase } from './duckdbBundle';
+import { duckdbBase, duckdbExtRepo } from './duckdbBundle';
 
 export interface Manifest {
   lastUpdated: string | null;
@@ -48,6 +48,10 @@ async function boot(): Promise<duckdb.AsyncDuckDBConnection> {
   await db.registerFileURL(manifest.file, base + manifest.file, duckdb.DuckDBDataProtocol.HTTP, false);
 
   const conn = await db.connect();
+  // Autoload the parquet extension from our own origin instead of extensions.duckdb.org
+  // (see duckdbExtRepo / src/worker.ts). Must be set before the first read_parquet.
+  const extRepo = new URL(duckdbExtRepo(), window.location.href).href;
+  await conn.query(`SET custom_extension_repository='${extRepo}'`);
   // Query the file as `resale`. DuckDB reads it lazily over HTTP range requests.
   await conn.query(`CREATE VIEW resale AS SELECT * FROM read_parquet('${manifest.file}')`);
   return conn;
