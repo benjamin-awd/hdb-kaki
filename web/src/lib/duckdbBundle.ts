@@ -1,11 +1,13 @@
 // Single source of truth for the self-hosted DuckDB-WASM bundle URLs.
 //
-// The engine (~34 MiB of .wasm plus its worker) is copied out of node_modules
-// into public/duckdb/<version>/ at build time by scripts/copy-duckdb.mjs and
-// served from our own origin — so Cloudflare caches it immutably and pages can
-// prefetch it, instead of streaming it cross-origin from jsDelivr. The version is
-// injected from the installed @duckdb/duckdb-wasm package by astro.config.mjs
-// (PUBLIC_DUCKDB_VERSION), so this path can never drift from what was copied.
+// The engine (~34 MiB of .wasm plus its worker) is staged into
+// public/duckdb/<version>/ at build time by scripts/compress-duckdb.mjs, which
+// brotli-compresses the .wasm to ~4.5 MiB (under Cloudflare's 25 MiB static-asset
+// cap); src/worker.ts re-serves it same-origin with Content-Encoding: br. Serving
+// from our own origin lets Cloudflare cache it immutably and pages prefetch it,
+// instead of streaming it cross-origin from jsDelivr. The version is injected from
+// the installed @duckdb/duckdb-wasm package by astro.config.mjs
+// (PUBLIC_DUCKDB_VERSION), so this path can never drift from what was staged.
 const VERSION = import.meta.env.PUBLIC_DUCKDB_VERSION;
 
 /** Root-relative dir holding this version's bundle files, e.g. `/duckdb/1.29.0/`. */
