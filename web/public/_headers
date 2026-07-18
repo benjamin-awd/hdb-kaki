@@ -29,7 +29,11 @@
 /data/manifest.json
   Cache-Control: public, max-age=0, must-revalidate
 
-# The landing's precomputed aggregate. Stable name, changes daily — cache like the
-# shards so repeat visits paint from disk instead of a revalidation round-trip.
+# Precomputed page snapshots (landing + town-analysis default view). Stable names,
+# change daily — cache like the data file so repeat visits paint from disk instead of
+# a revalidation round-trip.
 /data/overview.json
+  Cache-Control: public, max-age=3600, must-revalidate
+
+/data/town-analysis.json
   Cache-Control: public, max-age=3600, must-revalidate
