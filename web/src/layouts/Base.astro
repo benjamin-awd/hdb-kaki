@@ -1,6 +1,7 @@
 ---
 import '../styles/tokens.css';
 import '../styles/global.css';
+import { ClientRouter } from 'astro:transitions';
 import Nav from '../components/Nav.astro';
 import Footer from '../components/Footer.astro';
 
@@ -29,6 +30,10 @@ const {
       href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
+    <!-- Client-side routing: swap the DOM instead of full reloads, so the DuckDB
+         engine (a module singleton in lib/db) stays warm across navigations.
+         Pages re-init their own UI on the astro:page-load event. -->
+    <ClientRouter />
     <!-- Per-page <head> extras, e.g. resource preloads. -->
     <slot name="head" />
   </head>

@@ -12,7 +12,6 @@ export interface Manifest {
   columns: string[];
 }
 
-let connPromise: Promise<duckdb.AsyncDuckDBConnection> | null = null;
 let manifestPromise: Promise<Manifest> | null = null;
 
 export function getManifest(): Promise<Manifest> {
@@ -56,8 +55,12 @@ async function boot(): Promise<duckdb.AsyncDuckDBConnection> {
 }
 
 function getConn(): Promise<duckdb.AsyncDuckDBConnection> {
-  if (!connPromise) connPromise = boot();
-  return connPromise;
+  // Cache the connection on window, not just a module variable, so the warm engine
+  // survives Astro client-side navigations (the module isn't re-run, but this also
+  // guards any accidental re-eval). Booting is expensive — one per session only.
+  const w = window as unknown as { __duckdbConn?: Promise<duckdb.AsyncDuckDBConnection> };
+  if (!w.__duckdbConn) w.__duckdbConn = boot();
+  return w.__duckdbConn;
 }
 
 /** Run SQL against the `resale` view and return plain JS row objects. */
