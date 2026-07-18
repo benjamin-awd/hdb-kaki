@@ -46,7 +46,7 @@ jobs:
         run: gh release download data --pattern df.parquet --dir data --clobber
 
       - name: Emit web data artifacts (year-sharded parquet + manifest)
-        run: uv run --with polars webapp/update/emit_web.py
+        run: uv run --with polars --with shapely webapp/update/emit_web.py
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
