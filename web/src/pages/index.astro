@@ -271,6 +271,23 @@ try {
     renderRecent();
   }
   boot();
+
+  // Pre-warm the DuckDB engine while the visitor reads the landing, so the first
+  // click into an interactive page skips the cold start. Full warm (not just a byte
+  // fetch): it downloads + instantiates, populating both the HTTP cache and the
+  // browser's compiled-wasm code cache, which carries across the navigation. Dynamic-
+  // imported to stay out of the landing bundle and deferred to idle so it never
+  // competes with the landing's own render. Skipped under Save-Data.
+  warmEngineWhenIdle();
+  function warmEngineWhenIdle() {
+    if ((navigator as any).connection?.saveData) return;
+    const idle: (cb: () => void) => void =
+      (window as any).requestIdleCallback || ((cb: () => void) => setTimeout(cb, 1500));
+    idle(() => {
+      import('../lib/db').then((m) => m.prefetch()).catch(() => {});
+    });
+  }
+
   window.addEventListener('resize', () => {
     trendChart?.resize();
     echarts.getInstanceByDom(q('chart-box'))?.resize();
