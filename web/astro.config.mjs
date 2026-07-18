@@ -18,6 +18,14 @@ const duckdbDevFallback = {
   configureServer(server) {
     server.middlewares.use('/duckdb', (req, res) => {
       const key = (req.url ?? '').replace(/^\//, '').split('?')[0]; // "<version>/<file>"
+      // Extension requests (…/ext/<core>/<platform>/<name>) go upstream to the DuckDB
+      // extension repo, matching src/worker.ts's fallback.
+      const extIdx = key.indexOf('/ext/');
+      if (extIdx !== -1) {
+        res.statusCode = 302;
+        res.setHeader('Location', `https://extensions.duckdb.org/${key.slice(extIdx + '/ext/'.length)}`);
+        return res.end();
+      }
       const slash = key.indexOf('/');
       if (slash === -1) {
         res.statusCode = 404;
