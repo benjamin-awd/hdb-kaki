@@ -79,6 +79,21 @@ def emit_overview(df: pl.DataFrame) -> None:
         .to_dicts()
     )
 
+    # Median 4-room price per town over the same 12-month window as the box plot, for
+    # ALL towns (the box plot keeps only the top 12) — feeds the landing choropleth,
+    # keyed by town to web/public/geo/sg-towns.geojson. n lets the map flag thin towns.
+    town_medians = (
+        df.filter((pl.col("flat_type") == "4 ROOM") & (pl.col("month") >= cutoff))
+        .group_by("town")
+        .agg(
+            pl.col("resale_price").median().alias("med"),
+            pl.len().alias("n"),
+        )
+        .sort("town")
+        .select(["town", "med", "n"])
+        .to_dicts()
+    )
+
     scatter_df = df.filter(
         (pl.col("flat_type") == "4 ROOM")
         & pl.col("cat_remaining_lease_years").is_not_null()
@@ -116,6 +131,7 @@ def emit_overview(df: pl.DataFrame) -> None:
             "town": trend("town"),
         },
         "box": box,
+        "townMedians": town_medians,
         "scatter": scatter,
         "buckets": buckets,
         "recent": recent,
