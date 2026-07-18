@@ -1,9 +1,14 @@
 """Emit web artifacts for the static frontend (see wireframes/REBUILD_PLAN.md).
 
 Reads the combined ``data/df.parquet`` (produced by ``convert.csv_to_parquet``) and
-writes year-sharded, ZSTD-compressed, column-trimmed Parquet into ``web/public/data/``
-along with a ``manifest.json``. Standalone (polars only) so it does not depend on the
-Streamlit-Cloud path baked into ``webapp.utils.get_project_root``.
+writes a single ZSTD-compressed, column-trimmed ``resale.parquet`` into
+``web/public/data/`` along with a ``manifest.json``. Standalone (polars only) so it
+does not depend on the Streamlit-Cloud path baked into ``webapp.utils.get_project_root``.
+
+The data is emitted as ONE file rather than year-shards: DuckDB-WASM reads it over HTTP
+range requests, and every query spans all years, so sharding only multiplied the
+sequential round-trips (footer + column reads per file) with no pruning benefit. A
+single file is read in one pass — far fewer requests, much faster first query.
 
 Also precomputes ``overview.json`` — the landing page's aggregates (price trends,
 distribution, lease relationship, recent transactions) so the landing renders from a
@@ -130,29 +135,22 @@ def emit() -> None:
     df = pl.read_parquet(SRC_PARQUET)
     df = df.drop([c for c in DROP_COLS if c in df.columns])
 
-    # year for sharding; sort so repeated low-cardinality values cluster (better compression)
-    df = df.with_columns(pl.col("month").str.slice(0, 4).alias("year")).sort(
-        ["town", "flat_type", "month"]
-    )
+    # Sort so repeated low-cardinality values cluster (better ZSTD compression) and so
+    # town-filtered queries can skip row groups via the town min/max statistics.
+    df = df.sort(["town", "flat_type", "month"])
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+    # Clean up the old year-shards from previous builds so nothing stale is served.
     for old in OUT_DIR.glob("resale-*.parquet"):
         old.unlink()
 
-    years = sorted(df["year"].unique().to_list())
-    files = []
-    for year in years:
-        shard = df.filter(pl.col("year") == year).drop("year")
-        out = OUT_DIR / f"resale-{year}.parquet"
-        shard.write_parquet(
-            out,
-            compression="zstd",
-            compression_level=19,
-            row_group_size=shard.height or 1,
-            statistics=True,
-        )
-        files.append({"year": year, "file": out.name, "rows": shard.height,
-                      "bytes": out.stat().st_size})
+    out = OUT_DIR / "resale.parquet"
+    df.write_parquet(
+        out,
+        compression="zstd",
+        compression_level=19,
+        statistics=True,
+    )
 
     epoch = int(METADATA.read_text().strip()) if METADATA.exists() else None
     manifest = {
@@ -161,18 +159,22 @@ def emit() -> None:
         if epoch
         else None,
         "rows": df.height,
-        "years": years,
-        "shards": files,
-        "columns": df.drop("year").columns,
+        "file": out.name,
+        "bytes": out.stat().st_size,
+        "columns": df.columns,
     }
     (OUT_DIR / "manifest.json").write_text(json.dumps(manifest, indent=2))
 
     emit_overview(df)
 
-    total = sum(f["bytes"] for f in files)
-    print(f"Wrote {len(files)} shards, {df.height:,} rows, {total/1e6:.2f} MB total")
-    for f in files:
-        print(f"  {f['file']:>18}  {f['rows']:>7,} rows  {f['bytes']/1e6:6.2f} MB")
+    size = out.stat().st_size
+    print(f"Wrote {out.name}, {df.height:,} rows, {size/1e6:.2f} MB")
+    # resale.parquet ships as a plain Cloudflare static asset, which caps individual
+    # files at 25 MiB. Warn well before that so growth doesn't silently break deploys;
+    # if we ever cross it, route the file through src/worker.ts (like the wasm) or R2.
+    if size > 20 * 1024 * 1024:
+        print(f"  WARNING: {out.name} is {size/1024/1024:.1f} MiB — approaching "
+              "Cloudflare's 25 MiB static-asset cap.")
 
 
 if __name__ == "__main__":
