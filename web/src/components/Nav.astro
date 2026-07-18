@@ -16,10 +16,37 @@ const links = [
 <header class="nav">
   <div class="wrap nav-in">
     <a class="brand" href="/"><span class="key">🔑</span> HDB&nbsp;Kaki</a>
-    <nav class="nav-links">
+    <button
+      class="nav-toggle"
+      type="button"
+      aria-label="Toggle navigation menu"
+      aria-expanded="false"
+      aria-controls="nav-links"
+    >
+      <span class="nav-toggle-bar"></span>
+      <span class="nav-toggle-bar"></span>
+      <span class="nav-toggle-bar"></span>
+    </button>
+    <nav class="nav-links" id="nav-links">
       {links.map((l) => (
         <a href={l.href} class={l.label === active ? 'active' : ''}>{l.label}</a>
       ))}
     </nav>
   </div>
 </header>
+
+<script>
+  const toggle = document.querySelector<HTMLButtonElement>('.nav-toggle');
+  const nav = document.querySelector<HTMLElement>('.nav-links');
+  toggle?.addEventListener('click', () => {
+    const open = document.body.classList.toggle('nav-open');
+    toggle.setAttribute('aria-expanded', String(open));
+  });
+  // Close the menu after tapping a link (in-page nav or new page load).
+  nav?.addEventListener('click', (e) => {
+    if ((e.target as HTMLElement).closest('a')) {
+      document.body.classList.remove('nav-open');
+      toggle?.setAttribute('aria-expanded', 'false');
+    }
+  });
+</script>
