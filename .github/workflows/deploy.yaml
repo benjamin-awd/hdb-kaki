@@ -1,6 +1,7 @@
 name: Deploy web
 
-# Builds the static Astro site (web/) and deploys it to Cloudflare Pages.
+# Builds the static Astro site (web/) and deploys it to Cloudflare Workers
+# (assets-only Worker — see web/wrangler.toml).
 #
 # Data shards are NOT committed (see web/.gitignore); they are regenerated here
 # from data/df.parquet, which the "Auto-update" ETL publishes to the `data`
@@ -8,14 +9,21 @@ name: Deploy web
 # code change — rebuilds against the latest data without needing the ETL/API key.
 #
 # One-time setup required before this runs green:
-#   1. Create the Pages project once:  cd web && wrangler pages deploy
-#      (or `wrangler pages project create hdb-kaki`), production branch = main.
-#   2. Add repo secrets: CLOUDFLARE_API_TOKEN (Pages:Edit) and CLOUDFLARE_ACCOUNT_ID.
+#   1. Nothing to pre-create: `wrangler deploy` provisions the Worker named
+#      `hdb-kaki` on first run.
+#   2. Add repo secrets: CLOUDFLARE_API_TOKEN (with the "Edit Cloudflare Workers"
+#      permission) and CLOUDFLARE_ACCOUNT_ID.
 
 on:
   # Code changes to the site.
   push:
     branches: [main]
+    paths:
+      - "web/**"
+      - "webapp/update/emit_web.py"
+      - ".github/workflows/deploy.yaml"
+  # PRs get a non-production preview version + a preview URL commented on the PR.
+  pull_request:
     paths:
       - "web/**"
       - "webapp/update/emit_web.py"
@@ -28,6 +36,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write # so the preview job can comment the preview URL
 
 jobs:
   deploy:
@@ -58,11 +67,39 @@ jobs:
           bun install --frozen-lockfile
           bun run build
 
-      - name: Deploy to Cloudflare Pages
-        uses: cloudflare/wrangler-action@v3
+      - name: Deploy to Cloudflare Workers
+        id: wrangler
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: web
-          # Reads pages_build_output_dir (./dist) and project name from wrangler.toml.
-          command: pages deploy --branch=main
+          # Reads the Worker name and [assets] dir (./dist) from wrangler.toml.
+          # PRs upload a preview version (never touches production); everything
+          # else (main push / manual / post-ETL) deploys to production.
+          command: ${{ github.event_name == 'pull_request' && 'versions upload' || 'deploy' }}
+
+      - name: Comment preview URL on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        env:
+          # Passed via env (not string-interpolated into the script) so wrangler
+          # output can't break the JS or inject code.
+          WRANGLER_OUTPUT: ${{ steps.wrangler.outputs.command-output }}
+        with:
+          script: |
+            const out = process.env.WRANGLER_OUTPUT || '';
+            const match = out.match(/https:\/\/\S+\.workers\.dev/);
+            const marker = '<!-- cf-preview-url -->';
+            const body = match
+              ? `${marker}\n🔎 **Preview deploy:** ${match[0]}\n\n_Uploaded from ${context.sha.slice(0, 7)}. Preview versions are non-production._`
+              : `${marker}\n⚠️ Preview version uploaded, but no preview URL was found in the wrangler output — check the workflow logs.`;
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.rest.issues.listComments({ owner, repo, issue_number });
+            const existing = comments.data.find((c) => c.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
