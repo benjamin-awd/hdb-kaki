@@ -5,11 +5,14 @@ interface Props {
 }
 const { active = '' } = Astro.props;
 
+// `noPrefetch` opts a link out of prefetch (and, with experimental.clientPrerender,
+// out of speculative prerender). The two map pages eagerly import Leaflet, so a hover
+// shouldn't pull that engine for a page never visited — the lighter pages stay opted in.
 const links = [
   { label: 'Market Overview', href: '/' },
-  { label: 'Town Analysis', href: '/town-analysis' },
+  { label: 'Town Analysis', href: '/town-analysis', noPrefetch: true },
   { label: 'PSF Trends', href: '/psf-trends' },
-  { label: 'My Flat Insights', href: '/my-flat-insights' },
+  { label: 'My Flat Insights', href: '/my-flat-insights', noPrefetch: true },
 ];
 ---
 
@@ -29,7 +32,7 @@ const links = [
     </button>
     <nav class="nav-links" id="nav-links">
       {links.map((l) => (
-        <a href={l.href} class={l.label === active ? 'active' : ''}>{l.label}</a>
+        <a href={l.href} class={l.label === active ? 'active' : ''} data-astro-prefetch={l.noPrefetch ? 'false' : undefined}>{l.label}</a>
       ))}
     </nav>
   </div>
