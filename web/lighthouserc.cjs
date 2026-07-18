@@ -11,6 +11,9 @@
 //     max across all four pages): script ~306KB, font 112KB, stylesheet 12KB,
 //     document 5KB. Budgets sit ~50% above baseline so normal churn passes but a
 //     real regression (e.g. shipping a charting lib twice) fails the build.
+//     NB: fonts are now self-hosted latin-subset woff2 (astro:assets `local` provider,
+//     see web/fonts.spec.mjs), so they count as first-party here — the font budget is
+//     driven directly by the weights/styles declared in that spec, not by Google.
 //   • WARN only    → field METRICS (LCP/TBT/CLS/perf score). On CI runners these are
 //     runner- and network-dependent, and here they're dominated by things we don't
 //     control: town-analysis LCP is ~40s (Leaflet map tiles from a third-party CDN),

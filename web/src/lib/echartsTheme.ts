@@ -8,8 +8,18 @@ const ink2 = '#5b544a';
 const ink3 = '#8c8479';
 const line = '#e4ddd0';
 const red = '#fe012b';
-const sans = "'Public Sans', sans-serif";
-const mono = "'IBM Plex Mono', monospace";
+
+// Fonts are self-hosted via astro:assets under hashed @font-face names, reachable only
+// through the var(--font-*) custom properties (see astro.config.mjs). ECharts renders to
+// <canvas>, which can't resolve `var()` — so read the computed value of each variable
+// (e.g. `"Public Sans-abc123", "Public Sans fallback", sans-serif`) into a plain string
+// canvas can use. Guarded for SSR (echartsSSR.ts) where there's no document.
+const fontFromVar = (cssVar: string, fallback: string): string => {
+  if (typeof document === 'undefined') return fallback;
+  return getComputedStyle(document.documentElement).getPropertyValue(cssVar).trim() || fallback;
+};
+const sans = fontFromVar('--font-sans', "'Public Sans', sans-serif");
+const mono = fontFromVar('--font-mono', "'IBM Plex Mono', monospace");
 
 /** Base options every chart merges over: transparent bg, brand fonts, muted axes. */
 export function baseOption(): EChartsOption {
