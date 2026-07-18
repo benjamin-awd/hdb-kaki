@@ -1,12 +1,22 @@
 # Cloudflare Pages headers. https://developers.cloudflare.com/pages/configuration/headers/
 #
-# NOTE: deliberately NO Cross-Origin-Embedder-Policy / COOP here. DuckDB-WASM loads
-# its engine from the jsDelivr CDN and Leaflet pulls OSM tiles cross-origin; enabling
-# COEP: require-corp would block both. The single-threaded WASM bundle we use does
-# not need cross-origin isolation.
+# NOTE: deliberately NO Cross-Origin-Embedder-Policy / COOP here. Leaflet pulls OSM
+# tiles cross-origin, so COEP: require-corp would break them. The single-threaded WASM
+# bundle we use does not need cross-origin isolation.
+#
+# The DuckDB .wasm at /duckdb/*.wasm is served by src/worker.ts (brotli-compressed
+# asset re-served with Content-Encoding: br), which sets its own immutable caching —
+# _headers do not apply to Worker responses. The sibling .worker.js files ARE served
+# directly by the asset store, so the /duckdb/* rule below pins their caching.
 
 # Astro emits content-hashed filenames under /_astro/ — safe to cache forever.
 /_astro/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# DuckDB engine files (version-pinned path, see scripts/compress-duckdb.mjs). Only
+# the directly-served ones (.worker.js) pick this up; the Worker-served .wasm sets
+# its own equivalent header.
+/duckdb/*
   Cache-Control: public, max-age=31536000, immutable
 
 # Data shard filenames are stable but their contents change on each daily ETL run,

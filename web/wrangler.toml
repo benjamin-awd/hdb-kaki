@@ -1,15 +1,22 @@
 # Cloudflare Workers config for the HDB Kaki static site.
-# Assets-only Worker (no server code): Astro builds to ./dist, which the Workers
-# static-assets runtime serves directly from Cloudflare's edge. Because there is
-# no `main` script, requests are answered purely from the asset store — the
-# `_headers` file in ./dist still drives our per-asset Cache-Control policy.
+# Astro builds to ./dist, which the Workers static-assets runtime serves directly
+# from Cloudflare's edge; the `_headers` file in ./dist drives per-asset caching.
+# The tiny `main` Worker (src/worker.ts) exists only to serve the DuckDB-WASM engine
+# at /duckdb/* — the raw .wasm is too big for the 25 MiB static-asset cap, so it
+# ships brotli-compressed and the Worker adds the right Content-Encoding/-Type.
+# Assets are served before the Worker runs, so it only sees the engine requests and
+# 404 misses (which it forwards to ASSETS).
 # Deploy locally or from CI with:  wrangler deploy
 # Worker name is the first URL label: app.<account-subdomain>.workers.dev
 # (account subdomain is "hdb-kaki"), i.e. https://app.hdb-kaki.workers.dev
 name = "app"
+main = "src/worker.ts"
 compatibility_date = "2026-07-17"
 
 [assets]
 directory = "./dist"
+# Expose the asset store to the Worker so it can read the compressed engine + forward
+# non-engine requests.
+binding = "ASSETS"
 # Default html_handling ("auto-trailing-slash") maps /town-analysis ->
 # /town-analysis/index.html, matching Astro's directory-style static output.
