@@ -132,6 +132,10 @@ footer{border-top:1px solid var(--line);padding:26px 0;color:var(--ink-3);font-s
 .chart-title{font-family:'Fraunces';font-weight:600;font-size:18px}
 
 /* ---------- tables ---------- */
+/* Table cards scroll horizontally on narrow screens instead of clipping the
+   right-hand columns (Price/PSF were unreachable on mobile). Rounded corners
+   are still clipped via overflow-y. */
+.card.table-card{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch}
 table.comp{width:100%;border-collapse:collapse;font-size:14px}
 table.comp thead th{text-align:left;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);padding:14px 16px;border-bottom:1px solid var(--line);background:#faf6ee}
 table.comp thead th.r,table.comp td.r{text-align:right}
