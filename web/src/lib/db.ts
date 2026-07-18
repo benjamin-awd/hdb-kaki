@@ -2,6 +2,7 @@
 // Lazily boots the WASM engine, registers every shard from manifest.json, and
 // exposes a typed query() helper. Runs entirely in the browser — no backend.
 import * as duckdb from '@duckdb/duckdb-wasm';
+import { duckdbBase } from './duckdbBundle';
 
 export interface Manifest {
   lastUpdated: string | null;
@@ -25,8 +26,14 @@ export function getManifest(): Promise<Manifest> {
 }
 
 async function boot(): Promise<duckdb.AsyncDuckDBConnection> {
-  const bundles = duckdb.getJsDelivrBundles();
-  const bundle = await duckdb.selectBundle(bundles);
+  // Self-hosted engine served same-origin from R2 via src/worker.ts (see
+  // src/lib/duckdbBundle.ts). selectBundle picks eh vs. mvp from browser features;
+  // both are absolute URLs so the blob worker's importScripts resolves them.
+  const dir = new URL(duckdbBase(), window.location.href).href;
+  const bundle = await duckdb.selectBundle({
+    mvp: { mainModule: `${dir}duckdb-mvp.wasm`, mainWorker: `${dir}duckdb-browser-mvp.worker.js` },
+    eh: { mainModule: `${dir}duckdb-eh.wasm`, mainWorker: `${dir}duckdb-browser-eh.worker.js` },
+  });
   const workerUrl = URL.createObjectURL(
     new Blob([`importScripts("${bundle.mainWorker}");`], { type: 'text/javascript' }),
   );
