@@ -1,8 +1,12 @@
 ---
 import Base from '../layouts/Base.astro';
+import { ehWasmUrl } from '../lib/duckdbBundle';
 ---
 
 <Base active="My Flat Insights" title="My Flat Insights — HDB Kaki">
+  <!-- This page auto-computes a default valuation on load; warm the same-origin
+       DuckDB engine in parallel with parse so it isn't blocked on a cold fetch. -->
+  <link slot="head" rel="prefetch" href={ehWasmUrl()} as="fetch" />
   <section class="hero">
     <div class="wrap">
       <span class="eyebrow rise"><span class="dot"></span> New · Personalised</span>
@@ -231,6 +235,11 @@ import Base from '../layouts/Base.astro';
     if (!_db) _db = import('../lib/db');
     return (await _db).query<T>(sql);
   };
+  // This page auto-computes a default valuation on load, so start warming the engine
+  // now — overlapping the WASM download with DOM wiring instead of waiting for the
+  // first query. (Idempotent: primes the same _db the query wrapper reuses.)
+  _db = import('../lib/db');
+  _db.then((m) => m.prefetch()).catch(() => {});
   import { money, moneyShort, psf as fpsf, titleCase } from '../lib/format';
 
   const $ = (id: string) => document.getElementById(id)!;
