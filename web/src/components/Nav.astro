@@ -4,6 +4,7 @@ interface Props {
   active?: string;
 }
 const { active = '' } = Astro.props;
+const base = import.meta.env.BASE_URL;
 
 // `noPrefetch` opts a link out of prefetch (and, with experimental.clientPrerender,
 // out of speculative prerender). The two map pages eagerly import Leaflet, so a hover
@@ -18,7 +19,9 @@ const links = [
 
 <header class="nav">
   <div class="wrap nav-in">
-    <a class="brand" href="/"><span class="key">🔑</span> HDB&nbsp;Kaki</a>
+    <a class="brand" href="/"
+      ><img class="brand-icon" src={`${base}logo-icon.svg`} alt="" width="30" height="30" /> HDB&nbsp;Kaki</a
+    >
     <button
       class="nav-toggle"
       type="button"
