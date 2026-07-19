@@ -238,7 +238,9 @@ const kpis = stats
   type Level = keyof typeof MAP_LEVELS;
 
   let mapChart: ReturnType<typeof echarts.init> | undefined;
+  let currentLevel: Level = 'town';
   const geoReady = new Set<string>();
+  const labelsFit = () => window.innerWidth >= 640;
 
   async function registerGeo(url: string, name: string) {
     if (geoReady.has(name)) return;
@@ -251,6 +253,7 @@ const kpis = stats
   }
 
   async function renderMap(level: Level) {
+    currentLevel = level;
     const cfg = MAP_LEVELS[level];
     // Subzone geometry is only fetched the first time it's viewed, keeping initial load
     // light. The outline layer is shared across levels.
@@ -269,6 +272,10 @@ const kpis = stats
       aspectScale: 1, // Singapore sits on the equator — keep lon/lat 1:1, don't squash
       zoom: 1.28, layoutCenter: ['50%', '54%'], layoutSize: '96%',
     } as const;
+
+    // 26 town names won't fit legibly on a phone-width map, so labels show only where
+    // there's room; on narrow screens the map stays clean and a tap reveals the tooltip.
+    const showLabels = level === 'town' && labelsFit();
 
     mapChart ??= echarts.init(q('chart-map'));
     mapChart.setOption({
@@ -295,13 +302,22 @@ const kpis = stats
       series: [
         {
           type: 'map', map: cfg.mapName, nameProperty: 'name', roam: false, ...layout,
-          // No-data areas: a muted warm grey; light dividers between regions (the crisp
-          // coast is drawn by the outline layer below).
-          itemStyle: { areaColor: '#efeadf', borderColor: '#f3eee3', borderWidth: 0.8 },
-          emphasis: { label: { show: false }, itemStyle: { borderColor: '#181410', borderWidth: 1.2 } },
+          // No-data areas: a muted warm grey. Crisp white dividers between every region so
+          // boundaries read clearly against both the red ramp and the beige no-data fills
+          // (the outer coast is drawn by the outline layer below).
+          itemStyle: { areaColor: '#efeadf', borderColor: '#ffffff', borderWidth: 1 },
+          emphasis: { label: { fontWeight: 'bold' }, itemStyle: { borderColor: '#181410', borderWidth: 1.4 } },
           select: { disabled: true },
-          label: { show: false },
-          data: colored.map((r) => ({ name: r.name, value: r.med })),
+          // Town names sit on the priced regions only (no-data areas stay unlabelled). Dark
+          // ink with a white halo stays legible across the full light→dark red ramp; overlaps
+          // are thinned automatically so it doesn't clutter on narrow screens.
+          label: {
+            show: false, formatter: (p: any) => titleCase(p.name),
+            color: '#2b261f', fontFamily: mono, fontSize: 9,
+            textBorderColor: 'rgba(255,255,255,0.85)', textBorderWidth: 2.5,
+          },
+          labelLayout: { hideOverlap: true, minMargin: 4 },
+          data: colored.map((r) => ({ name: r.name, value: r.med, label: { show: showLabels } })),
         },
         {
           // Coastline only (all internal borders dissolved away) → a clean country outline.
@@ -448,8 +464,15 @@ const kpis = stats
     }
   }
 
+  // Re-render the map when a resize crosses the label breakpoint (e.g. phone rotation),
+  // so town labels appear/disappear rather than staying stale until reload.
+  let labelsShown = labelsFit();
   window.addEventListener('resize', () => {
     trendChart?.resize();
+    if (mapChart && currentLevel === 'town' && labelsFit() !== labelsShown) {
+      labelsShown = labelsFit();
+      renderMap('town').catch((e) => console.error(e));
+    }
     echarts.getInstanceByDom(q('chart-map'))?.resize();
     echarts.getInstanceByDom(q('chart-box'))?.resize();
     echarts.getInstanceByDom(q('chart-scatter'))?.resize();

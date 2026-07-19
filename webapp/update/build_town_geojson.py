@@ -32,7 +32,7 @@ import json
 import urllib.request
 from pathlib import Path
 
-from shapely.geometry import mapping, shape
+from shapely.geometry import MultiPolygon, Polygon, mapping, shape
 from shapely.ops import unary_union
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -58,6 +58,13 @@ RENAME = {"KALLANG": "KALLANG/WHAMPOA"}
 SIMPLIFY_TOLERANCE = 0.0003
 COORD_PRECISION = 5  # decimal places; ~1 m, plenty for a choropleth
 
+# Drop detached polygon parts smaller than this (sq. degrees; ~1e-6 ~= 0.01 km2). These
+# are tiny offshore specks — reclaimed dots off Changi Bay, Tuas jetties — that render as
+# invisible pinpricks yet widen the map's frame (the Changi Bay pair pushes the east edge
+# ~4.5 km out to sea, squeezing the mainland on narrow screens). Only ever trims parts of
+# a MultiPolygon; single-polygon areas are always kept whole.
+MIN_PART_AREA = 1e-6
+
 
 def _get_json(url: str, timeout: int) -> dict:
     # data.gov.sg's S3 blobs 403 the default urllib user-agent; send a browser-like one.
@@ -78,6 +85,21 @@ def _town_for(props: dict) -> str | None:
         return "CENTRAL AREA"
     name = props["PLN_AREA_N"].strip().upper()
     return RENAME.get(name, name)
+
+
+def _drop_specks(geom):
+    """Drop tiny detached polygons from a (Multi)Polygon; return it otherwise unchanged.
+
+    Single Polygons pass through untouched. For a MultiPolygon, parts below
+    ``MIN_PART_AREA`` are removed (falling back to the largest if that would empty it),
+    and a result left with one part collapses back to a plain Polygon.
+    """
+    if geom.geom_type != "MultiPolygon":
+        return geom
+    kept = [p for p in geom.geoms if p.area >= MIN_PART_AREA]
+    if not kept:
+        kept = [max(geom.geoms, key=lambda p: p.area)]
+    return kept[0] if len(kept) == 1 else MultiPolygon(kept)
 
 
 def _round(geom: dict, ndigits: int) -> dict:
@@ -126,7 +148,7 @@ def build_towns() -> None:
     all_geoms = []
     # HDB towns (dissolved) — hdb:true, keyed by town so overview.json medians join on.
     for town in sorted(parts):
-        dissolved = unary_union(parts[town])
+        dissolved = _drop_specks(unary_union(parts[town]))
         all_geoms.append(dissolved)
         features.append({
             "type": "Feature",
@@ -135,6 +157,7 @@ def build_towns() -> None:
         })
     # Non-HDB areas — hdb:false, drawn as no-data base geometry only.
     for name, geom in sorted(others):
+        geom = _drop_specks(geom)
         all_geoms.append(geom)
         features.append({
             "type": "Feature",
@@ -178,7 +201,7 @@ def build_subzones() -> None:
         props = f["properties"]
         if props["PLN_AREA_N"].strip().upper() in DROP_AREAS:
             continue
-        geom = shape(f["geometry"]).simplify(SIMPLIFY_TOLERANCE)
+        geom = _drop_specks(shape(f["geometry"]).simplify(SIMPLIFY_TOLERANCE))
         features.append({
             "type": "Feature",
             "properties": {
