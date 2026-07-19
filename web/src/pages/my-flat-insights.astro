@@ -100,7 +100,7 @@ import Base from '../layouts/Base.astro';
           <p class="ret-lede">Already bought this flat? Enter what you paid to see your gain and annual return against the town.</p>
           <div class="ret-inputs">
             <label>Purchase price
-              <input id="r-paid" type="number" inputmode="numeric" min="10000" step="1000" placeholder="e.g. 380000" /></label>
+              <input id="r-paid" type="text" inputmode="numeric" autocomplete="off" placeholder="e.g. 380,000" /></label>
             <label>Year bought
               <input id="r-year" type="number" inputmode="numeric" min="1990" max="2026" placeholder="e.g. 2015" /></label>
           </div>
@@ -321,6 +321,7 @@ import Base from '../layouts/Base.astro';
   import echarts from '../lib/echarts';
   import { baseOption, palette, axisLabel, splitLine, axisLine, ink3, ink, red } from '../lib/echartsTheme';
   import { money, moneyShort, psf as fpsf, titleCase } from '../lib/format';
+  import { reformatWithCaret, parsePrice, computeReturns } from '../lib/returns';
 
   const $ = (id: string) => document.getElementById(id)!;
   const sql = (s: string) => String(s).replace(/'/g, "''");
@@ -431,30 +432,25 @@ import Base from '../layouts/Base.astro';
     });
   }
 
-  // 02 · "already own it?" — annualised return vs the town over the same span.
-  function nearestYear(y: number): string {
-    const ys = Object.keys(townYearPrice).map(Number).sort((a, b) => a - b);
-    if (!ys.length) return '';
-    return String(Math.min(Math.max(y, ys[0]), ys[ys.length - 1]));
+  // Format the purchase-price field with thousands separators as the user types,
+  // keeping the caret anchored to the same digit.
+  function formatPaid() {
+    const el = $('r-paid') as HTMLInputElement;
+    const { value, caret } = reformatWithCaret(el.value, el.selectionStart ?? el.value.length);
+    el.value = value;
+    el.setSelectionRange(caret, caret);
   }
+
   function renderReturns() {
     const out = $('ret-out');
-    const paid = Number(($('r-paid') as HTMLInputElement).value) || 0;
+    const paid = parsePrice(($('r-paid') as HTMLInputElement).value);
     const yr = parseInt(($('r-year') as HTMLInputElement).value, 10);
     if (!paid || !yr || yr < 1990 || yr >= NOW_YEAR || !currentEstimate) {
       out.innerHTML = '<div class="ret-empty">Your appreciation will appear here.</div>';
       return;
     }
-    const hold = NOW_YEAR - yr;
-    const gain = currentEstimate - paid;
-    const totRet = (currentEstimate / paid - 1) * 100;
-    const cagr = (Math.pow(currentEstimate / paid, 1 / hold) - 1) * 100;
-    // Town benchmark over the overlapping span we actually have data for.
-    const bYear = nearestYear(yr);
-    const py = townYearPrice[bYear], cy = townYearPrice[latestYear];
-    const span = Number(latestYear) - Number(bYear);
-    const townCagr = py && cy && span > 0 ? (Math.pow(cy / py, 1 / span) - 1) * 100 : NaN;
-    const beat = cagr - townCagr;
+    const { hold, gain, totRet, cagr, townCagr, beat } =
+      computeReturns(paid, yr, currentEstimate, NOW_YEAR, townYearPrice, latestYear);
     const cls = gain >= 0 ? 'pos' : 'neg';
     const town = titleCase(block.town);
     out.innerHTML = `
@@ -706,7 +702,8 @@ import Base from '../layouts/Base.astro';
   $('f-flat').addEventListener('change', async () => { await onFlatChange(); compute(); });
   ['f-storey', 'f-area', 'f-lease'].forEach((id) => $(id).addEventListener('change', compute));
   // Returns panel recomputes locally from the current estimate — no DuckDB round-trip.
-  ['r-paid', 'r-year'].forEach((id) => $(id).addEventListener('input', renderReturns));
+  $('r-paid').addEventListener('input', () => { formatPaid(); renderReturns(); });
+  $('r-year').addEventListener('input', renderReturns);
   $('get-insights').addEventListener('click', async () => {
     const cur = parseInt(($('f-postal') as HTMLInputElement).value, 10);
     // re-resolve only if the postal changed (avoid clobbering the user's edited fields)
