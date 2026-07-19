@@ -7,12 +7,19 @@ from webapp.utils import get_project_root
 
 
 def convert_lease(x):
-    if 0 < x <= 60:
+    # Bands cover leases 1-99. Anything outside (null, 0, >99) returns None so the row
+    # drops out of the lease-band views (the frontend filters IS NOT NULL and hardcodes
+    # exactly these three bands) instead of raising UnboundLocalError and aborting the ETL.
+    if x is None:
+        result = None
+    elif 0 < x <= 60:
         result = "0-60 years"
     elif 60 < x <= 80:
         result = "61-80 years"
     elif 80 < x <= 99:
         result = "81-99 years"
+    else:
+        result = None
     return result
 
 
