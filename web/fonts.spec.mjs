@@ -32,6 +32,16 @@ export const families = [
     styles: ['normal', 'italic'],
   },
   {
+    // The logo wordmark ("hdb kaki") is set in Quicksand Bold; the nav brand text
+    // uses this to match it (src/components/Nav.astro + the .brand rule in
+    // src/styles/global.css).
+    googleName: 'Quicksand',
+    cssVariable: '--font-brand',
+    fallbacks: ['sans-serif'],
+    weights: [700],
+    styles: ['normal'],
+  },
+  {
     googleName: 'Public Sans',
     cssVariable: '--font-sans',
     fallbacks: ['sans-serif'],
