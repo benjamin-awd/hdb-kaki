@@ -4,7 +4,9 @@ import { test, expect } from '@playwright/test';
 // DuckDB), and block letters in addresses are uppercased (311c -> 311C). Filtering or
 // paging past page 1 boots DuckDB and re-queries.
 
-test('default page renders from JSON with block letters uppercased, DuckDB blocked', async ({ page }) => {
+test('default page renders from JSON with block letters uppercased, DuckDB blocked', async ({
+  page,
+}) => {
   await page.route(/\/duckdb\//, (r) => r.abort());
   await page.route(/\/data\/resale\.parquet$/, (r) => r.abort());
 

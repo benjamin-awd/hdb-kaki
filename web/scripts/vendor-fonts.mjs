@@ -75,4 +75,6 @@ for (const { label, rel, buf } of downloaded) {
   total += buf.length;
   console.log(`${label.padEnd(28)} ${(buf.length / 1024).toFixed(1).padStart(6)} KiB  ${rel}`);
 }
-console.log(`\nVendored ${SUBSET}-subset fonts -> ${FONTS_DIR}  (${(total / 1024).toFixed(1)} KiB total)`);
+console.log(
+  `\nVendored ${SUBSET}-subset fonts -> ${FONTS_DIR}  (${(total / 1024).toFixed(1)} KiB total)`,
+);

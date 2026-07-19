@@ -31,9 +31,17 @@ const links = [
       <span class="nav-toggle-bar"></span>
     </button>
     <nav class="nav-links" id="nav-links">
-      {links.map((l) => (
-        <a href={l.href} class={l.label === active ? 'active' : ''} data-astro-prefetch={l.noPrefetch ? 'false' : undefined}>{l.label}</a>
-      ))}
+      {
+        links.map((l) => (
+          <a
+            href={l.href}
+            class={l.label === active ? 'active' : ''}
+            data-astro-prefetch={l.noPrefetch ? 'false' : undefined}
+          >
+            {l.label}
+          </a>
+        ))
+      }
     </nav>
   </div>
 </header>
