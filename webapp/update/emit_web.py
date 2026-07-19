@@ -266,14 +266,27 @@ def emit_town_analysis(df: pl.DataFrame) -> None:
         .to_dicts()
     )
 
-    # Highest sale per town for the default flat — mirrors renderHighest()'s query.
-    highest = (
-        df.filter(pl.col("flat_type") == TA_DEFAULT_FLAT)
-        .group_by("town")
-        .agg(pl.col("resale_price").max().alias("mx"))
-        .sort("mx", descending=True)
-        .head(15)
-        .select(["town", "mx"])
+    # Record sale per town for the default flat — mirrors loadRecords()'s query: the
+    # single highest sale per town, with its flat's context and the town median.
+    scoped = df.filter(pl.col("flat_type") == TA_DEFAULT_FLAT)
+    town_med = scoped.group_by("town").agg(pl.col("resale_price").median().alias("med"))
+    records = (
+        # Sort price-desc then take the first (=max) row per town, keeping its columns aligned.
+        scoped.sort(["resale_price", "month"], descending=[True, True])
+        .group_by("town", maintain_order=True)
+        .agg(pl.exclude("town").first())
+        .join(town_med, on="town")
+        .sort("resale_price", descending=True)
+        .head(12)
+        .select(
+            "town",
+            pl.col("resale_price").alias("price"),
+            "address",
+            pl.col("storey_range").alias("storey"),
+            pl.col("floor_area_sqm").alias("area"),
+            "month",
+            "med",
+        )
         .to_dicts()
     )
 
@@ -289,7 +302,7 @@ def emit_town_analysis(df: pl.DataFrame) -> None:
         "flatTypes": sorted(df["flat_type"].unique().to_list()),
         "streets": streets,
         "rows": rows,
-        "highest": highest,
+        "records": records,
     }
     out = OUT_DIR / "town-analysis.json"
     out.write_text(json.dumps(payload))
