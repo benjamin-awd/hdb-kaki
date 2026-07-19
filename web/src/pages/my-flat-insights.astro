@@ -99,8 +99,8 @@ import Base from '../layouts/Base.astro';
           <div id="traj-chart" style="width:100%;height:300px"></div>
         </div>
         <div class="card returns">
-          <div class="ret-head">Already own it?</div>
-          <p class="ret-lede">Enter what you paid to see your gain and annualised return vs the town.</p>
+          <div class="ret-head">Your return so far</div>
+          <p class="ret-lede">Already bought this flat? Enter what you paid to see your gain and annual return against the town.</p>
           <div class="ret-inputs">
             <label>Purchase price
               <input id="r-paid" type="number" inputmode="numeric" min="10000" step="1000" placeholder="e.g. 380000" /></label>
@@ -166,21 +166,12 @@ import Base from '../layouts/Base.astro';
 
       <div class="card chart-card" style="margin-top:18px">
         <div class="chart-head"><div class="chart-title" id="leasecurve-title">Median PSF by remaining lease</div>
-          <span class="chart-sub">Same flat type, island-wide, last 24 months</span></div>
+          <span class="chart-sub" id="leasecurve-sub">Same flat type, island-wide, last 24 months</span></div>
         <div id="lease-chart" style="width:100%;height:260px"></div>
       </div>
 
-      <!-- 05 STOREY PREMIUM -->
-      <div class="sec-head"><span class="num">05</span><h2>Storey premium</h2>
-        <span class="hint" id="storey-hint">What buyers pay to go up a floor, here.</span></div>
-      <div class="card chart-card">
-        <div class="chart-head"><div class="chart-title" id="storey-title">Median PSF by storey band</div>
-          <span class="pill" id="storey-pill">—</span></div>
-        <div id="storey-chart" style="width:100%;height:280px"></div>
-      </div>
-
-      <!-- 06 COMPARABLES -->
-      <div class="sec-head"><span class="num">06</span><h2>Nearby comparables</h2>
+      <!-- 05 COMPARABLES -->
+      <div class="sec-head"><span class="num">05</span><h2>Nearby comparables</h2>
         <span class="hint" id="comp-hint">Recent sales of the same flat type in your town, same street first.</span></div>
 
       <div class="split">
@@ -278,13 +269,14 @@ import Base from '../layouts/Base.astro';
   .ret-inputs input{border:1px solid var(--line);background:var(--paper);border-radius:9px;padding:10px 12px;font-family:var(--font-mono);font-size:15px;font-weight:600;color:var(--ink);outline:none}
   .ret-inputs input:focus{border-color:var(--ink)}
   .ret-out{margin-top:16px;padding-top:16px;border-top:1px solid var(--line);flex:1}
-  .ret-empty{font-size:13px;color:var(--ink-3)}
-  .ret-big{font-family:var(--font-fraunces);font-weight:600;font-size:32px;letter-spacing:-.02em;line-height:1}
-  .ret-big.pos{color:var(--good)} .ret-big.neg{color:var(--red-ink)}
-  .ret-sub{font-size:13px;color:var(--ink-2);margin-top:6px}
-  .ret-rows{margin-top:14px}
-  .ret-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;font-size:13.5px;border-top:1px solid var(--line)}
-  .ret-row .k{color:var(--ink-3)} .ret-row .v{font-family:var(--font-mono);font-weight:600}
+  /* the empty state + result rows below are injected via innerHTML, so must be :global to keep styling */
+  :global(.ret-empty){font-size:13px;color:var(--ink-3)}
+  :global(.ret-big){font-family:var(--font-fraunces);font-weight:600;font-size:32px;letter-spacing:-.02em;line-height:1}
+  :global(.ret-big.pos){color:var(--good)} :global(.ret-big.neg){color:var(--red-ink)}
+  :global(.ret-sub){font-size:13px;color:var(--ink-2);margin-top:6px}
+  :global(.ret-rows){margin-top:14px}
+  :global(.ret-row){display:flex;justify-content:space-between;align-items:center;gap:16px;padding:8px 0;font-size:13.5px;border-top:1px solid var(--line)}
+  :global(.ret-row .k){color:var(--ink-3)} :global(.ret-row .v){font-family:var(--font-mono);font-weight:600;white-space:nowrap}
   /* distribution caption + market tiles */
   .dist-cap{font-size:12.5px;color:var(--ink-3);margin-top:8px;text-align:center}
   .market-tiles{display:flex;flex-direction:column;gap:14px}
@@ -461,13 +453,14 @@ import Base from '../layouts/Base.astro';
     const townCagr = py && cy && span > 0 ? (Math.pow(cy / py, 1 / span) - 1) * 100 : NaN;
     const beat = cagr - townCagr;
     const cls = gain >= 0 ? 'pos' : 'neg';
+    const town = titleCase(block.town);
     out.innerHTML = `
       <div class="ret-big ${cls}">${gain >= 0 ? '+' : '−'}${money(Math.abs(gain))}</div>
-      <div class="ret-sub">${totRet >= 0 ? '+' : ''}${totRet.toFixed(0)}% total over ${hold} year${hold > 1 ? 's' : ''}</div>
+      <div class="ret-sub">${totRet >= 0 ? '+' : '−'}${Math.abs(totRet).toFixed(0)}% since ${yr} · ${hold} year${hold > 1 ? 's' : ''} held</div>
       <div class="ret-rows">
-        <div class="ret-row"><span class="k">Annualised (CAGR)</span><span class="v">${cagr >= 0 ? '+' : ''}${cagr.toFixed(1)}%/yr</span></div>
-        ${isFinite(townCagr) ? `<div class="ret-row"><span class="k">${titleCase(block.town)} · ${bYear}→${latestYear}</span><span class="v">${townCagr >= 0 ? '+' : ''}${townCagr.toFixed(1)}%/yr</span></div>
-        <div class="ret-row"><span class="k">You vs town</span><span class="v" style="color:${beat >= 0 ? 'var(--good)' : 'var(--red-ink)'}">${beat >= 0 ? '▲' : '▼'} ${Math.abs(beat).toFixed(1)} pts/yr</span></div>` : ''}
+        <div class="ret-row"><span class="k">Your return per year</span><span class="v">${cagr >= 0 ? '+' : '−'}${Math.abs(cagr).toFixed(1)}%/yr</span></div>
+        ${isFinite(townCagr) ? `<div class="ret-row"><span class="k">${town} average</span><span class="v">${townCagr >= 0 ? '+' : '−'}${Math.abs(townCagr).toFixed(1)}%/yr</span></div>
+        <div class="ret-row"><span class="k">You vs ${town}</span><span class="v" style="color:${beat >= 0 ? 'var(--good)' : 'var(--red-ink)'}">${beat >= 0 ? '▲' : '▼'} ${Math.abs(beat).toFixed(1)} pts/yr</span></div>` : ''}
       </div>`;
   }
 
@@ -505,8 +498,11 @@ import Base from '../layouts/Base.astro';
   }
 
   // 04 · lease decay — how PSF softens as the lease runs down (island-wide, same type).
-  function renderLeaseCurve(rows: any[], userRem: number) {
+  function renderLeaseCurve(rows: any[], userRem: number, townName: string | null) {
     const el = ec('lease-chart');
+    $('leasecurve-sub').textContent = townName
+      ? `Same flat type in ${townName}, last 36 months`
+      : 'Same flat type, island-wide, last 24 months';
     if (rows.length < 2) { el.clear(); return; }
     const userBucket = `${Math.floor(userRem / 10) * 10}y`;
     const cats = rows.map((r) => `${r.bucket}y`);
@@ -546,30 +542,6 @@ import Base from '../layouts/Base.astro';
         <span class="lf-k">${f.k}</span>
         <span class="lf-v">${ok ? `${f.ok} · <b>${yrsTo}</b> yrs of headroom` : f.warn}</span></div>`;
     }).join('');
-  }
-
-  // 05 · storey premium — median PSF by storey band, user's band highlighted.
-  function renderStorey(rows: any[], userStorey: string) {
-    const el = ec('storey-chart');
-    if (rows.length < 2) { el.clear(); $('storey-pill').textContent = '—'; $('storey-hint').textContent = 'Too few sales across storeys to compare.'; return; }
-    const lo = rows[0], hi = rows[rows.length - 1];
-    const spanFloors = (hi.lo - lo.lo) || 1;
-    const perFloor = (hi.psf - lo.psf) / spanFloors; // $ psf per storey climbed
-    const pill = $('storey-pill');
-    pill.className = 'pill up';
-    pill.textContent = `≈ +${fpsf(perFloor * 3)} psf per 3 floors`;
-    $('storey-hint').textContent = `Low floors ${fpsf(lo.psf)} → high floors ${fpsf(hi.psf)} psf.`;
-    el.setOption({
-      ...baseOption(),
-      grid: { left: 54, right: 18, top: 16, bottom: 42, containLabel: false },
-      tooltip: { trigger: 'axis', valueFormatter: (v: number) => `${fpsf(v)} psf` },
-      xAxis: { type: 'category', data: rows.map((r) => r.storey_range), axisLabel: { ...axisLabel, rotate: rows.length > 7 ? 38 : 0 }, axisLine, axisTick: { show: false } },
-      yAxis: { type: 'value', scale: true, axisLabel: { ...axisLabel, formatter: (v: number) => '$' + v }, splitLine },
-      series: [{
-        type: 'bar', barWidth: '56%',
-        data: rows.map((r) => ({ value: Math.round(r.psf), itemStyle: { color: r.storey_range === userStorey ? red : '#c9bfae', borderRadius: [4, 4, 0, 0] } })),
-      }],
-    });
   }
 
   // ---- compute valuation + benchmarks + comparables ----
@@ -662,7 +634,7 @@ import Base from '../layouts/Base.astro';
     const youRow = `<tr class="you"><td class="addr"><b>${titleCase(block.address)}</b><span class="badge">YOUR FLAT</span><br><span class="st">Estimated</span></td>
       <td>${storey}</td><td class="r">${area.toLocaleString()}</td><td class="r">${rem} yr</td>
       <td class="r price">${money(estimate)}</td><td class="r psf">${fpsf(medPsf)}</td><td class="r">—</td></tr>`;
-    const rows = sorted.slice(0, 8).map((c) => `<tr><td class="addr"><b>${titleCase(c.address)}</b>${sameStreet(c) ? '<span class="badge" style="color:var(--ink-2);border-color:var(--line)">SAME ST</span>' : ''}<br><span class="st">${titleCase(c.street_name)}</span></td>
+    const rows = sorted.slice(0, 8).map((c) => `<tr><td class="addr"><b>${titleCase(c.address)}</b><br><span class="st">${titleCase(c.street_name)}</span></td>
       <td>${c.storey_range}</td><td class="r">${c.area.toLocaleString()}</td><td class="r">${c.lease} yr</td>
       <td class="r price">${money(c.price)}</td><td class="r psf">${fpsf(c.psf)}</td><td class="r">${c.month}</td></tr>`).join('');
     $('comp-body').innerHTML = youRow + rows;
@@ -682,15 +654,15 @@ import Base from '../layouts/Base.astro';
     // 04 · lease thresholds (client-side, from remaining lease)
     renderLeaseFlags(rem);
 
-    // 02/04/05 · queries that need wider history than the comps window
-    const [trajRows, storeyRows, leaseRows] = await Promise.all([
+    // 02/04 · queries that need wider history than the comps window
+    const [trajRows, leaseTownRows, leaseIslandRows] = await Promise.all([
       query<any>(`SELECT substr(month,1,4) yr, median(psf) psf, median(resale_price) price, count(*) n
                   FROM resale WHERE town='${sql(block.town)}' AND flat_type='${sql(flat)}'
                   GROUP BY yr ORDER BY yr`),
-      query<any>(`SELECT storey_range, min(storey_lower_bound) lo, median(psf) psf, count(*) n
+      query<any>(`SELECT floor(remaining_lease_years/10)*10 bucket, median(psf) psf, count(*) n
                   FROM resale WHERE town='${sql(block.town)}' AND flat_type='${sql(flat)}'
                     AND month >= strftime(current_date - INTERVAL 36 MONTH, '%Y-%m')
-                  GROUP BY storey_range HAVING count(*) >= 5 ORDER BY lo`),
+                  GROUP BY bucket HAVING count(*) >= 8 ORDER BY bucket`),
       query<any>(`SELECT floor(remaining_lease_years/10)*10 bucket, median(psf) psf, count(*) n
                   FROM resale WHERE flat_type='${sql(flat)}'
                     AND month >= strftime(current_date - INTERVAL 24 MONTH, '%Y-%m')
@@ -701,8 +673,10 @@ import Base from '../layouts/Base.astro';
     latestYear = traj.length ? traj[traj.length - 1].yr : '';
     renderTrajectory(traj, medPsf, flat, block.town);
     renderReturns(); // reflects the refreshed estimate + town series
-    renderStorey(storeyRows.map((r) => ({ ...r, lo: Number(r.lo), psf: Number(r.psf) })), storey);
-    renderLeaseCurve(leaseRows.map((r) => ({ bucket: Number(r.bucket), psf: Number(r.psf) })), rem);
+    // prefer the user's own town for the lease curve; fall back to island-wide when too thin
+    const leaseInTown = leaseTownRows.length >= 2;
+    const leaseRows = leaseInTown ? leaseTownRows : leaseIslandRows;
+    renderLeaseCurve(leaseRows.map((r) => ({ bucket: Number(r.bucket), psf: Number(r.psf) })), rem, leaseInTown ? titleCase(block.town) : null);
 
     // map: comps (grey) + your block (red)
     layer.clearLayers();
