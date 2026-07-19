@@ -2,7 +2,7 @@
 // instead of `import * as echarts from 'echarts'` (which bundles the whole library,
 // ~1MB). See wireframes/REBUILD_PLAN.md.
 import * as echarts from 'echarts/core';
-import { LineChart, BarChart, ScatterChart, BoxplotChart } from 'echarts/charts';
+import { LineChart, BarChart, ScatterChart, BoxplotChart, MapChart } from 'echarts/charts';
 import {
   GridComponent,
   TooltipComponent,
@@ -11,13 +11,15 @@ import {
   AxisPointerComponent,
   DataZoomInsideComponent,
   DataZoomSliderComponent,
+  VisualMapComponent,
 } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 
 echarts.use([
-  LineChart, BarChart, ScatterChart, BoxplotChart,
+  LineChart, BarChart, ScatterChart, BoxplotChart, MapChart,
   GridComponent, TooltipComponent, LegendComponent, MarkLineComponent,
   AxisPointerComponent, DataZoomInsideComponent, DataZoomSliderComponent,
+  VisualMapComponent,
   CanvasRenderer,
 ]);
 
