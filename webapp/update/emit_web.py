@@ -42,6 +42,10 @@ PSF_DEFAULT_TOWN = "ANG MO KIO"
 PSF_START = "2020-01"
 PSF_SCATTER_CAP = 6000
 
+# Rows per page of the landing recent-transactions table. MUST match PAGE_SIZE in
+# web/src/pages/index.astro so the snapshot's first page lines up with the paged query.
+RECENT_PAGE_SIZE = 20
+
 # Columns dropped for the web: derivable or unused by any page.
 #   _id, _ts        — internal ETL bookkeeping
 #   remaining_lease — string form; kept as remaining_lease_years
@@ -175,10 +179,13 @@ def emit_overview(df: pl.DataFrame) -> None:
         .to_dicts()
     )
 
+    # First page of the recent-transactions table. The landing paints this straight from
+    # the snapshot; changing a filter or paging past page 1 boots DuckDB in the browser
+    # and re-queries with the same ORDER BY + LIMIT/OFFSET.
     recent_window = df.filter(pl.col("month") >= cutoff)
     recent = (
         recent_window.sort(["month", "resale_price"], descending=[True, True])
-        .head(8)
+        .head(RECENT_PAGE_SIZE)
         .select(
             ["month", "town", "address", "flat_type", "floor_area_sqft", "resale_price", "psf"]
         )
@@ -216,6 +223,9 @@ def emit_overview(df: pl.DataFrame) -> None:
         "buckets": buckets,
         "recent": recent,
         "recentTotal": recent_window.height,
+        # Option lists for the recent-transactions filters (populated without DuckDB).
+        "towns": sorted(df["town"].unique().to_list()),
+        "flatTypes": sorted(df["flat_type"].unique().to_list()),
         "stats": stats,
     }
     out = OUT_DIR / "overview.json"
@@ -267,10 +277,17 @@ def emit_town_analysis(df: pl.DataFrame) -> None:
         .to_dicts()
     )
 
+    # Street list for the default town — populates the dependent street dropdown on
+    # load. Mirrors loadStreets()'s DISTINCT query in town-analysis.astro.
+    streets = (
+        df.filter(pl.col("town") == TA_DEFAULT_TOWN)["street_name"].unique().sort().to_list()
+    )
+
     payload = {
         "default": {"town": TA_DEFAULT_TOWN, "flat": TA_DEFAULT_FLAT},
         "towns": sorted(df["town"].unique().to_list()),
         "flatTypes": sorted(df["flat_type"].unique().to_list()),
+        "streets": streets,
         "rows": rows,
         "highest": highest,
     }
