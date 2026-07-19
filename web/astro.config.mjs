@@ -24,7 +24,10 @@ const duckdbDevFallback = {
       const extIdx = key.indexOf('/ext/');
       if (extIdx !== -1) {
         res.statusCode = 302;
-        res.setHeader('Location', `https://extensions.duckdb.org/${key.slice(extIdx + '/ext/'.length)}`);
+        res.setHeader(
+          'Location',
+          `https://extensions.duckdb.org/${key.slice(extIdx + '/ext/'.length)}`,
+        );
         return res.end();
       }
       const slash = key.indexOf('/');
@@ -35,7 +38,10 @@ const duckdbDevFallback = {
       const version = key.slice(0, slash);
       const file = key.slice(slash + 1);
       res.statusCode = 302;
-      res.setHeader('Location', `https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@${version}/dist/${file}`);
+      res.setHeader(
+        'Location',
+        `https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@${version}/dist/${file}`,
+      );
       res.end();
     });
   },

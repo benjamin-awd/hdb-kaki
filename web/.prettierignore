@@ -1,0 +1,9 @@
+# Build output and generated/vendored assets
+dist/
+.astro/
+src/assets/fonts/
+bun.lock
+
+# public/ is all generated or third-party data (duckdb engine, geojson, shards).
+# Reformatting the large single-line geojson would produce multi-MB diffs.
+public/

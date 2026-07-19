@@ -45,7 +45,12 @@ async function boot(): Promise<duckdb.AsyncDuckDBConnection> {
 
   const manifest = await getManifest();
   const base = new URL(`${import.meta.env.BASE_URL}data/`, window.location.href).href;
-  await db.registerFileURL(manifest.file, base + manifest.file, duckdb.DuckDBDataProtocol.HTTP, false);
+  await db.registerFileURL(
+    manifest.file,
+    base + manifest.file,
+    duckdb.DuckDBDataProtocol.HTTP,
+    false,
+  );
 
   const conn = await db.connect();
   // Autoload the parquet extension from our own origin instead of extensions.duckdb.org

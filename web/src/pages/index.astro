@@ -12,7 +12,7 @@ const base = import.meta.env.BASE_URL;
 // client-only render if overview.json hasn't been generated yet (e.g. fresh clone).
 type Kpi = { value: number | null; yoy: number | null };
 type Stats = { medianPrice: Kpi; txns: Kpi; millionDollar: Kpi; medianPsf: Kpi };
-let heroSVG = '';
+let heroSVG: string;
 let stats: Stats | null = null;
 try {
   const path = fileURLToPath(new URL('../../public/data/overview.json', import.meta.url));
@@ -26,38 +26,66 @@ try {
 // Redfin-style hero KPI strip: a headline value + its year-on-year delta each.
 const int = (n: number | null) => (n == null ? '—' : n.toLocaleString('en-SG'));
 const dCls = (n: number | null) => (n == null ? 'flat' : n >= 0 ? 'up' : 'down');
-const dTxt = (n: number | null) => (n == null ? 'n/a' : `${n >= 0 ? '▲' : '▼'} ${Math.abs(n).toFixed(1)}% YoY`);
+const dTxt = (n: number | null) =>
+  n == null ? 'n/a' : `${n >= 0 ? '▲' : '▼'} ${Math.abs(n).toFixed(1)}% YoY`;
 const kpis = stats
   ? [
-      { cap: 'Median resale price', val: stats.medianPrice.value == null ? '—' : moneyShort(stats.medianPrice.value), yoy: stats.medianPrice.yoy },
+      {
+        cap: 'Median resale price',
+        val: stats.medianPrice.value == null ? '—' : moneyShort(stats.medianPrice.value),
+        yoy: stats.medianPrice.yoy,
+      },
       { cap: 'Transactions · 12 mo', val: int(stats.txns.value), yoy: stats.txns.yoy },
-      { cap: 'Million-dollar flats · 12 mo', val: int(stats.millionDollar.value), yoy: stats.millionDollar.yoy },
-      { cap: 'Median PSF', val: stats.medianPsf.value == null ? '—' : fpsf(stats.medianPsf.value), yoy: stats.medianPsf.yoy },
+      {
+        cap: 'Million-dollar flats · 12 mo',
+        val: int(stats.millionDollar.value),
+        yoy: stats.millionDollar.yoy,
+      },
+      {
+        cap: 'Median PSF',
+        val: stats.medianPsf.value == null ? '—' : fpsf(stats.medianPsf.value),
+        yoy: stats.medianPsf.yoy,
+      },
     ]
   : [];
 ---
 
 <Base active="Market Overview" title="Market Overview | HDB Kaki">
   <!-- Start the data fetch during HTML parse, parallel to the JS, so charts paint sooner. -->
-  <link slot="head" rel="preload" as="fetch" href={`${base}data/overview.json`} crossorigin="anonymous" />
+  <link
+    slot="head"
+    rel="preload"
+    as="fetch"
+    href={`${base}data/overview.json`}
+    crossorigin="anonymous"
+  />
   <section class="hero">
     <div class="wrap">
       <span class="eyebrow rise"><span class="dot"></span> Market Overview</span>
-      <h1 class="title rise" style="animation-delay:.05s">How's the resale market <em>moving</em>?</h1>
+      <h1 class="title rise" style="animation-delay:.05s">
+        How's the resale market <em>moving</em>?
+      </h1>
       <p class="lede solo rise" style="animation-delay:.1s">
-        Median prices, distributions and lease dynamics across every HDB resale transaction since 2017.
+        Median prices, distributions and lease dynamics across every HDB resale transaction since
+        2017.
       </p>
-      {stats && (
-        <div class="kpi-strip rise" style="animation-delay:.15s" aria-label="Market at a glance, last 12 months">
-          {kpis.map((k) => (
-            <div class="kpi">
-              <span class="kpi-cap">{k.cap}</span>
-              <span class="kpi-val mono">{k.val}</span>
-              <span class={`pill ${dCls(k.yoy)}`}>{dTxt(k.yoy)}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      {
+        stats && (
+          <div
+            class="kpi-strip rise"
+            style="animation-delay:.15s"
+            aria-label="Market at a glance, last 12 months"
+          >
+            {kpis.map((k) => (
+              <div class="kpi">
+                <span class="kpi-cap">{k.cap}</span>
+                <span class="kpi-val mono">{k.val}</span>
+                <span class={`pill ${dCls(k.yoy)}`}>{dTxt(k.yoy)}</span>
+              </div>
+            ))}
+          </div>
+        )
+      }
     </div>
   </section>
 
@@ -65,7 +93,9 @@ const kpis = stats
     <!-- 01 · PRICE TRENDS -->
     <div class="sec-head rise">
       <span class="num">01</span><h2>Price trends</h2>
-      <span class="hint">Median resale price over time. Switch the lens to compare by lease band, town or flat type.</span>
+      <span class="hint"
+        >Median resale price over time. Switch the lens to compare by lease band, town or flat type.</span
+      >
     </div>
     <div class="controls" style="margin-bottom:16px">
       <div class="chipset" id="trend-toggle">
@@ -75,13 +105,20 @@ const kpis = stats
       </div>
     </div>
     <div class="card chart-card">
-      <div class="chart-head"><div class="chart-title" id="trend-title">Median resale price by lease band</div></div>
-      <div id="chart-trends" class="chart-box" set:html={heroSVG}></div>
+      <div class="chart-head">
+        <div class="chart-title" id="trend-title">Median resale price by lease band</div>
+      </div>
+      <div id="chart-trends" class="chart-box" set:html={heroSVG} />
     </div>
 
     <!-- 02 · PRICE MAP -->
-    <div class="sec-head"><span class="num">02</span><h2>Price map</h2>
-      <span class="hint">Median 4-room resale price, last 12 months — darker means pricier. Switch to subzones for a finer view; areas with fewer than 10 sales are left blank.</span></div>
+    <div class="sec-head">
+      <span class="num">02</span><h2>Price map</h2>
+      <span class="hint"
+        >Median 4-room resale price, last 12 months — darker means pricier. Switch to subzones for a
+        finer view; areas with fewer than 10 sales are left blank.</span
+      >
+    </div>
     <div class="controls" style="margin-bottom:16px">
       <div class="chipset" id="map-toggle">
         <button class="chip on" data-level="town">By town</button>
@@ -89,21 +126,29 @@ const kpis = stats
       </div>
     </div>
     <div class="card chart-card">
-      <div class="chart-head"><div class="chart-title" id="map-title">Median resale price · 4-room · by town</div></div>
+      <div class="chart-head">
+        <div class="chart-title" id="map-title">Median resale price · 4-room · by town</div>
+      </div>
       <div id="chart-map" class="chart-box map-box"></div>
     </div>
 
     <!-- 03 · DISTRIBUTION -->
-    <div class="sec-head"><span class="num">03</span><h2>Price distribution by town</h2>
-      <span class="hint">Spread of 4-room resale prices, last 12 months — box shows the middle 50%.</span></div>
+    <div class="sec-head">
+      <span class="num">03</span><h2>Price distribution by town</h2>
+      <span class="hint"
+        >Spread of 4-room resale prices, last 12 months — box shows the middle 50%.</span
+      >
+    </div>
     <div class="card chart-card">
       <div class="chart-head"><div class="chart-title">Resale price spread · 4-room</div></div>
       <div id="chart-box" class="chart-box"></div>
     </div>
 
     <!-- 04 · LEASE RELATIONSHIP -->
-    <div class="sec-head"><span class="num">04</span><h2>Price &amp; remaining lease</h2>
-      <span class="hint">How 4-room resale price relates to years left on the lease.</span></div>
+    <div class="sec-head">
+      <span class="num">04</span><h2>Price &amp; remaining lease</h2>
+      <span class="hint">How 4-room resale price relates to years left on the lease.</span>
+    </div>
     <div class="split" style="grid-template-columns:1.5fr 1fr">
       <div class="card chart-card">
         <div class="chart-head"><div class="chart-title">Resale price vs remaining lease</div></div>
@@ -116,11 +161,18 @@ const kpis = stats
     </div>
 
     <!-- 05 · RECENT TRANSACTIONS -->
-    <div class="sec-head"><span class="num">05</span><h2>Recent transactions</h2>
-      <span class="hint">Latest registered resale deals. Filter by town or flat type and page through the last 12 months.</span></div>
+    <div class="sec-head">
+      <span class="num">05</span><h2>Recent transactions</h2>
+      <span class="hint"
+        >Latest registered resale deals. Filter by town or flat type and page through the last 12
+        months.</span
+      >
+    </div>
     <div class="controls" style="margin-bottom:16px">
       <span class="field-select"><span class="lab">Town</span><select id="rec-town"></select></span>
-      <span class="field-select"><span class="lab">Flat type</span><select id="rec-flat"></select></span>
+      <span class="field-select"
+        ><span class="lab">Flat type</span><select id="rec-flat"></select></span
+      >
     </div>
     <div class="card table-card">
       <table class="comp">
@@ -129,7 +181,10 @@ const kpis = stats
           <th class="r">Area (sqft)</th><th class="r">Price</th><th class="r">PSF</th>
         </tr></thead>
         <tbody id="tbody-recent">
-          <tr><td colspan="7" style="padding:22px 16px;color:var(--ink-3)">Loading market data…</td></tr>
+          <tr
+            ><td colspan="7" style="padding:22px 16px;color:var(--ink-3)">Loading market data…</td
+            ></tr
+          >
         </tbody>
       </table>
       <div class="tbl-foot">
@@ -144,24 +199,58 @@ const kpis = stats
 </Base>
 
 <style>
-  .chart-box { width: 100%; height: 380px; }
+  .chart-box {
+    width: 100%;
+    height: 380px;
+  }
   /* Stretch the SSR placeholder SVG to fill the box until the canvas chart hydrates. */
-  #chart-trends svg { width: 100% !important; height: 100% !important; display: block; }
-  #chart-scatter, #chart-buckets { height: 320px; }
+  #chart-trends svg {
+    width: 100% !important;
+    height: 100% !important;
+    display: block;
+  }
+  #chart-scatter,
+  #chart-buckets {
+    height: 320px;
+  }
   /* Singapore is wide and short — give the choropleth more room than a plot box. */
-  .map-box { height: 460px; }
+  .map-box {
+    height: 460px;
+  }
   /* On a narrow phone the map fits to width, so a 460px box leaves a huge empty band.
      Shrink to roughly the map's own aspect + a horizontal legend strip. */
-  @media (max-width: 640px) { .map-box { height: 300px; } }
+  @media (max-width: 640px) {
+    .map-box {
+      height: 300px;
+    }
+  }
   /* Recent-transactions pager: compact ghost buttons anchored to the footer's right. */
-  .pager { display: inline-flex; gap: 8px; }
-  .pager .pg { padding: 7px 13px; font-size: 13px; }
-  .pager .pg:disabled { opacity: 0.4; cursor: default; border-color: var(--line); }
+  .pager {
+    display: inline-flex;
+    gap: 8px;
+  }
+  .pager .pg {
+    padding: 7px 13px;
+    font-size: 13px;
+  }
+  .pager .pg:disabled {
+    opacity: 0.4;
+    cursor: default;
+    border-color: var(--line);
+  }
 </style>
 
 <script>
   import echarts from '../lib/echarts';
-  import { baseOption, palette, axisLabel, splitLine, axisLine, ink3, mono } from '../lib/echartsTheme';
+  import {
+    baseOption,
+    palette,
+    axisLabel,
+    splitLine,
+    axisLine,
+    ink3,
+    mono,
+  } from '../lib/echartsTheme';
   import { money, moneyShort, psf as fpsf, titleCase } from '../lib/format';
 
   // Landing renders from a single precomputed aggregate (webapp/update/emit_web.py), so
@@ -170,10 +259,15 @@ const kpis = stats
   // same warm the interactive pages use) and queries `resale` directly.
   type Overview = {
     trends: Record<string, { quarter: string; series: string; v: number }[]>;
-    box: any[]; townMedians: { town: string; med: number; n: number }[];
+    box: any[];
+    townMedians: { town: string; med: number; n: number }[];
     subzoneMedians: { sz: string; med: number; n: number }[];
-    scatter: any[]; buckets: any[]; recent: any[]; recentTotal: number;
-    towns: string[]; flatTypes: string[];
+    scatter: any[];
+    buckets: any[];
+    recent: any[];
+    recentTotal: number;
+    towns: string[];
+    flatTypes: string[];
   };
   let OV: Overview;
 
@@ -182,7 +276,7 @@ const kpis = stats
   // Lazily-imported DuckDB engine, shared with the idle warm below so we never double-
   // download it. Only the recent-transactions filters/pager reach for this.
   let _db: Promise<typeof import('../lib/db')> | null = null;
-  const query = async <T = any>(sqlText: string): Promise<T[]> => {
+  const query = async <T = any,>(sqlText: string): Promise<T[]> => {
     if (!_db) _db = import('../lib/db');
     return (await _db).query<T>(sqlText);
   };
@@ -222,15 +316,26 @@ const kpis = stats
       {
         ...baseOption(),
         color: palette,
-        legend: { top: 0, right: 0, type: 'scroll', textStyle: { fontSize: 12 }, icon: 'roundRect' },
+        legend: {
+          top: 0,
+          right: 0,
+          type: 'scroll',
+          textStyle: { fontSize: 12 },
+          icon: 'roundRect',
+        },
         grid: { left: 66, right: 24, top: 40, bottom: 46, containLabel: false },
         tooltip: { trigger: 'axis', valueFormatter: (v: number) => (v == null ? '—' : money(v)) },
         xAxis: {
-          type: 'category', data: quarters, boundaryGap: false,
-          axisLabel: { ...axisLabel, interval: Math.ceil(quarters.length / 8) }, axisLine, axisTick: { show: false },
+          type: 'category',
+          data: quarters,
+          boundaryGap: false,
+          axisLabel: { ...axisLabel, interval: Math.ceil(quarters.length / 8) },
+          axisLine,
+          axisTick: { show: false },
         },
         yAxis: {
-          type: 'value', scale: true,
+          type: 'value',
+          scale: true,
           axisLabel: { ...axisLabel, formatter: (v: number) => moneyShort(v) },
           splitLine,
         },
@@ -254,12 +359,16 @@ const kpis = stats
   // subzones are point-in-polygon'd in emit_web.py and greyed out below minN sales.
   const MAP_LEVELS = {
     town: {
-      geo: 'geo/sg-towns.geojson', mapName: 'sg-towns', minN: 0,
+      geo: 'geo/sg-towns.geojson',
+      mapName: 'sg-towns',
+      minN: 0,
       title: 'Median resale price · 4-room · by town',
       rows: () => OV.townMedians.map((r) => ({ name: r.town, med: Number(r.med), n: r.n })),
     },
     subzone: {
-      geo: 'geo/sg-subzones.geojson', mapName: 'sg-subzones', minN: 10,
+      geo: 'geo/sg-subzones.geojson',
+      mapName: 'sg-subzones',
+      minN: 10,
       title: 'Median resale price · 4-room · by subzone',
       rows: () => OV.subzoneMedians.map((r) => ({ name: r.sz, med: Number(r.med), n: r.n })),
     },
@@ -287,14 +396,18 @@ const kpis = stats
     const cfg = MAP_LEVELS[level];
     // Subzone geometry is only fetched the first time it's viewed, keeping initial load
     // light. The outline layer is shared across levels.
-    await Promise.all([registerGeo(cfg.geo, cfg.mapName), registerGeo('geo/sg-outline.geojson', 'sg-outline')]);
+    await Promise.all([
+      registerGeo(cfg.geo, cfg.mapName),
+      registerGeo('geo/sg-outline.geojson', 'sg-outline'),
+    ]);
     q('map-title').textContent = cfg.title;
 
     const rows = cfg.rows();
     const byName = new Map(rows.map((r) => [r.name, r]));
     const colored = rows.filter((r) => r.n >= cfg.minN);
     const vals = colored.map((r) => r.med);
-    const lo = Math.min(...vals), hi = Math.max(...vals);
+    const lo = Math.min(...vals),
+      hi = Math.max(...vals);
 
     // Shared placement — zoomed to fill the card, and identical on both layers so the
     // coastline outline overlays the choropleth exactly. Singapore is wide and short, so
@@ -313,61 +426,88 @@ const kpis = stats
     const showLabels = level === 'town' && labelsFit();
 
     mapChart ??= echarts.init(q('chart-map'));
-    mapChart.setOption({
-      ...baseOption(),
-      tooltip: {
-        trigger: 'item',
-        formatter: (p: any) => {
-          const d = byName.get(p.name);
-          if (!d || d.n === 0) return `<b>${titleCase(p.name)}</b><br/>No HDB resale data`;
-          if (d.n < cfg.minN) return `<b>${titleCase(p.name)}</b><br/><span style="color:${ink3}">${d.n} sales · too few to rank</span>`;
-          return `<b>${titleCase(p.name)}</b><br/>Median ${money(d.med)}`
-            + `<br/><span style="color:${ink3}">${d.n.toLocaleString()} sales · last 12 mo</span>`;
-        },
-      },
-      // Sequential magnitude → single-hue red ramp (light → dark), matching the app's
-      // "red = pricier" convention. Never a rainbow. Only paints the choropleth layer.
-      visualMap: {
-        type: 'continuous', min: lo, max: hi, calculable: true, seriesIndex: 0,
-        // Desktop: tall bar down the left, over the ocean margin. Narrow phones have no
-        // side margin (map fills the width), so lay it flat along the bottom instead —
-        // otherwise the vertical bar overlaps the landmass and its labels sit on the map.
-        ...(narrow
-          ? { orient: 'horizontal', left: 'center', bottom: 10, itemWidth: 12, itemHeight: 160 }
-          : { orient: 'vertical', left: 16, bottom: 24, itemHeight: 150 }),
-        inRange: { color: ['#fde8ec', '#f7b8c2', '#f07087', '#e11d3e', '#a80019'] },
-        textStyle: { color: ink3, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 },
-        formatter: (v: number) => moneyShort(v),
-      },
-      series: [
-        {
-          type: 'map', map: cfg.mapName, nameProperty: 'name', roam: false, ...layout,
-          // No-data areas: a muted warm grey. Crisp white dividers between every region so
-          // boundaries read clearly against both the red ramp and the beige no-data fills
-          // (the outer coast is drawn by the outline layer below).
-          itemStyle: { areaColor: '#efeadf', borderColor: '#ffffff', borderWidth: 1 },
-          emphasis: { label: { fontWeight: 'bold' }, itemStyle: { borderColor: '#181410', borderWidth: 1.4 } },
-          select: { disabled: true },
-          // Town names sit on the priced regions only (no-data areas stay unlabelled). Dark
-          // ink with a white halo stays legible across the full light→dark red ramp; overlaps
-          // are thinned automatically so it doesn't clutter on narrow screens.
-          label: {
-            show: false, formatter: (p: any) => titleCase(p.name),
-            color: '#2b261f', fontFamily: mono, fontSize: 9,
-            textBorderColor: 'rgba(255,255,255,0.85)', textBorderWidth: 2.5,
+    mapChart.setOption(
+      {
+        ...baseOption(),
+        tooltip: {
+          trigger: 'item',
+          formatter: (p: any) => {
+            const d = byName.get(p.name);
+            if (!d || d.n === 0) return `<b>${titleCase(p.name)}</b><br/>No HDB resale data`;
+            if (d.n < cfg.minN)
+              return `<b>${titleCase(p.name)}</b><br/><span style="color:${ink3}">${d.n} sales · too few to rank</span>`;
+            return (
+              `<b>${titleCase(p.name)}</b><br/>Median ${money(d.med)}` +
+              `<br/><span style="color:${ink3}">${d.n.toLocaleString()} sales · last 12 mo</span>`
+            );
           },
-          labelLayout: { hideOverlap: true, minMargin: 4 },
-          data: colored.map((r) => ({ name: r.name, value: r.med, label: { show: showLabels } })),
         },
-        {
-          // Coastline only (all internal borders dissolved away) → a clean country outline.
-          type: 'map', map: 'sg-outline', nameProperty: 'name', roam: false, silent: true, z: 5, ...layout,
-          itemStyle: { areaColor: 'transparent', borderColor: '#8c8479', borderWidth: 1.4 },
-          emphasis: { disabled: true },
-          label: { show: false },
+        // Sequential magnitude → single-hue red ramp (light → dark), matching the app's
+        // "red = pricier" convention. Never a rainbow. Only paints the choropleth layer.
+        visualMap: {
+          type: 'continuous',
+          min: lo,
+          max: hi,
+          calculable: true,
+          seriesIndex: 0,
+          // Desktop: tall bar down the left, over the ocean margin. Narrow phones have no
+          // side margin (map fills the width), so lay it flat along the bottom instead —
+          // otherwise the vertical bar overlaps the landmass and its labels sit on the map.
+          ...(narrow
+            ? { orient: 'horizontal', left: 'center', bottom: 10, itemWidth: 12, itemHeight: 160 }
+            : { orient: 'vertical', left: 16, bottom: 24, itemHeight: 150 }),
+          inRange: { color: ['#fde8ec', '#f7b8c2', '#f07087', '#e11d3e', '#a80019'] },
+          textStyle: { color: ink3, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 },
+          formatter: (v: number) => moneyShort(v),
         },
-      ],
-    }, true);
+        series: [
+          {
+            type: 'map',
+            map: cfg.mapName,
+            nameProperty: 'name',
+            roam: false,
+            ...layout,
+            // No-data areas: a muted warm grey. Crisp white dividers between every region so
+            // boundaries read clearly against both the red ramp and the beige no-data fills
+            // (the outer coast is drawn by the outline layer below).
+            itemStyle: { areaColor: '#efeadf', borderColor: '#ffffff', borderWidth: 1 },
+            emphasis: {
+              label: { fontWeight: 'bold' },
+              itemStyle: { borderColor: '#181410', borderWidth: 1.4 },
+            },
+            select: { disabled: true },
+            // Town names sit on the priced regions only (no-data areas stay unlabelled). Dark
+            // ink with a white halo stays legible across the full light→dark red ramp; overlaps
+            // are thinned automatically so it doesn't clutter on narrow screens.
+            label: {
+              show: false,
+              formatter: (p: any) => titleCase(p.name),
+              color: '#2b261f',
+              fontFamily: mono,
+              fontSize: 9,
+              textBorderColor: 'rgba(255,255,255,0.85)',
+              textBorderWidth: 2.5,
+            },
+            labelLayout: { hideOverlap: true, minMargin: 4 },
+            data: colored.map((r) => ({ name: r.name, value: r.med, label: { show: showLabels } })),
+          },
+          {
+            // Coastline only (all internal borders dissolved away) → a clean country outline.
+            type: 'map',
+            map: 'sg-outline',
+            nameProperty: 'name',
+            roam: false,
+            silent: true,
+            z: 5,
+            ...layout,
+            itemStyle: { areaColor: 'transparent', borderColor: '#8c8479', borderWidth: 1.4 },
+            emphasis: { disabled: true },
+            label: { show: false },
+          },
+        ],
+      },
+      true,
+    );
   }
 
   document.querySelectorAll<HTMLButtonElement>('#map-toggle .chip').forEach((btn) => {
@@ -388,24 +528,42 @@ const kpis = stats
       grid: { left: 64, right: 20, top: 20, bottom: 78, containLabel: false },
       tooltip: { trigger: 'item' },
       xAxis: {
-        type: 'category', data: rows.map((r) => titleCase(r.town)),
-        axisLabel: { ...axisLabel, rotate: 38 }, axisLine, axisTick: { show: false },
+        type: 'category',
+        data: rows.map((r) => titleCase(r.town)),
+        axisLabel: { ...axisLabel, rotate: 38 },
+        axisLine,
+        axisTick: { show: false },
       },
       yAxis: {
-        type: 'value', scale: true, splitLine,
+        type: 'value',
+        scale: true,
+        splitLine,
         axisLabel: { ...axisLabel, formatter: (v: number) => moneyShort(v) },
       },
-      series: [{
-        type: 'boxplot', itemStyle: { color: '#efeadf', borderColor: '#181410' },
-        data: rows.map((r) => [Number(r.mn), Number(r.q1), Number(r.med), Number(r.q3), Number(r.mx)]),
-      }],
+      series: [
+        {
+          type: 'boxplot',
+          itemStyle: { color: '#efeadf', borderColor: '#181410' },
+          data: rows.map((r) => [
+            Number(r.mn),
+            Number(r.q1),
+            Number(r.med),
+            Number(r.q3),
+            Number(r.mx),
+          ]),
+        },
+      ],
     });
   }
 
   // ---- 04 scatter + bucket counts ----
   function renderLease() {
     const bands = ['0-60 years', '61-80 years', '81-99 years'];
-    const colors: Record<string, string> = { '0-60 years': palette[0], '61-80 years': palette[3], '81-99 years': palette[2] };
+    const colors: Record<string, string> = {
+      '0-60 years': palette[0],
+      '61-80 years': palette[3],
+      '81-99 years': palette[2],
+    };
     const pts = OV.scatter;
     const scatter = echarts.init(q('chart-scatter'));
     scatter.setOption({
@@ -416,11 +574,26 @@ const kpis = stats
         trigger: 'item',
         formatter: (p: any) => `${p.value[0]} yrs left<br/>${money(p.value[1])}`,
       },
-      xAxis: { type: 'value', name: 'Remaining lease (yrs)', nameLocation: 'middle', nameGap: 28,
-        nameTextStyle: { color: ink3, fontSize: 11 }, axisLabel, splitLine, axisLine },
-      yAxis: { type: 'value', scale: true, axisLabel: { ...axisLabel, formatter: (v: number) => moneyShort(v) }, splitLine },
+      xAxis: {
+        type: 'value',
+        name: 'Remaining lease (yrs)',
+        nameLocation: 'middle',
+        nameGap: 28,
+        nameTextStyle: { color: ink3, fontSize: 11 },
+        axisLabel,
+        splitLine,
+        axisLine,
+      },
+      yAxis: {
+        type: 'value',
+        scale: true,
+        axisLabel: { ...axisLabel, formatter: (v: number) => moneyShort(v) },
+        splitLine,
+      },
       series: bands.map((b) => ({
-        name: b.replace(' years', ''), type: 'scatter', symbolSize: 6,
+        name: b.replace(' years', ''),
+        type: 'scatter',
+        symbolSize: 6,
         itemStyle: { color: colors[b], opacity: 0.55 },
         data: pts.filter((p) => p.band === b).map((p) => [Number(p.x), Number(p.y)]),
       })),
@@ -432,22 +605,50 @@ const kpis = stats
       ...baseOption(),
       grid: { left: 90, right: 40, top: 20, bottom: 30, containLabel: false },
       tooltip: { trigger: 'item', valueFormatter: (v: number) => Number(v).toLocaleString() },
-      xAxis: { type: 'value', axisLabel: { show: false }, splitLine: { show: false }, axisLine: { show: false } },
-      yAxis: { type: 'category', data: counts.map((c) => c.band.replace(' years', ' yrs')),
-        axisLabel: { color: '#5b544a', fontSize: 12 }, axisLine, axisTick: { show: false } },
-      series: [{
-        type: 'bar', barWidth: 22,
-        itemStyle: { color: (p: any) => [palette[0], palette[3], palette[2]][p.dataIndex], borderRadius: 5 },
-        label: { show: true, position: 'right', formatter: (p: any) => Number(p.value).toLocaleString(), color: ink3, fontFamily: mono, fontSize: 11 },
-        data: counts.map((c) => Number(c.n)),
-      }],
+      xAxis: {
+        type: 'value',
+        axisLabel: { show: false },
+        splitLine: { show: false },
+        axisLine: { show: false },
+      },
+      yAxis: {
+        type: 'category',
+        data: counts.map((c) => c.band.replace(' years', ' yrs')),
+        axisLabel: { color: '#5b544a', fontSize: 12 },
+        axisLine,
+        axisTick: { show: false },
+      },
+      series: [
+        {
+          type: 'bar',
+          barWidth: 22,
+          itemStyle: {
+            color: (p: any) => [palette[0], palette[3], palette[2]][p.dataIndex],
+            borderRadius: 5,
+          },
+          label: {
+            show: true,
+            position: 'right',
+            formatter: (p: any) => Number(p.value).toLocaleString(),
+            color: ink3,
+            fontFamily: mono,
+            fontSize: 11,
+          },
+          data: counts.map((c) => Number(c.n)),
+        },
+      ],
     });
   }
 
   // ---- 05 recent transactions (filterable + paged) ----
   type RecentRow = {
-    month: string; town: string; address: string; flat_type: string;
-    floor_area_sqft: number; resale_price: number; psf: number;
+    month: string;
+    town: string;
+    address: string;
+    flat_type: string;
+    floor_area_sqft: number;
+    resale_price: number;
+    psf: number;
   };
   const PAGE_SIZE = 20; // keep in sync with RECENT_PAGE_SIZE in webapp/update/emit_web.py
   let recentPage = 0;
@@ -458,7 +659,8 @@ const kpis = stats
   // describe which slice this is, so the caller sets those before calling.
   function paintRecent(rows: RecentRow[]) {
     q('tbody-recent').innerHTML = rows
-      .map((r) => `<tr>
+      .map(
+        (r) => `<tr>
         <td class="num-cell">${r.month}</td>
         <td>${titleCase(r.town)}</td>
         <td>${titleCase(r.address)}</td>
@@ -466,7 +668,8 @@ const kpis = stats
         <td class="r num-cell">${Number(r.floor_area_sqft).toLocaleString()}</td>
         <td class="r price">${money(Number(r.resale_price))}</td>
         <td class="r num-cell">${fpsf(Number(r.psf))}</td>
-      </tr>`)
+      </tr>`,
+      )
       .join('');
     const start = rows.length ? recentPage * PAGE_SIZE + 1 : 0;
     const end = recentPage * PAGE_SIZE + rows.length;
@@ -521,10 +724,24 @@ const kpis = stats
     (q('rec-flat') as HTMLSelectElement).innerHTML =
       `<option value="__all" selected>All types</option>` +
       OV.flatTypes.map((f) => `<option value="${f}">${f}</option>`).join('');
-    q('rec-town').addEventListener('change', () => { recentPage = 0; loadRecent(); });
-    q('rec-flat').addEventListener('change', () => { recentPage = 0; loadRecent(); });
-    q('rec-prev').addEventListener('click', () => { if (recentPage > 0) { recentPage--; loadRecent(); } });
-    q('rec-next').addEventListener('click', () => { recentPage++; loadRecent(); });
+    q('rec-town').addEventListener('change', () => {
+      recentPage = 0;
+      loadRecent();
+    });
+    q('rec-flat').addEventListener('change', () => {
+      recentPage = 0;
+      loadRecent();
+    });
+    q('rec-prev').addEventListener('click', () => {
+      if (recentPage > 0) {
+        recentPage--;
+        loadRecent();
+      }
+    });
+    q('rec-next').addEventListener('click', () => {
+      recentPage++;
+      loadRecent();
+    });
   }
 
   // boot — one small fetch, no DuckDB-WASM
@@ -556,10 +773,11 @@ const kpis = stats
     if ((navigator as any).connection?.saveData) return;
     const idle: (cb: () => void) => void =
       (window as any).requestIdleCallback || ((cb: () => void) => setTimeout(cb, 1500));
-    const warm = () => idle(() => {
-      _db ??= import('../lib/db');
-      _db.then((m) => m.prefetch()).catch(() => {});
-    });
+    const warm = () =>
+      idle(() => {
+        _db ??= import('../lib/db');
+        _db.then((m) => m.prefetch()).catch(() => {});
+      });
     // This link is a clientPrerender target: while the page is only being speculatively
     // prerendered (from a hover), don't download the ~4.7 MB DuckDB wasm — a hover
     // shouldn't pull the engine for a page never visited. Defer the warm until the

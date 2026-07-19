@@ -1,6 +1,10 @@
 import { test, expect, describe } from 'bun:test';
 import {
-  formatThousands, parsePrice, reformatWithCaret, nearestYear, computeReturns,
+  formatThousands,
+  parsePrice,
+  reformatWithCaret,
+  nearestYear,
+  computeReturns,
 } from './returns';
 
 describe('formatThousands', () => {

@@ -1,0 +1,51 @@
+name: Validate web
+
+# Static checks for the Astro site (web/): TypeScript type-checking (astro check),
+# ESLint, and Prettier formatting. Unlike test.yaml/deploy.yaml this needs NO data:
+# it never boots the DuckDB engine, so there's no parquet download or site build —
+# just `bun install` and the checkers. Fast gate that runs on every web/ change.
+#
+# Note: astro check needs a TypeScript version that still ships the programmatic API
+# the Astro language server uses. The native TS 7 compiler doesn't yet expose it, so
+# web/package.json pins typescript to 5.x.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - ".github/workflows/validate.yaml"
+  pull_request:
+    paths:
+      - "web/**"
+      - ".github/workflows/validate.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        working-directory: web
+        run: bun install --frozen-lockfile
+
+      - name: Type-check (astro check)
+        working-directory: web
+        run: bun run check
+
+      - name: Lint (eslint)
+        working-directory: web
+        run: bun run lint
+
+      - name: Formatting (prettier)
+        working-directory: web
+        run: bun run format:check

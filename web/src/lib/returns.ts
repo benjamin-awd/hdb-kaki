@@ -17,26 +17,34 @@ export const parsePrice = (v: string): number => Number(v.replace(/,/g, '')) || 
 export function reformatWithCaret(raw: string, caret: number): { value: string; caret: number } {
   const digitsBefore = raw.slice(0, caret).replace(/\D/g, '').length;
   const value = formatThousands(raw);
-  let pos = 0, seen = 0;
-  while (pos < value.length && seen < digitsBefore) { if (/\d/.test(value[pos])) seen++; pos++; }
+  let pos = 0,
+    seen = 0;
+  while (pos < value.length && seen < digitsBefore) {
+    if (/\d/.test(value[pos])) seen++;
+    pos++;
+  }
   return { value, caret: pos };
 }
 
 /** Year present in the town series that is closest to `y` (handles gaps in the
  *  series); '' when the series is empty. */
 export const nearestYear = (townYearPrice: Record<string, number>, y: number): string => {
-  const ys = Object.keys(townYearPrice).map(Number).sort((a, b) => a - b);
+  const ys = Object.keys(townYearPrice)
+    .map(Number)
+    .sort((a, b) => a - b);
   if (!ys.length) return '';
-  return String(ys.reduce((best, yr) => (Math.abs(yr - y) < Math.abs(best - y) ? yr : best), ys[0]));
+  return String(
+    ys.reduce((best, yr) => (Math.abs(yr - y) < Math.abs(best - y) ? yr : best), ys[0]),
+  );
 };
 
 export interface ReturnStats {
-  hold: number;      // years held (buy year -> now)
-  gain: number;      // dollar gain (estimate - paid)
-  totRet: number;    // total return %, buy -> now
-  cagr: number;      // user's annualised return %
-  townCagr: number;  // town's annualised return % (NaN when no town data)
-  beat: number;      // cagr - townCagr (NaN when no town data)
+  hold: number; // years held (buy year -> now)
+  gain: number; // dollar gain (estimate - paid)
+  totRet: number; // total return %, buy -> now
+  cagr: number; // user's annualised return %
+  townCagr: number; // town's annualised return % (NaN when no town data)
+  beat: number; // cagr - townCagr (NaN when no town data)
   haveTown: boolean; // whether a town benchmark was available
 }
 
@@ -55,7 +63,8 @@ export function computeReturns(
   const gain = estimate - paid;
   const totRet = (estimate / paid - 1) * 100;
   const bYear = nearestYear(townYearPrice, buyYear);
-  const py = townYearPrice[bYear], cy = townYearPrice[latestYear];
+  const py = townYearPrice[bYear],
+    cy = townYearPrice[latestYear];
   const span = Number(latestYear) - Number(bYear);
   const haveTown = !!py && !!cy && span > 0;
   const period = haveTown ? span : hold;
