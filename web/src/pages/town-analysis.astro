@@ -246,7 +246,7 @@ import Base from '../layouts/Base.astro';
       <div class="rec${i === 0 ? ' hero' : ''}">
         <span class="rank">${i + 1}</span>
         <span class="town">${titleCase(r.town)}</span>
-        <span class="ctx">${titleCase(r.address)} · storey ${r.storey.toLowerCase()} · ${Math.round(r.area)} sqm · sold ${r.month}</span>
+        <span class="ctx">${titleCase(r.address)} · storey ${r.storey.toLowerCase()} · ${Math.round(r.area).toLocaleString()} sqft · sold ${r.month}</span>
         <span class="price">${moneyShort(r.price)}<small>town median ${moneyShort(r.med)}</small></span>
       </div>`).join('');
   }
@@ -254,7 +254,7 @@ import Base from '../layouts/Base.astro';
     const flat = ($('sel-flat') as HTMLSelectElement).value;
     const rows = await query<Rec>(
       `WITH scoped AS (
-         SELECT town, resale_price, address, storey_range, floor_area_sqm, month
+         SELECT town, resale_price, address, storey_range, floor_area_sqft, month
          FROM resale WHERE flat_type='${sql(flat)}'
        ), med AS (
          SELECT town, median(resale_price) med FROM scoped GROUP BY town
@@ -263,7 +263,7 @@ import Base from '../layouts/Base.astro';
          FROM scoped
        )
        SELECT r.town, r.resale_price price, r.address, r.storey_range storey,
-              r.floor_area_sqm area, r.month, m.med
+              r.floor_area_sqft area, r.month, m.med
        FROM ranked r JOIN med m USING (town)
        WHERE r.rn = 1 ORDER BY price DESC LIMIT 12`,
     ).then((rs) => rs.map((r) => ({
