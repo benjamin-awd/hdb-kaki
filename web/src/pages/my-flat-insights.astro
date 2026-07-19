@@ -375,7 +375,9 @@ import Base from '../layouts/Base.astro';
     block = { town: meta[0].town, street: meta[0].street, address: meta[0].address, model: meta[0].model, lc: Number(meta[0].lc) };
     userLatLng = meta[0].lat != null ? [Number(meta[0].lat), Number(meta[0].lng)] : null;
     $('f-postal-sub').textContent = titleCase(block.address);
-    $('f-model').textContent = titleCase(block.model || '—');
+    // flat_model is already stored in its canonical mixed case (DBSS, Model A, Type S1,
+    // 3Gen), so render it as-is — titleCase would lowercase acronyms like DBSS -> Dbss.
+    $('f-model').textContent = block.model || '—';
 
     const flats = await query<{ flat_type: string; n: number }>(`SELECT flat_type, count(*) n FROM resale WHERE postal=${postal} GROUP BY flat_type ORDER BY n DESC`);
     ($('f-flat') as HTMLSelectElement).innerHTML = flats.map((f) => `<option>${f.flat_type}</option>`).join('');
@@ -387,7 +389,7 @@ import Base from '../layouts/Base.astro';
   async function onFlatChange() {
     const postal = parseInt(($('f-postal') as HTMLInputElement).value, 10);
     const flat = ($('f-flat') as HTMLSelectElement).value;
-    $('f-flat-sub').textContent = titleCase(block.model || '');
+    $('f-flat-sub').textContent = block.model || '';
 
     const storeys = await query<{ storey_range: string; lo: number }>(
       `SELECT storey_range, min(storey_lower_bound) lo FROM resale WHERE postal=${postal} AND flat_type='${sql(flat)}' GROUP BY storey_range ORDER BY lo`);
