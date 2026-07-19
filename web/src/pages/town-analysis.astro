@@ -9,7 +9,7 @@ import Base from '../layouts/Base.astro';
   <section class="hero">
     <div class="wrap">
       <span class="eyebrow rise"><span class="dot"></span> Explore by Town</span>
-      <h1 class="title rise" style="animation-delay:.05s">Where the value<br /><em>hides</em>.</h1>
+      <h1 class="title rise" style="animation-delay:.05s">Every sale, <em>mapped</em>.</h1>
       <p class="lede solo rise" style="animation-delay:.1s">
         Map every recent transaction in a town, banded low / mid / high against its own median.
       </p>
@@ -25,6 +25,7 @@ import Base from '../layouts/Base.astro';
 
     <div class="controls" style="margin-bottom:16px">
       <span class="field-select"><span class="lab">Town</span><select id="sel-town"></select></span>
+      <span class="field-select"><span class="lab">Street</span><select id="sel-street"></select></span>
       <span class="field-select"><span class="lab">Flat type</span><select id="sel-flat"></select></span>
       <span class="field-select"><span class="lab">Threshold</span>
         <select id="sel-thr"><option value="0.05">±5%</option><option value="0.1" selected>±10%</option><option value="0.15">±15%</option></select>
@@ -190,16 +191,33 @@ import Base from '../layouts/Base.astro';
   async function loadMap() {
     const town = (($('sel-town') as HTMLSelectElement).value) || DEFAULT_TOWN;
     const flat = ($('sel-flat') as HTMLSelectElement).value;
+    const street = ($('sel-street') as HTMLSelectElement).value;
+    const streetClause = street && street !== '__all' ? ` AND street_name='${sql(street)}'` : '';
     const rows = await query<Row>(
       `SELECT latitude lat, longitude lng, resale_price price, address, month,
               storey_range storey, psf, remaining_lease_years lease
        FROM resale
-       WHERE town='${sql(town)}' AND flat_type='${sql(flat)}'
+       WHERE town='${sql(town)}' AND flat_type='${sql(flat)}'${streetClause}
          AND month >= strftime(current_date - INTERVAL 24 MONTH, '%Y-%m')
          AND latitude IS NOT NULL
        ORDER BY month DESC, resale_price DESC`,
     ).then((rs) => rs.map((r) => ({ ...r, price: Number(r.price), psf: Number(r.psf), lat: Number(r.lat), lng: Number(r.lng), lease: Number(r.lease) })));
     paintMap(rows, town, flat);
+  }
+
+  // Street dropdown depends on the selected town (like psf-trends). "__all" keeps
+  // every street in the town, matching the default snapshot.
+  function setStreets(streets: string[]) {
+    ($('sel-street') as HTMLSelectElement).innerHTML =
+      `<option value="__all" selected>All streets</option>` +
+      streets.map((s) => `<option value="${s}">${titleCase(s)}</option>`).join('');
+  }
+  async function loadStreets() {
+    const town = ($('sel-town') as HTMLSelectElement).value;
+    const streets = await query<{ street_name: string }>(
+      `SELECT DISTINCT street_name FROM resale WHERE town='${sql(town)}' ORDER BY street_name`,
+    );
+    setStreets(streets.map((s) => s.street_name));
   }
 
   // ---- highest sale per town ----
@@ -247,7 +265,7 @@ import Base from '../layouts/Base.astro';
   });
 
   // ---- boot: paint the default view from the precomputed snapshot, then wire filters ----
-  type Snapshot = { default: { town: string; flat: string }; towns: string[]; flatTypes: string[]; rows: Row[]; highest: Hi[] };
+  type Snapshot = { default: { town: string; flat: string }; towns: string[]; flatTypes: string[]; streets: string[]; rows: Row[]; highest: Hi[] };
   (async () => {
     const data: Snapshot = await fetch(`${import.meta.env.BASE_URL}data/town-analysis.json`).then((r) => {
       if (!r.ok) throw new Error(`town-analysis.json ${r.status}`);
@@ -255,14 +273,17 @@ import Base from '../layouts/Base.astro';
     });
     ($('sel-town') as HTMLSelectElement).innerHTML = data.towns.map((t) => `<option${t === data.default.town ? ' selected' : ''}>${t}</option>`).join('');
     ($('sel-flat') as HTMLSelectElement).innerHTML = data.flatTypes.map((f) => `<option${f === data.default.flat ? ' selected' : ''}>${f}</option>`).join('');
+    setStreets(data.streets);
 
     // Paint immediately from JSON — no DuckDB needed for the default view.
     paintMap(data.rows, data.default.town, data.default.flat);
     paintHighest(data.highest);
 
     // Filters go through DuckDB. Threshold-only changes just re-band the rows we
-    // already have, so they never touch the engine.
-    $('sel-town').addEventListener('change', loadMap);
+    // already have, so they never touch the engine. Changing town reloads its street
+    // list (resetting the street filter to "all") before re-querying the map.
+    $('sel-town').addEventListener('change', async () => { await loadStreets(); loadMap(); });
+    $('sel-street').addEventListener('change', loadMap);
     $('sel-thr').addEventListener('change', () => paintMap(currentRows, currentTown, currentFlat));
     $('sel-flat').addEventListener('change', () => { loadMap(); loadHighest(); });
 
