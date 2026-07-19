@@ -58,10 +58,7 @@ import Base from '../layouts/Base.astro';
           </div>
         </div>
         <div class="form-foot">
-          <div class="resolved">
-            <span class="pin">📍</span>
-            <span id="resolved">Enter a postal code to begin.</span>
-          </div>
+          <div class="resolved" id="resolved"></div>
           <button class="cta" id="get-insights">Get insights <span class="arrow">→</span></button>
         </div>
       </div>
@@ -148,11 +145,10 @@ import Base from '../layouts/Base.astro';
               >Purchase price
               <input
                 id="r-paid"
-                type="number"
+                type="text"
                 inputmode="numeric"
-                min="10000"
-                step="1000"
-                placeholder="e.g. 380000"
+                autocomplete="off"
+                placeholder="e.g. 380,000"
               /></label
             >
             <label
@@ -935,6 +931,7 @@ import Base from '../layouts/Base.astro';
     red,
   } from '../lib/echartsTheme';
   import { money, moneyShort, psf as fpsf, titleCase } from '../lib/format';
+  import { reformatWithCaret, parsePrice, computeReturns } from '../lib/returns';
 
   const $ = (id: string) => document.getElementById(id)!;
   const sql = (s: string) => String(s).replace(/'/g, "''");
@@ -977,11 +974,17 @@ import Base from '../layouts/Base.astro';
   }).addTo(map);
   const layer = L.layerGroup().addTo(map);
 
+  // The resolved line carries validation errors only — the matched block/town is shown
+  // inline under the postal code, so a success message there would just be redundant.
+  const resolveError = (msg: string) => {
+    $('resolved').innerHTML = `<span class="pin">📍</span><span>${msg}</span>`;
+  };
+
   // ---- resolve a postal code → block metadata + populate dependent fields ----
   async function resolveBlock() {
     const postal = parseInt(($('f-postal') as HTMLInputElement).value, 10);
     if (!postal || String(postal).length < 5) {
-      $('resolved').textContent = 'Enter a valid 6-digit postal code.';
+      resolveError('Enter a valid 6-digit postal code.');
       return false;
     }
 
@@ -992,7 +995,7 @@ import Base from '../layouts/Base.astro';
        FROM resale WHERE postal=${postal}`,
     );
     if (!meta.length || !meta[0].town) {
-      $('resolved').textContent = 'No transactions found for that postal code — try another.';
+      resolveError('No transactions found for that postal code — try another.');
       return false;
     }
     resolvedPostal = postal;
@@ -1004,7 +1007,8 @@ import Base from '../layouts/Base.astro';
       lc: Number(meta[0].lc),
     };
     userLatLng = meta[0].lat != null ? [Number(meta[0].lat), Number(meta[0].lng)] : null;
-    $('f-postal-sub').textContent = titleCase(block.address);
+    $('f-postal-sub').textContent = `${titleCase(block.address)} · ${titleCase(block.town)}`;
+    $('resolved').textContent = ''; // clear any prior error now that we've resolved
     // flat_model is already stored in its canonical mixed case (DBSS, Model A, Type S1,
     // 3Gen), so render it as-is — titleCase would lowercase acronyms like DBSS -> Dbss.
     $('f-model').textContent = block.model || '—';
@@ -1015,8 +1019,6 @@ import Base from '../layouts/Base.astro';
     ($('f-flat') as HTMLSelectElement).innerHTML = flats
       .map((f) => `<option>${f.flat_type}</option>`)
       .join('');
-    $('resolved').innerHTML =
-      `Matched to <b>${titleCase(block.address)}</b>, ${titleCase(block.town)}`;
     await onFlatChange();
     return true;
   }
@@ -1110,33 +1112,31 @@ import Base from '../layouts/Base.astro';
     });
   }
 
-  // 02 · "already own it?" — annualised return vs the town over the same span.
-  function nearestYear(y: number): string {
-    const ys = Object.keys(townYearPrice)
-      .map(Number)
-      .sort((a, b) => a - b);
-    if (!ys.length) return '';
-    return String(Math.min(Math.max(y, ys[0]), ys[ys.length - 1]));
+  // Format the purchase-price field with thousands separators as the user types,
+  // keeping the caret anchored to the same digit.
+  function formatPaid() {
+    const el = $('r-paid') as HTMLInputElement;
+    const { value, caret } = reformatWithCaret(el.value, el.selectionStart ?? el.value.length);
+    el.value = value;
+    el.setSelectionRange(caret, caret);
   }
+
   function renderReturns() {
     const out = $('ret-out');
-    const paid = Number(($('r-paid') as HTMLInputElement).value) || 0;
+    const paid = parsePrice(($('r-paid') as HTMLInputElement).value);
     const yr = parseInt(($('r-year') as HTMLInputElement).value, 10);
     if (!paid || !yr || yr < 1990 || yr >= NOW_YEAR || !currentEstimate) {
       out.innerHTML = '<div class="ret-empty">Your appreciation will appear here.</div>';
       return;
     }
-    const hold = NOW_YEAR - yr;
-    const gain = currentEstimate - paid;
-    const totRet = (currentEstimate / paid - 1) * 100;
-    const cagr = (Math.pow(currentEstimate / paid, 1 / hold) - 1) * 100;
-    // Town benchmark over the overlapping span we actually have data for.
-    const bYear = nearestYear(yr);
-    const py = townYearPrice[bYear],
-      cy = townYearPrice[latestYear];
-    const span = Number(latestYear) - Number(bYear);
-    const townCagr = py && cy && span > 0 ? (Math.pow(cy / py, 1 / span) - 1) * 100 : NaN;
-    const beat = cagr - townCagr;
+    const { hold, gain, totRet, cagr, townCagr, beat } = computeReturns(
+      paid,
+      yr,
+      currentEstimate,
+      NOW_YEAR,
+      townYearPrice,
+      latestYear,
+    );
     const cls = gain >= 0 ? 'pos' : 'neg';
     const town = titleCase(block.town);
     out.innerHTML = `
@@ -1568,7 +1568,11 @@ import Base from '../layouts/Base.astro';
   });
   ['f-storey', 'f-area', 'f-lease'].forEach((id) => $(id).addEventListener('change', compute));
   // Returns panel recomputes locally from the current estimate — no DuckDB round-trip.
-  ['r-paid', 'r-year'].forEach((id) => $(id).addEventListener('input', renderReturns));
+  $('r-paid').addEventListener('input', () => {
+    formatPaid();
+    renderReturns();
+  });
+  $('r-year').addEventListener('input', renderReturns);
   $('get-insights').addEventListener('click', async () => {
     const cur = parseInt(($('f-postal') as HTMLInputElement).value, 10);
     // re-resolve only if the postal changed (avoid clobbering the user's edited fields)
@@ -1585,8 +1589,6 @@ import Base from '../layouts/Base.astro';
     );
     ($('f-postal') as HTMLInputElement).value = String(def.postal);
     if (await resolveBlock()) {
-      $('resolved').innerHTML =
-        `Matched to <b>${titleCase(block.address)}</b>, ${titleCase(block.town)}`;
       await compute();
     }
   })();

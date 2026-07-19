@@ -57,16 +57,11 @@ header.nav {
   color: var(--ink);
   text-decoration: none;
 }
-.brand .key {
+.brand .brand-icon {
   width: 30px;
   height: 30px;
-  border-radius: 9px;
-  background: var(--red);
-  color: #fff;
-  display: grid;
-  place-items: center;
-  font-size: 16px;
-  box-shadow: 0 6px 16px -6px rgba(254, 1, 43, 0.7);
+  display: block;
+  filter: drop-shadow(0 6px 16px rgba(254, 1, 43, 0.4));
 }
 .nav-links {
   display: flex;
