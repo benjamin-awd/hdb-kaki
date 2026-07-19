@@ -117,7 +117,11 @@ const kpis = stats
 
     <!-- 05 · RECENT TRANSACTIONS -->
     <div class="sec-head"><span class="num">05</span><h2>Recent transactions</h2>
-      <span class="hint">Latest registered resale deals.</span></div>
+      <span class="hint">Latest registered resale deals. Filter by town or flat type and page through the last 12 months.</span></div>
+    <div class="controls" style="margin-bottom:16px">
+      <span class="field-select"><span class="lab">Town</span><select id="rec-town"></select></span>
+      <span class="field-select"><span class="lab">Flat type</span><select id="rec-flat"></select></span>
+    </div>
     <div class="card table-card">
       <table class="comp">
         <thead><tr>
@@ -128,7 +132,13 @@ const kpis = stats
           <tr><td colspan="7" style="padding:22px 16px;color:var(--ink-3)">Loading market data…</td></tr>
         </tbody>
       </table>
-      <div class="tbl-foot"><span id="recent-foot">&nbsp;</span></div>
+      <div class="tbl-foot">
+        <span id="recent-foot">&nbsp;</span>
+        <span class="pager">
+          <button class="ghost pg" id="rec-prev" disabled>← Prev</button>
+          <button class="ghost pg" id="rec-next" disabled>Next →</button>
+        </span>
+      </div>
     </div>
   </main>
 </Base>
@@ -140,6 +150,10 @@ const kpis = stats
   #chart-scatter, #chart-buckets { height: 320px; }
   /* Singapore is wide and short — give the choropleth more room than a plot box. */
   .map-box { height: 460px; }
+  /* Recent-transactions pager: compact ghost buttons anchored to the footer's right. */
+  .pager { display: inline-flex; gap: 8px; }
+  .pager .pg { padding: 7px 13px; font-size: 13px; }
+  .pager .pg:disabled { opacity: 0.4; cursor: default; border-color: var(--line); }
 </style>
 
 <script>
@@ -147,17 +161,29 @@ const kpis = stats
   import { baseOption, palette, axisLabel, splitLine, axisLine, ink3, mono } from '../lib/echartsTheme';
   import { money, moneyShort, psf as fpsf, titleCase } from '../lib/format';
 
-  // Landing renders from a single precomputed aggregate (webapp/update/emit_web.py),
-  // so it never boots DuckDB-WASM — that engine loads only on the interactive pages.
+  // Landing renders from a single precomputed aggregate (webapp/update/emit_web.py), so
+  // the default view never boots DuckDB-WASM. The one exception is the recent-
+  // transactions table: filtering or paging past page 1 boots the engine lazily (the
+  // same warm the interactive pages use) and queries `resale` directly.
   type Overview = {
     trends: Record<string, { quarter: string; series: string; v: number }[]>;
     box: any[]; townMedians: { town: string; med: number; n: number }[];
     subzoneMedians: { sz: string; med: number; n: number }[];
     scatter: any[]; buckets: any[]; recent: any[]; recentTotal: number;
+    towns: string[]; flatTypes: string[];
   };
   let OV: Overview;
 
   const q = (id: string) => document.getElementById(id)!;
+
+  // Lazily-imported DuckDB engine, shared with the idle warm below so we never double-
+  // download it. Only the recent-transactions filters/pager reach for this.
+  let _db: Promise<typeof import('../lib/db')> | null = null;
+  const query = async <T = any>(sqlText: string): Promise<T[]> => {
+    if (!_db) _db = import('../lib/db');
+    return (await _db).query<T>(sqlText);
+  };
+  const sqlEsc = (s: string) => s.replace(/'/g, "''");
 
   // ---- 01 price trends (with lens toggle) ----
   // Initialised in boot(), after data loads, so the SSR placeholder SVG stays
@@ -238,7 +264,9 @@ const kpis = stats
   type Level = keyof typeof MAP_LEVELS;
 
   let mapChart: ReturnType<typeof echarts.init> | undefined;
+  let currentLevel: Level = 'town';
   const geoReady = new Set<string>();
+  const labelsFit = () => window.innerWidth >= 640;
 
   async function registerGeo(url: string, name: string) {
     if (geoReady.has(name)) return;
@@ -251,6 +279,7 @@ const kpis = stats
   }
 
   async function renderMap(level: Level) {
+    currentLevel = level;
     const cfg = MAP_LEVELS[level];
     // Subzone geometry is only fetched the first time it's viewed, keeping initial load
     // light. The outline layer is shared across levels.
@@ -269,6 +298,10 @@ const kpis = stats
       aspectScale: 1, // Singapore sits on the equator — keep lon/lat 1:1, don't squash
       zoom: 1.28, layoutCenter: ['50%', '54%'], layoutSize: '96%',
     } as const;
+
+    // 26 town names won't fit legibly on a phone-width map, so labels show only where
+    // there's room; on narrow screens the map stays clean and a tap reveals the tooltip.
+    const showLabels = level === 'town' && labelsFit();
 
     mapChart ??= echarts.init(q('chart-map'));
     mapChart.setOption({
@@ -295,13 +328,22 @@ const kpis = stats
       series: [
         {
           type: 'map', map: cfg.mapName, nameProperty: 'name', roam: false, ...layout,
-          // No-data areas: a muted warm grey; light dividers between regions (the crisp
-          // coast is drawn by the outline layer below).
-          itemStyle: { areaColor: '#efeadf', borderColor: '#f3eee3', borderWidth: 0.8 },
-          emphasis: { label: { show: false }, itemStyle: { borderColor: '#181410', borderWidth: 1.2 } },
+          // No-data areas: a muted warm grey. Crisp white dividers between every region so
+          // boundaries read clearly against both the red ramp and the beige no-data fills
+          // (the outer coast is drawn by the outline layer below).
+          itemStyle: { areaColor: '#efeadf', borderColor: '#ffffff', borderWidth: 1 },
+          emphasis: { label: { fontWeight: 'bold' }, itemStyle: { borderColor: '#181410', borderWidth: 1.4 } },
           select: { disabled: true },
-          label: { show: false },
-          data: colored.map((r) => ({ name: r.name, value: r.med })),
+          // Town names sit on the priced regions only (no-data areas stay unlabelled). Dark
+          // ink with a white halo stays legible across the full light→dark red ramp; overlaps
+          // are thinned automatically so it doesn't clutter on narrow screens.
+          label: {
+            show: false, formatter: (p: any) => titleCase(p.name),
+            color: '#2b261f', fontFamily: mono, fontSize: 9,
+            textBorderColor: 'rgba(255,255,255,0.85)', textBorderWidth: 2.5,
+          },
+          labelLayout: { hideOverlap: true, minMargin: 4 },
+          data: colored.map((r) => ({ name: r.name, value: r.med, label: { show: showLabels } })),
         },
         {
           // Coastline only (all internal borders dissolved away) → a clean country outline.
@@ -388,9 +430,19 @@ const kpis = stats
     });
   }
 
-  // ---- 05 recent transactions ----
-  function renderRecent() {
-    const rows = OV.recent;
+  // ---- 05 recent transactions (filterable + paged) ----
+  type RecentRow = {
+    month: string; town: string; address: string; flat_type: string;
+    floor_area_sqft: number; resale_price: number; psf: number;
+  };
+  const PAGE_SIZE = 20; // keep in sync with RECENT_PAGE_SIZE in webapp/update/emit_web.py
+  let recentPage = 0;
+  let recentTotal = 0;
+  let recentReq = 0; // guards against out-of-order responses when paging quickly
+
+  // Paint the table + footer + pager from a page of rows. recentPage/recentTotal
+  // describe which slice this is, so the caller sets those before calling.
+  function paintRecent(rows: RecentRow[]) {
     q('tbody-recent').innerHTML = rows
       .map((r) => `<tr>
         <td class="num-cell">${r.month}</td>
@@ -402,8 +454,63 @@ const kpis = stats
         <td class="r num-cell">${fpsf(Number(r.psf))}</td>
       </tr>`)
       .join('');
-    q('recent-foot').innerHTML =
-      `Showing ${rows.length} of ${Number(OV.recentTotal).toLocaleString()} in the last 12 months`;
+    const start = rows.length ? recentPage * PAGE_SIZE + 1 : 0;
+    const end = recentPage * PAGE_SIZE + rows.length;
+    q('recent-foot').innerHTML = recentTotal
+      ? `Showing ${start.toLocaleString()}–${end.toLocaleString()} of ${recentTotal.toLocaleString()} in the last 12 months`
+      : 'No transactions match these filters';
+    (q('rec-prev') as HTMLButtonElement).disabled = recentPage === 0;
+    (q('rec-next') as HTMLButtonElement).disabled = end >= recentTotal;
+  }
+
+  // Initial render: page 1, no filters, straight from the snapshot — no DuckDB.
+  function renderRecent() {
+    recentPage = 0;
+    recentTotal = Number(OV.recentTotal);
+    paintRecent(OV.recent as RecentRow[]);
+  }
+
+  // Any filter change or page turn goes through DuckDB, mirroring the snapshot's SQL
+  // (same 12-month window + ORDER BY) with LIMIT/OFFSET.
+  async function loadRecent() {
+    const token = ++recentReq;
+    const town = (q('rec-town') as HTMLSelectElement).value;
+    const flat = (q('rec-flat') as HTMLSelectElement).value;
+    const conds = [`month >= strftime(current_date - INTERVAL 12 MONTH, '%Y-%m')`];
+    if (town !== '__all') conds.push(`town='${sqlEsc(town)}'`);
+    if (flat !== '__all') conds.push(`flat_type='${sqlEsc(flat)}'`);
+    const where = conds.join(' AND ');
+    try {
+      const [rows, cnt] = await Promise.all([
+        query<RecentRow>(
+          `SELECT month, town, address, flat_type, floor_area_sqft, resale_price, psf
+           FROM resale WHERE ${where}
+           ORDER BY month DESC, resale_price DESC
+           LIMIT ${PAGE_SIZE} OFFSET ${recentPage * PAGE_SIZE}`,
+        ),
+        query<{ n: number }>(`SELECT count(*) n FROM resale WHERE ${where}`),
+      ]);
+      if (token !== recentReq) return; // a newer request superseded this one
+      recentTotal = Number(cnt[0].n);
+      paintRecent(rows);
+    } catch (e) {
+      console.error(e);
+      if (token === recentReq) q('recent-foot').textContent = 'Could not load transactions.';
+    }
+  }
+
+  // Populate the filter dropdowns from the snapshot (no DuckDB needed just to list them).
+  function fillRecentFilters() {
+    (q('rec-town') as HTMLSelectElement).innerHTML =
+      `<option value="__all" selected>All towns</option>` +
+      OV.towns.map((t) => `<option value="${t}">${titleCase(t)}</option>`).join('');
+    (q('rec-flat') as HTMLSelectElement).innerHTML =
+      `<option value="__all" selected>All types</option>` +
+      OV.flatTypes.map((f) => `<option value="${f}">${f}</option>`).join('');
+    q('rec-town').addEventListener('change', () => { recentPage = 0; loadRecent(); });
+    q('rec-flat').addEventListener('change', () => { recentPage = 0; loadRecent(); });
+    q('rec-prev').addEventListener('click', () => { if (recentPage > 0) { recentPage--; loadRecent(); } });
+    q('rec-next').addEventListener('click', () => { recentPage++; loadRecent(); });
   }
 
   // boot — one small fetch, no DuckDB-WASM
@@ -420,6 +527,7 @@ const kpis = stats
     renderBox();
     renderLease();
     renderRecent();
+    fillRecentFilters();
   }
   boot();
 
@@ -435,7 +543,8 @@ const kpis = stats
     const idle: (cb: () => void) => void =
       (window as any).requestIdleCallback || ((cb: () => void) => setTimeout(cb, 1500));
     const warm = () => idle(() => {
-      import('../lib/db').then((m) => m.prefetch()).catch(() => {});
+      _db ??= import('../lib/db');
+      _db.then((m) => m.prefetch()).catch(() => {});
     });
     // This link is a clientPrerender target: while the page is only being speculatively
     // prerendered (from a hover), don't download the ~4.7 MB DuckDB wasm — a hover
@@ -448,8 +557,15 @@ const kpis = stats
     }
   }
 
+  // Re-render the map when a resize crosses the label breakpoint (e.g. phone rotation),
+  // so town labels appear/disappear rather than staying stale until reload.
+  let labelsShown = labelsFit();
   window.addEventListener('resize', () => {
     trendChart?.resize();
+    if (mapChart && currentLevel === 'town' && labelsFit() !== labelsShown) {
+      labelsShown = labelsFit();
+      renderMap('town').catch((e) => console.error(e));
+    }
     echarts.getInstanceByDom(q('chart-map'))?.resize();
     echarts.getInstanceByDom(q('chart-box'))?.resize();
     echarts.getInstanceByDom(q('chart-scatter'))?.resize();
