@@ -5,8 +5,9 @@ name: Validate web
 # it never boots the DuckDB engine, so there's no parquet download or site build —
 # just `bun install` and the checkers. Fast gate that runs on every web/ change.
 #
-# Note: astro check requires TypeScript 6.x — the native TS 7 compiler doesn't yet
-# expose the programmatic API the Astro language server uses (pinned in web/package.json).
+# Note: astro check needs a TypeScript version that still ships the programmatic API
+# the Astro language server uses. The native TS 7 compiler doesn't yet expose it, so
+# web/package.json pins typescript to 5.x.
 
 on:
   push:
