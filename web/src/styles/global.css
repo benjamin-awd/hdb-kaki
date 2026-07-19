@@ -27,9 +27,9 @@ header.nav{
 }
 .nav-in{display:flex;align-items:center;justify-content:space-between;height:66px}
 .brand{display:flex;align-items:center;gap:11px;font-family:var(--font-fraunces);font-weight:600;font-size:22px;letter-spacing:-.02em;color:var(--ink);text-decoration:none}
-.brand .key{
-  width:30px;height:30px;border-radius:9px;background:var(--red);color:#fff;
-  display:grid;place-items:center;font-size:16px;box-shadow:0 6px 16px -6px rgba(254,1,43,.7)
+.brand .brand-icon{
+  width:30px;height:30px;display:block;
+  filter:drop-shadow(0 6px 16px rgba(254,1,43,.4))
 }
 .nav-links{display:flex;gap:26px;font-size:14.5px;color:var(--ink-2)}
 .nav-links a{color:inherit;text-decoration:none}
