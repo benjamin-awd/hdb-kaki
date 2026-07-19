@@ -49,10 +49,7 @@ import Base from '../layouts/Base.astro';
           </div>
         </div>
         <div class="form-foot">
-          <div class="resolved">
-            <span class="pin">📍</span>
-            <span id="resolved">Enter a postal code to begin.</span>
-          </div>
+          <div class="resolved" id="resolved"></div>
           <button class="cta" id="get-insights">Get insights <span class="arrow">→</span></button>
         </div>
       </div>
@@ -351,10 +348,14 @@ import Base from '../layouts/Base.astro';
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { attribution: '© OpenStreetMap © CARTO', maxZoom: 19, subdomains: 'abcd' }).addTo(map);
   let layer = L.layerGroup().addTo(map);
 
+  // The resolved line carries validation errors only — the matched block/town is shown
+  // inline under the postal code, so a success message there would just be redundant.
+  const resolveError = (msg: string) => { $('resolved').innerHTML = `<span class="pin">📍</span><span>${msg}</span>`; };
+
   // ---- resolve a postal code → block metadata + populate dependent fields ----
   async function resolveBlock() {
     const postal = parseInt(($('f-postal') as HTMLInputElement).value, 10);
-    if (!postal || String(postal).length < 5) { $('resolved').textContent = 'Enter a valid 6-digit postal code.'; return false; }
+    if (!postal || String(postal).length < 5) { resolveError('Enter a valid 6-digit postal code.'); return false; }
 
     const meta = await query<any>(
       `SELECT arg_max(town,month) town, arg_max(street_name,month) street, arg_max(address,month) address,
@@ -362,18 +363,18 @@ import Base from '../layouts/Base.astro';
               arg_max(latitude,month) lat, arg_max(longitude,month) lng
        FROM resale WHERE postal=${postal}`,
     );
-    if (!meta.length || !meta[0].town) { $('resolved').textContent = 'No transactions found for that postal code — try another.'; return false; }
+    if (!meta.length || !meta[0].town) { resolveError('No transactions found for that postal code — try another.'); return false; }
     resolvedPostal = postal;
     block = { town: meta[0].town, street: meta[0].street, address: meta[0].address, model: meta[0].model, lc: Number(meta[0].lc) };
     userLatLng = meta[0].lat != null ? [Number(meta[0].lat), Number(meta[0].lng)] : null;
-    $('f-postal-sub').textContent = titleCase(block.address);
+    $('f-postal-sub').textContent = `${titleCase(block.address)} · ${titleCase(block.town)}`;
+    $('resolved').textContent = ''; // clear any prior error now that we've resolved
     // flat_model is already stored in its canonical mixed case (DBSS, Model A, Type S1,
     // 3Gen), so render it as-is — titleCase would lowercase acronyms like DBSS -> Dbss.
     $('f-model').textContent = block.model || '—';
 
     const flats = await query<{ flat_type: string; n: number }>(`SELECT flat_type, count(*) n FROM resale WHERE postal=${postal} GROUP BY flat_type ORDER BY n DESC`);
     ($('f-flat') as HTMLSelectElement).innerHTML = flats.map((f) => `<option>${f.flat_type}</option>`).join('');
-    $('resolved').innerHTML = `Matched to <b>${titleCase(block.address)}</b>, ${titleCase(block.town)}`;
     await onFlatChange();
     return true;
   }
@@ -718,7 +719,6 @@ import Base from '../layouts/Base.astro';
     const [def] = await query<{ postal: number }>(`SELECT postal FROM resale WHERE postal IS NOT NULL GROUP BY postal ORDER BY count(*) DESC LIMIT 1`);
     ($('f-postal') as HTMLInputElement).value = String(def.postal);
     if (await resolveBlock()) {
-      $('resolved').innerHTML = `Matched to <b>${titleCase(block.address)}</b>, ${titleCase(block.town)}`;
       await compute();
     }
   })();
