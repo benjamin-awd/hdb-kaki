@@ -219,6 +219,13 @@ const kpis = stats
   .map-box {
     height: 460px;
   }
+  /* On a narrow phone the map fits to width, so a 460px box leaves a huge empty band.
+     Shrink to roughly the map's own aspect + a horizontal legend strip. */
+  @media (max-width: 640px) {
+    .map-box {
+      height: 300px;
+    }
+  }
   /* Recent-transactions pager: compact ghost buttons anchored to the footer's right. */
   .pager {
     display: inline-flex;
@@ -374,6 +381,7 @@ const kpis = stats
   let currentLevel: Level = 'town';
   const geoReady = new Set<string>();
   const labelsFit = () => window.innerWidth >= 640;
+  const isNarrowMap = () => window.matchMedia('(max-width: 640px)').matches;
 
   async function registerGeo(url: string, name: string) {
     if (geoReady.has(name)) return;
@@ -404,11 +412,14 @@ const kpis = stats
       hi = Math.max(...vals);
 
     // Shared placement — zoomed to fill the card, and identical on both layers so the
-    // coastline outline overlays the choropleth exactly.
+    // coastline outline overlays the choropleth exactly. Singapore is wide and short, so
+    // on a narrow phone the map fits to width and leaves a big empty band in the tall box;
+    // there we shrink the box (CSS) and pull the map up to sit above a horizontal legend.
+    const narrow = isNarrowMap();
     const layout = {
       aspectScale: 1, // Singapore sits on the equator — keep lon/lat 1:1, don't squash
       zoom: 1.28,
-      layoutCenter: ['50%', '54%'],
+      layoutCenter: narrow ? ['50%', '40%'] : ['50%', '54%'],
       layoutSize: '96%',
     } as const;
 
@@ -441,9 +452,12 @@ const kpis = stats
           max: hi,
           calculable: true,
           seriesIndex: 0,
-          left: 16,
-          bottom: 24,
-          itemHeight: 150,
+          // Desktop: tall bar down the left, over the ocean margin. Narrow phones have no
+          // side margin (map fills the width), so lay it flat along the bottom instead —
+          // otherwise the vertical bar overlaps the landmass and its labels sit on the map.
+          ...(narrow
+            ? { orient: 'horizontal', left: 'center', bottom: 10, itemWidth: 12, itemHeight: 160 }
+            : { orient: 'vertical', left: 16, bottom: 24, itemHeight: 150 }),
           inRange: { color: ['#fde8ec', '#f7b8c2', '#f07087', '#e11d3e', '#a80019'] },
           textStyle: { color: ink3, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 },
           formatter: (v: number) => moneyShort(v),
@@ -777,16 +791,18 @@ const kpis = stats
     }
   }
 
-  // Re-render the map when a resize crosses the label breakpoint (e.g. phone rotation),
-  // so town labels appear/disappear rather than staying stale until reload.
-  let labelsShown = labelsFit();
+  // Re-render the map when a resize crosses the 640px breakpoint (e.g. phone rotation):
+  // the legend flips to horizontal and the framing shifts, and town labels appear or
+  // disappear. A plain resize() would leave all of that stale until reload.
+  let mapWasNarrow = isNarrowMap();
   window.addEventListener('resize', () => {
     trendChart?.resize();
-    if (mapChart && currentLevel === 'town' && labelsFit() !== labelsShown) {
-      labelsShown = labelsFit();
-      renderMap('town').catch((e) => console.error(e));
+    if (mapChart && isNarrowMap() !== mapWasNarrow) {
+      mapWasNarrow = isNarrowMap();
+      renderMap(currentLevel).catch((e) => console.error(e));
+    } else {
+      echarts.getInstanceByDom(q('chart-map'))?.resize();
     }
-    echarts.getInstanceByDom(q('chart-map'))?.resize();
     echarts.getInstanceByDom(q('chart-box'))?.resize();
     echarts.getInstanceByDom(q('chart-scatter'))?.resize();
     echarts.getInstanceByDom(q('chart-buckets'))?.resize();
