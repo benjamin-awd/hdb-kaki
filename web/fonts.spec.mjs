@@ -47,7 +47,11 @@ export const families = [
   },
 ];
 
-const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+const slug = (s) =>
+  s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
 
 /** Deterministic path (relative to web/) for one variant's woff2 file. */
 export function variantFile(googleName, weight, style) {
