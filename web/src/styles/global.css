@@ -341,6 +341,14 @@ footer {
   gap: 18px;
   align-items: stretch;
 }
+/* Grid items default to min-width:auto, so a child that can't shrink below its own
+   size (an ECharts <canvas> has a fixed pixel width) holds its column open. Once a
+   chart has been sized wide (in landscape, or a wider layout before rotation) the
+   column then refuses to shrink back and the card overflows the viewport. Letting the
+   tracks shrink lets resize() shrink the canvas to fit. */
+.split > * {
+  min-width: 0;
+}
 .pagepad {
   padding-bottom: 80px;
 }
