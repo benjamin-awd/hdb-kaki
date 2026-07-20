@@ -1,6 +1,6 @@
 ---
 import Base from '../layouts/Base.astro';
-import Info from '../components/Info.astro';
+import Term from '../components/Term.astro';
 ---
 
 <Base active="Town Analysis" title="Town Analysis | HDB Kaki">
@@ -48,10 +48,10 @@ import Info from '../components/Info.astro';
       <div id="map" class="map-real"></div>
       <div class="card" style="padding:24px">
         <div class="cap">
-          Median resale price<Info label="What does median mean?" end
+          <Term term="Median" end
             >The middle price — half of sales are higher, half lower. Unlike the average, a few
-            extreme sales don't skew it.</Info
-          >
+            extreme sales don't skew it.</Term
+          > resale price
         </div>
         <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:4px">
           <span
@@ -63,9 +63,9 @@ import Info from '../components/Info.astro';
         <div id="map-sub" style="font-size:13px;color:var(--ink-3);margin-bottom:22px">&nbsp;</div>
         <div style="height:1px;background:var(--line);margin:6px 0 18px"></div>
         <div class="cap" style="margin-bottom:8px">
-          Distribution<Info label="How are these bands defined?" end
+          <Term term="Distribution" end
             >Each sale vs the median: <strong>Around</strong> is within your threshold (e.g. ±10%);
-            <strong>Above</strong> and <strong>Below</strong> fall outside.</Info
+            <strong>Above</strong> and <strong>Below</strong> fall outside.</Term
           >
         </div>
         <div class="cat-line">
@@ -121,9 +121,9 @@ import Info from '../components/Info.astro';
         <thead
           ><tr
             ><th>Sold</th><th>Address</th><th class="r">Price</th><th class="r"
-              >PSF<Info label="What is PSF?" end down
+              ><Term term="PSF" end down
                 ><strong>Price per square foot</strong> — sale price ÷ floor area, so different-sized
-                flats compare fairly.</Info
+                flats compare fairly.</Term
               ></th
             ><th class="r">Lease left</th><th>Band</th></tr
           ></thead

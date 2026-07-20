@@ -1,6 +1,7 @@
 ---
 import Base from '../layouts/Base.astro';
 import Info from '../components/Info.astro';
+import Term from '../components/Term.astro';
 import { trendsSVG } from '../lib/echartsSSR';
 import { moneyShort, psf as fpsf } from '../lib/format';
 import fs from 'node:fs';
@@ -186,9 +187,9 @@ const kpis = stats
           ><tr>
             <th>Sold</th><th>Town</th><th>Address</th><th>Type</th>
             <th class="r">Area (sqft)</th><th class="r">Price</th><th class="r"
-              >PSF<Info label="What is PSF?" end down
+              ><Term term="PSF" end down
                 ><strong>Price per square foot</strong> — sale price ÷ floor area, so different-sized
-                flats compare fairly.</Info
+                flats compare fairly.</Term
               ></th
             >
           </tr></thead
