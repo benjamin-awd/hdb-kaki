@@ -355,6 +355,21 @@ import LeafletMap from '../components/LeafletMap.astro';
     outline: none;
     padding: 0;
   }
+  /* Every value occupies the same fixed-height box (tall enough for the 26px
+     postal code) so the differently-sized values don't change their own cell's
+     height. Because all six cells then have identical structure, the labels,
+     values and sub-labels line up across each row with uniform gaps, whatever
+     the font size. An explicit height (not just line-height) is needed because
+     <select> ignores line-height for its box height. The postal glyphs are
+     still larger; they just sit centred in the same box. */
+  .field .val,
+  .field input,
+  .field select {
+    box-sizing: border-box;
+    display: block;
+    height: 32px;
+    line-height: 32px;
+  }
   /* Restore a visible focus ring for keyboard users (outline:none above removes
      it for everyone). :focus-visible keeps it off for mouse/touch clicks. */
   .field input:focus-visible,
@@ -371,6 +386,20 @@ import LeafletMap from '../components/LeafletMap.astro';
   }
   .field select {
     cursor: pointer;
+    /* A native <select> renders its text with a small, browser-specific left
+       inset that padding can't remove, so the value drifts right of the label.
+       appearance:none drops the native widget (and its inset) so the value sits
+       flush-left like the inputs; the chevron is re-added as a background. This
+       is the standard pattern (cf. Bootstrap's .form-select). The stroke colour
+       is hard-coded to --ink-3 (#8c8479) because a data-URI SVG can't read a CSS
+       variable — keep it in sync if that token changes. */
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    padding-right: 18px;
+    background: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='14' viewBox='0 0 10 14' fill='none' stroke='%238c8479' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='M2.5 5.5 5 3l2.5 2.5'/><path d='M2.5 8.5 5 11l2.5-2.5'/></svg>")
+      no-repeat right center;
+    background-size: 10px 14px;
   }
   .field .sub {
     font-size: 12.5px;
