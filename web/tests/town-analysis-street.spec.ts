@@ -23,9 +23,10 @@ test('selecting a street boots DuckDB and narrows the map', async ({ page }) => 
 
   // Pick the first real street (index 1 skips the "All streets" default).
   const firstStreet = await page.locator('#sel-street option').nth(1).getAttribute('value');
-  const parquet = page.waitForRequest(/\/data\/resale\.parquet$/, { timeout: 45_000 });
+  // The engine is pre-warmed on idle and the whole parquet buffered into memory, so
+  // selecting a street re-queries without a network request — the narrowed re-render is
+  // the signal, not a resale.parquet fetch.
   await page.selectOption('#sel-street', firstStreet!);
-  await parquet;
 
   // Still the same town, but a single street is a strict subset of the town's sales.
   await expect(page.locator('#map-sub')).toContainText('Ang Mo Kio', { timeout: 45_000 });

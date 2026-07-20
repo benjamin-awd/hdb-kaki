@@ -45,9 +45,11 @@ export function createQuery(): {
 
   const warmEngineWhenIdle = () => {
     if ((navigator as any).connection?.saveData) return;
-    const idle: (cb: () => void) => void =
+    const idle: (cb: () => void, opts?: { timeout: number }) => void =
       (window as any).requestIdleCallback || ((cb: () => void) => setTimeout(cb, 1500));
-    const warm = () => idle(prefetch);
+    // Bound the idle wait: a busy main thread can starve a plain requestIdleCallback
+    // indefinitely, so the engine would never warm. { timeout } forces it to fire.
+    const warm = () => idle(prefetch, { timeout: 2000 });
     if ((document as any).prerendering) {
       document.addEventListener('prerenderingchange', warm, { once: true });
     } else {
