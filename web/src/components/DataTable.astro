@@ -14,11 +14,15 @@ interface Props {
   headers: Header[];
   bodyId: string;
   loadingText?: string;
+  // Opt in to the phone reflow (<560px): rows stack into cards instead of scrolling
+  // sideways. Rows must tag their cells with data-role (title/primary/meta) for it to
+  // read well — see the mobile-table reflow block in global.css.
+  stack?: boolean;
 }
-const { headers, bodyId, loadingText = 'Loading…' } = Astro.props;
+const { headers, bodyId, loadingText = 'Loading…', stack = false } = Astro.props;
 ---
 
-<table class="comp">
+<table class:list={['comp', { stack }]}>
   <thead>
     <tr>
       {
