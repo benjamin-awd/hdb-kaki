@@ -7,10 +7,10 @@ import LeafletMap from '../components/LeafletMap.astro';
 ---
 
 <Base active="My Flat Insights" title="My Flat Insights | HDB Kaki">
-  <!-- This page auto-computes a default valuation on load, so the script eagerly warms
-       the same-origin DuckDB engine. That warm downloads + instantiates the wasm, so we
-       deliberately do NOT also <link rel="prefetch"> it — that only double-downloaded
-       the ~4.7 MB wasm (prefetch cache isn't reused by the worker's instantiate fetch). -->
+  <!-- The DuckDB engine is warmed from JS (at idle after load, and on first focus of the
+       postal field), so we deliberately do NOT <link rel="prefetch"> the wasm here: a
+       declarative prefetch would pull the ~4.7 MB wasm a second time, since the worker's
+       instantiate fetch doesn't reuse the prefetch cache. -->
   <section class="hero">
     <div class="wrap">
       <span class="eyebrow rise"><span class="dot"></span> New · Personalised</span>
@@ -869,11 +869,23 @@ import LeafletMap from '../components/LeafletMap.astro';
     if (!_db) _db = import('../lib/db');
     return (await _db).query<T>(sql);
   };
-  // This page auto-computes a default valuation on load, so start warming the engine
-  // now — overlapping the WASM download with DOM wiring instead of waiting for the
-  // first query. (Idempotent: primes the same _db the query wrapper reuses.)
-  _db = import('../lib/db');
-  _db.then((m) => m.prefetch()).catch(() => {});
+  // Keep the shell interactive with no blocking work on load, but don't make the user
+  // wait for the ~4.7 MB engine either. warmEngine() is the idempotent primitive (primes
+  // the same _db the query wrapper reuses; a no-op once warmed). We trigger it two ways:
+  // an idle-time warm just after load — mirroring the landing page and psf-trends, so the
+  // engine is usually ready before "Get insights" — and a focus on the postal field,
+  // which front-runs idle for a user who engages the form immediately.
+  const warmEngine = () => {
+    if (_db) return;
+    _db = import('../lib/db');
+    _db.then((m) => m.prefetch()).catch(() => {});
+  };
+  // requestIdleCallback keeps the warm off the critical path; skipped under Save-Data.
+  if (!(navigator as any).connection?.saveData) {
+    const idle: (cb: () => void) => void =
+      (window as any).requestIdleCallback || ((cb: () => void) => setTimeout(cb, 1500));
+    idle(warmEngine);
+  }
   import echarts from '../lib/echarts';
   import {
     baseOption,
@@ -1513,6 +1525,8 @@ import LeafletMap from '../components/LeafletMap.astro';
   }
 
   // ---- wiring ----
+  // Front-run the engine download the moment the user engages the form.
+  ($('f-postal') as HTMLInputElement).addEventListener('focus', warmEngine, { once: true });
   ($('f-postal') as HTMLInputElement).addEventListener('change', async () => {
     if (await resolveBlock()) compute();
   });
@@ -1536,16 +1550,6 @@ import LeafletMap from '../components/LeafletMap.astro';
     await compute();
     document.querySelector('.results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
-
-  (async () => {
-    const [def] = await query<{ postal: number }>(
-      `SELECT postal FROM resale WHERE postal IS NOT NULL GROUP BY postal ORDER BY count(*) DESC LIMIT 1`,
-    );
-    ($('f-postal') as HTMLInputElement).value = String(def.postal);
-    if (await resolveBlock()) {
-      await compute();
-    }
-  })();
 
   window.addEventListener('resize', () => {
     map.invalidateSize();
