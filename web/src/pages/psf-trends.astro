@@ -66,9 +66,8 @@ import Info from '../components/Info.astro';
       <div class="card bench">
         <div class="bk">
           Fit quality · R²<Info label="What is R²?" end>
-            <strong>R²</strong> measures how well the trend line fits the data, from 0 to 1. Higher means
-            the trend explains more of the price movement; lower means prices scatter more around the
-            line.
+            How well the trend line fits the data, from 0 to 1 — higher means less scatter around
+            the line.
           </Info>
         </div><div class="bv mono" id="stat-r2">—</div><div class="bsub" id="stat-fit">&nbsp;</div>
       </div>
@@ -100,9 +99,8 @@ import Info from '../components/Info.astro';
         <thead
           ><tr
             ><th>Month</th><th class="r">Trend PSF</th><th class="r"
-              >MoM change<Info label="What is MoM change?" end
-                ><strong>MoM</strong> (month-on-month) is the change from the month before — how much
-                the trend PSF moved versus the previous month.</Info
+              >MoM change<Info label="What is MoM change?" end down
+                ><strong>Month-on-month</strong>: the change in trend PSF from the previous month.</Info
               ></th
             ></tr
           ></thead

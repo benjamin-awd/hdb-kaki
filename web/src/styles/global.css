@@ -364,7 +364,7 @@ footer {
   color: #fff;
 }
 
-/* ---------- info button + tooltip ---------- */
+/* ---------- info button / term tooltip ---------- */
 .info {
   position: relative;
   display: inline-flex;
@@ -395,7 +395,20 @@ footer {
   color: var(--ink);
   outline: none;
 }
-.info .info-pop {
+/* inline term with a dotted underline that reveals the same tooltip on hover/focus */
+.term {
+  position: relative;
+  text-decoration: underline dotted;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-color: color-mix(in srgb, currentColor 50%, transparent);
+  cursor: help;
+}
+.term:focus-visible {
+  outline: none;
+  text-decoration-color: currentColor;
+}
+.info-pop {
   position: absolute;
   bottom: calc(100% + 9px);
   left: 50%;
@@ -423,7 +436,7 @@ footer {
   pointer-events: none;
   z-index: 60;
 }
-.info .info-pop::after {
+.info-pop::after {
   content: '';
   position: absolute;
   top: 100%;
@@ -432,29 +445,42 @@ footer {
   border: 5px solid transparent;
   border-top-color: var(--ink);
 }
-.info .info-pop strong {
+.info-pop strong {
   font-weight: 700;
 }
 .info:hover .info-pop,
-.info:focus-visible .info-pop {
+.info:focus-visible .info-pop,
+.term:hover .info-pop,
+.term:focus-visible .info-pop {
   opacity: 1;
   visibility: visible;
   transform: translateX(-50%) translateY(0);
 }
-/* keep right-edge popovers (e.g. the R² card) from overflowing */
-.info.info-end .info-pop {
+/* keep right-edge popovers (e.g. the R² card, table columns) from overflowing */
+.info-end .info-pop {
   left: auto;
   right: -6px;
   transform: translateY(4px);
 }
-.info.info-end .info-pop::after {
+.info-end .info-pop::after {
   left: auto;
   right: 8px;
   transform: none;
 }
-.info.info-end:hover .info-pop,
-.info.info-end:focus-visible .info-pop {
+.info-end:hover .info-pop,
+.info-end:focus-visible .info-pop {
   transform: translateY(0);
+}
+/* open downward — used inside tables, whose card clips anything above the header row */
+.info-down .info-pop {
+  bottom: auto;
+  top: calc(100% + 9px);
+}
+.info-down .info-pop::after {
+  top: auto;
+  bottom: 100%;
+  border-top-color: transparent;
+  border-bottom-color: var(--ink);
 }
 
 /* ---------- native select (filter bar) ---------- */
