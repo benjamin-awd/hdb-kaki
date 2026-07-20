@@ -33,6 +33,22 @@ async function boot(buffer: boolean): Promise<duckdb.AsyncDuckDBConnection> {
   // stale-while-revalidate cache header instead — see public/_headers.)
   const manifestP = getManifest();
 
+  // On the buffered pre-warm path, start pulling the ~3.4 MB data file as soon as the
+  // manifest names it, so the download overlaps the (slower) engine download +
+  // instantiate below instead of running serially after it — turning the warm's
+  // critical path from (instantiate + data) into max(instantiate, data). priority:'low'
+  // keeps it from stealing bandwidth from the more-critical wasm. This lives inside the
+  // already-gated warm path (Save-Data / idle / prerender-activation — see the pages'
+  // warmEngineWhenIdle), so a hover-prerender never triggers it, and it's a single
+  // fetch that boot() awaits directly, so there's no double-download to dedupe.
+  const base = new URL(`${import.meta.env.BASE_URL}data/`, window.location.href).href;
+  const dataP = buffer
+    ? manifestP.then((m) => fetch(base + m.file, { priority: 'low' } as RequestInit))
+    : null;
+  // If instantiate below throws before we await dataP, keep its (possible) rejection
+  // from surfacing as an unhandled rejection; the await further down still sees it.
+  void dataP?.catch(() => {});
+
   // Self-hosted engine served same-origin by src/worker.ts, which re-serves the
   // brotli-compressed .wasm with Content-Encoding: br (see src/lib/duckdbBundle.ts).
   // selectBundle picks eh vs. mvp from browser features;
@@ -51,14 +67,12 @@ async function boot(buffer: boolean): Promise<duckdb.AsyncDuckDBConnection> {
   URL.revokeObjectURL(workerUrl);
 
   const manifest = await manifestP;
-  const base = new URL(`${import.meta.env.BASE_URL}data/`, window.location.href).href;
-  if (buffer) {
-    // Idle pre-warm path: pull the whole ~3.4 MB file in a single fetch and hand
-    // DuckDB the bytes. This front-loads the column data so the first user query
-    // resolves from memory instead of paying for the per-row-group HTTP range
-    // requests that lazy registration would defer to click time. Only the Save-Data-
-    // gated warm reaches here (see prefetch()); on-demand boots stay lazy below.
-    const res = await fetch(base + manifest.file);
+  if (dataP) {
+    // Idle pre-warm path: hand DuckDB the whole ~3.4 MB file (fetched above, in
+    // parallel with the engine) so the first user query resolves from memory instead
+    // of paying for the per-row-group HTTP range requests that lazy registration would
+    // defer to click time. Only the Save-Data-gated warm reaches here (see prefetch()).
+    const res = await dataP;
     if (!res.ok) throw new Error(`${manifest.file} ${res.status}`);
     await db.registerFileBuffer(manifest.file, new Uint8Array(await res.arrayBuffer()));
   } else {
