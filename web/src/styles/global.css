@@ -246,6 +246,20 @@ h1.title em {
 .ghost:hover {
   border-color: var(--ink);
 }
+/* Compact ghost-button pager — Recent transactions (landing) and Record sales (town). */
+.pager {
+  display: inline-flex;
+  gap: 8px;
+}
+.pager .pg {
+  padding: 7px 13px;
+  font-size: 13px;
+}
+.pager .pg:disabled {
+  opacity: 0.4;
+  cursor: default;
+  border-color: var(--line);
+}
 
 /* ---------- footer ---------- */
 footer {
