@@ -1,0 +1,23 @@
+---
+// Small "i" info button with a hover/focus tooltip that explains a term or metric.
+// The tooltip text is passed as the default slot (may contain <strong>, etc.).
+// `label` is the button's accessible name; the slot is wired to the button via
+// aria-describedby so screen readers read the explanation on focus. Set `end`
+// for buttons near the right edge so the popover anchors right instead of centred.
+interface Props {
+  label: string;
+  end?: boolean;
+}
+const { label, end = false } = Astro.props;
+const id = `info-${Math.random().toString(36).slice(2, 9)}`;
+---
+
+<button
+  type="button"
+  class:list={['info', { 'info-end': end }]}
+  aria-label={label}
+  aria-describedby={id}
+>
+  i
+  <span class="info-pop" role="tooltip" id={id}><slot /></span>
+</button>

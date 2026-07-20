@@ -1,5 +1,6 @@
 ---
 import Base from '../layouts/Base.astro';
+import Info from '../components/Info.astro';
 ---
 
 <Base active="My Flat Insights" title="My Flat Insights | HDB Kaki">
@@ -80,7 +81,12 @@ import Base from '../layouts/Base.astro';
           <div class="val-label">Estimated market value</div>
           <div class="val-big" id="val-big">—</div>
           <div class="val-range-txt">
-            Likely range <b id="val-low">—</b> – <b id="val-high">—</b>
+            Likely range <b id="val-low">—</b> – <b id="val-high">—</b><Info
+              label="What is the likely range?"
+              >The likely range is the middle spread of comparable sales (25th–75th percentile)
+              applied to your floor area — where most similar flats sold, not a guaranteed minimum
+              or maximum.</Info
+            >
           </div>
           <div class="rangebar">
             <div class="track">
@@ -100,16 +106,30 @@ import Base from '../layouts/Base.astro';
             <span class="k">Comparable sales used</span><span class="v" id="vs-n">—</span>
           </div>
           <div class="vs-row">
-            <span class="k">Median PSF (comps)</span><span class="v" id="vs-psf">—</span>
+            <span class="k"
+              >Median PSF (comps)<Info label="What are comps?" end
+                ><strong>Comps</strong> are comparable sales — recent transactions of the same flat type
+                nearby. This is their median price per square foot, the basis for your estimate.</Info
+              ></span
+            ><span class="v" id="vs-psf">—</span>
           </div>
           <div class="vs-row">
-            <span class="k">Storey adjustment</span><span class="v" id="vs-storey">—</span>
+            <span class="k"
+              >Storey adjustment<Info label="What is the storey adjustment?" end
+                >Higher floors usually sell for more. This is how much your storey band shifts the
+                estimate versus the base median.</Info
+              ></span
+            ><span class="v" id="vs-storey">—</span>
           </div>
           <div class="vs-row">
             <span class="k">Your floor area</span><span class="v" id="vs-area">—</span>
           </div>
           <div class="conf">
-            Confidence <span class="bars" id="conf-bars"></span>
+            Confidence<Info label="What does confidence mean?" end
+              >Confidence reflects how many comparable sales we found nearby — more comps means a
+              more reliable estimate.</Info
+            >
+            <span class="bars" id="conf-bars"></span>
             <span id="conf-label">—</span>
           </div>
           <p class="disclaimer">
@@ -135,7 +155,13 @@ import Base from '../layouts/Base.astro';
           <div id="traj-chart" style="width:100%;height:300px"></div>
         </div>
         <div class="card returns">
-          <div class="ret-head">Your return so far</div>
+          <div class="ret-head">
+            Your return so far<Info label="How is the annual return calculated?"
+              >Annual return (CAGR) is the average yearly growth that compounds from your purchase
+              price to today's estimate — it smooths out the year-to-year swings into one steady
+              rate.</Info
+            >
+          </div>
           <p class="ret-lede">
             Already bought this flat? Enter what you paid to see your gain and annual return against
             the town.
@@ -196,7 +222,12 @@ import Base from '../layouts/Base.astro';
       <div class="split" style="grid-template-columns:1.4fr 1fr;margin-top:18px">
         <div class="card chart-card">
           <div class="chart-head">
-            <div class="chart-title">Where you sit in the market</div>
+            <div class="chart-title">
+              Where you sit in the market<Info label="What does percentile mean?"
+                >Your percentile is the share of recent comparable sales priced below your estimate
+                — e.g. the 70th percentile means it's higher than about 70% of them.</Info
+              >
+            </div>
             <span class="pill" id="pctile-pill">—</span>
           </div>
           <div id="dist-chart" style="width:100%;height:210px"></div>

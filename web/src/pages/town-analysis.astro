@@ -1,5 +1,6 @@
 ---
 import Base from '../layouts/Base.astro';
+import Info from '../components/Info.astro';
 ---
 
 <Base active="Town Analysis" title="Town Analysis | HDB Kaki">
@@ -46,7 +47,12 @@ import Base from '../layouts/Base.astro';
     <div class="split" style="grid-template-columns:1.55fr 1fr">
       <div id="map" class="map-real"></div>
       <div class="card" style="padding:24px">
-        <div class="cap">Median resale price</div>
+        <div class="cap">
+          Median resale price<Info label="What does median mean?" end
+            ><strong>Median</strong> is the middle price: half of sales are higher and half are lower.
+            Unlike the average, it isn't skewed by a few unusually expensive or cheap flats.</Info
+          >
+        </div>
         <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:4px">
           <span
             id="median-price"
@@ -56,7 +62,15 @@ import Base from '../layouts/Base.astro';
         </div>
         <div id="map-sub" style="font-size:13px;color:var(--ink-3);margin-bottom:22px">&nbsp;</div>
         <div style="height:1px;background:var(--line);margin:6px 0 18px"></div>
-        <div class="cap" style="margin-bottom:8px">Distribution</div>
+        <div class="cap" style="margin-bottom:8px">
+          Distribution<Info label="How are these bands defined?" end
+            >Each sale is grouped by how its price compares to the median. <strong
+              >Around median</strong
+            >
+            is within the threshold you picked (e.g. ±10%); <strong>Above</strong> and
+            <strong>Below</strong> fall outside it.</Info
+          >
+        </div>
         <div class="cat-line">
           <span class="dot" style="background:var(--red)"></span>Above median<span class="bar"
             ><span id="bar-above" style="background:var(--red)"></span></span
@@ -109,9 +123,12 @@ import Base from '../layouts/Base.astro';
       <table class="comp">
         <thead
           ><tr
-            ><th>Sold</th><th>Address</th><th class="r">Price</th><th class="r">PSF</th><th
-              class="r">Lease left</th
-            ><th>Band</th></tr
+            ><th>Sold</th><th>Address</th><th class="r">Price</th><th class="r"
+              >PSF<Info label="What is PSF?" end
+                ><strong>PSF</strong> (price per square foot) is the sale price divided by floor area
+                — it lets you compare flats of different sizes on the same basis.</Info
+              ></th
+            ><th class="r">Lease left</th><th>Band</th></tr
           ></thead
         >
         <tbody id="tbody-town"
