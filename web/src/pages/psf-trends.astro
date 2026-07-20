@@ -109,7 +109,7 @@ import DataTable from '../components/DataTable.astro';
 </style>
 
 <script>
-  import echarts from '../lib/echarts';
+  import echarts, { initChart } from '../lib/echarts';
   import { regressionLinear, regressionLoess } from 'd3-regression';
   // DuckDB-WASM is heavy and NOT needed for first paint: the default view renders from
   // a precomputed snapshot (psf-trends.json). The engine is imported lazily and only
@@ -140,7 +140,7 @@ import DataTable from '../components/DataTable.astro';
   const monthLabel = (idx: number) =>
     `${2017 + Math.floor(idx / 12)}-${String((idx % 12) + 1).padStart(2, '0')}`;
 
-  const chart = echarts.init($('chart-psf'));
+  const chart = initChart($('chart-psf'));
   let regType: 'ols' | 'loess' = 'ols';
   let fullMinIdx = 0,
     fullMaxIdx = 0; // full x-extent, for mapping zoom % → months

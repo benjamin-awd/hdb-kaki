@@ -215,7 +215,7 @@ const kpis = stats
 </style>
 
 <script>
-  import echarts from '../lib/echarts';
+  import echarts, { initChart } from '../lib/echarts';
   import {
     baseOption,
     palette,
@@ -399,7 +399,7 @@ const kpis = stats
     // there's room; on narrow screens the map stays clean and a tap reveals the tooltip.
     const showLabels = level === 'town' && labelsFit();
 
-    mapChart ??= echarts.init(q('chart-map'));
+    mapChart ??= initChart(q('chart-map'));
     mapChart.setOption(
       {
         ...baseOption(),
@@ -496,7 +496,7 @@ const kpis = stats
   // ---- 03 box plot by town ----
   function renderBox() {
     const rows = OV.box;
-    const chart = echarts.init(q('chart-box'));
+    const chart = initChart(q('chart-box'));
     chart.setOption({
       ...baseOption(),
       grid: { left: 64, right: 20, top: 20, bottom: 78, containLabel: false },
@@ -539,7 +539,7 @@ const kpis = stats
       '81-99 years': palette[2],
     };
     const pts = OV.scatter;
-    const scatter = echarts.init(q('chart-scatter'));
+    const scatter = initChart(q('chart-scatter'));
     scatter.setOption({
       ...baseOption(),
       grid: { left: 62, right: 20, top: 30, bottom: 44, containLabel: false },
@@ -574,7 +574,7 @@ const kpis = stats
     });
 
     const counts = OV.buckets;
-    const buckets = echarts.init(q('chart-buckets'));
+    const buckets = initChart(q('chart-buckets'));
     buckets.setOption({
       ...baseOption(),
       grid: { left: 90, right: 40, top: 20, bottom: 30, containLabel: false },
@@ -726,7 +726,7 @@ const kpis = stats
     });
     // Replace the SSR placeholder SVG with the interactive canvas chart in one step.
     q('chart-trends').innerHTML = '';
-    trendChart = echarts.init(q('chart-trends'));
+    trendChart = initChart(q('chart-trends'));
     renderTrends('lease');
     renderMap('town').catch((e) => console.error(e));
     renderBox();
