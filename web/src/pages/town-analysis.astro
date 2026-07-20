@@ -1,6 +1,7 @@
 ---
 import Base from '../layouts/Base.astro';
 import SecHead from '../components/SecHead.astro';
+import ChartCard from '../components/ChartCard.astro';
 ---
 
 <Base active="Town Analysis" title="Town Analysis | HDB Kaki">
@@ -85,12 +86,9 @@ import SecHead from '../components/SecHead.astro';
         <button class="chip" data-scope="global">All Singapore</button>
       </div>
     </div>
-    <div class="card chart-card">
-      <div class="chart-head">
-        <div class="chart-title" id="record-title">Most expensive on record</div>
-        <div class="chart-sub">
-          Ranked by peak transaction · median for that flat type shown for scale
-        </div>
+    <ChartCard title="Most expensive on record" titleId="record-title">
+      <div class="chart-sub" slot="head">
+        Ranked by peak transaction · median for that flat type shown for scale
       </div>
       <div class="lead" id="record-list"></div>
       <div class="rec-foot">
@@ -100,7 +98,7 @@ import SecHead from '../components/SecHead.astro';
           <button class="ghost pg" id="rec-next" disabled>Next →</button>
         </span>
       </div>
-    </div>
+    </ChartCard>
 
     <!-- 03 · DATA TABLE -->
     <SecHead num="03" title="Data behind the map"> Every point currently in view. </SecHead>
