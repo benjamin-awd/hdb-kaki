@@ -4,6 +4,7 @@ import SecHead from '../components/SecHead.astro';
 import ChartCard from '../components/ChartCard.astro';
 import FieldSelect from '../components/FieldSelect.astro';
 import Pager from '../components/Pager.astro';
+import DataTable from '../components/DataTable.astro';
 import { trendsSVG } from '../lib/echartsSSR';
 import { moneyShort, psf as fpsf } from '../lib/format';
 import fs from 'node:fs';
@@ -155,20 +156,19 @@ const kpis = stats
       <FieldSelect label="Flat type" id="rec-flat" />
     </div>
     <div class="card table-card">
-      <table class="comp">
-        <thead
-          ><tr>
-            <th>Sold</th><th>Town</th><th>Address</th><th>Type</th>
-            <th class="r">Area (sqft)</th><th class="r">Price</th><th class="r">PSF</th>
-          </tr></thead
-        >
-        <tbody id="tbody-recent">
-          <tr
-            ><td colspan="7" style="padding:22px 16px;color:var(--ink-3)">Loading market data…</td
-            ></tr
-          >
-        </tbody>
-      </table>
+      <DataTable
+        headers={[
+          { label: 'Sold' },
+          { label: 'Town' },
+          { label: 'Address' },
+          { label: 'Type' },
+          { label: 'Area (sqft)', align: 'r' },
+          { label: 'Price', align: 'r' },
+          { label: 'PSF', align: 'r' },
+        ]}
+        bodyId="tbody-recent"
+        loadingText="Loading market data…"
+      />
       <div class="tbl-foot">
         <span id="recent-foot">&nbsp;</span>
         <Pager />
