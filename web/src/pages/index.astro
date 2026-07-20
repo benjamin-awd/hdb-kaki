@@ -107,6 +107,12 @@ const kpis = stats
         <button class="chip" data-mode="town">Town</button>
       </div>
     </div>
+    <!-- Town lens only: ~26 towns at once is unreadable, so we show a curated set
+         (busiest first) and let the reader swap towns in/out. Hidden until Town is active. -->
+    <div class="controls" id="trend-town-picker" hidden style="margin-bottom:16px">
+      <div class="town-tags" id="trend-town-tags"></div>
+      <FieldSelect label="Add town" id="trend-town-add" />
+    </div>
     <ChartCard title="Median resale price by lease band" titleId="trend-title">
       <div id="chart-trends" class="chart-box" set:html={heroSVG} />
     </ChartCard>
@@ -198,6 +204,63 @@ const kpis = stats
     height: 100% !important;
     display: block;
   }
+  /* .controls is display:flex, which beats the [hidden] UA rule — re-hide explicitly. */
+  #trend-town-picker[hidden] {
+    display: none;
+  }
+  /* Removable town tags for the trends "Town" lens; they double as the chart legend
+     (colour dot matches the line), so the built-in ECharts legend is off in that lens. */
+  .town-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .town-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink);
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    padding: 5px 5px 5px 11px;
+    box-shadow: var(--shadow);
+  }
+  .town-tag .dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 3px;
+    flex: none;
+  }
+  .town-tag button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 19px;
+    height: 19px;
+    border: none;
+    border-radius: 6px;
+    background: none;
+    color: var(--ink-3);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .town-tag button:hover {
+    background: var(--ink);
+    color: #fff;
+  }
+  .town-tag button:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+  .town-tag button:disabled:hover {
+    background: none;
+    color: var(--ink-3);
+  }
   #chart-scatter,
   #chart-buckets {
     height: 320px;
@@ -261,22 +324,40 @@ const kpis = stats
     town: 'Median resale price by town',
   };
 
+  // The town lens has ~26 series — all at once it's an unreadable tangle. Instead we
+  // show a curated handful the reader can swap via #trend-town-picker. The six-colour
+  // brand palette caps the comparison so every line stays a distinct colour; we default
+  // to five so the "add town" control is live (one free slot) on first view.
+  const DEFAULT_TOWNS = 5;
+  const MAX_TOWNS = palette.length; // 6 — one per brand colour
+  let townsByVolume: string[] = [];
+  const selectedTowns = new Set<string>();
+
   function renderTrends(mode: string) {
     if (!OV || !trendChart) return;
     q('trend-title').textContent = trendTitle[mode];
+    q('trend-town-picker').hidden = mode !== 'town';
+
     const rows = OV.trends[mode];
     const quarters = [...new Set(rows.map((r) => r.quarter))].sort();
-    const seriesNames = [...new Set(rows.map((r) => r.series))].sort();
     const byKey = new Map(rows.map((r) => [r.series + '|' + r.quarter, Number(r.v)]));
 
-    const series = seriesNames.map((name) => ({
-      name,
+    // Town names are stored uppercase, so title-case them for display; the town lens
+    // draws only the reader's selection (ordered so tag colours match the lines).
+    const keys =
+      mode === 'town'
+        ? townsByVolume.filter((t) => selectedTowns.has(t))
+        : [...new Set(rows.map((r) => r.series))].sort();
+    const label = (k: string) => (mode === 'town' ? titleCase(k) : k);
+
+    const series = keys.map((key) => ({
+      name: label(key),
       type: 'line' as const,
       smooth: true,
       showSymbol: false,
       emphasis: { focus: 'series' as const },
       data: quarters.map((qtr) => {
-        const v = byKey.get(name + '|' + qtr);
+        const v = byKey.get(key + '|' + qtr);
         return v == null ? null : Math.round(v);
       }),
     }));
@@ -285,13 +366,12 @@ const kpis = stats
       {
         ...baseOption(),
         color: palette,
-        legend: {
-          top: 0,
-          right: 0,
-          type: 'scroll',
-          textStyle: { fontSize: 12 },
-          icon: 'roundRect',
-        },
+        // In the town lens the removable tags double as the legend, so the built-in
+        // scrolling legend would be redundant there.
+        legend:
+          mode === 'town'
+            ? { show: false }
+            : { top: 0, right: 0, type: 'scroll', textStyle: { fontSize: 12 }, icon: 'roundRect' },
         grid: { left: 66, right: 24, top: 40, bottom: 46, containLabel: false },
         tooltip: { trigger: 'axis', valueFormatter: (v: number) => (v == null ? '—' : money(v)) },
         xAxis: {
@@ -312,6 +392,57 @@ const kpis = stats
       },
       true,
     );
+  }
+
+  // Rank towns by transaction volume (the choropleth's 4-room counts are a good proxy)
+  // so the default selection is the busiest towns, then seed the picker.
+  function initTownPicker() {
+    const vol = new Map(OV.townMedians.map((r) => [r.town, r.n ?? 0]));
+    townsByVolume = [...new Set(OV.trends.town.map((r) => r.series))].sort(
+      (a, b) => (vol.get(b) ?? 0) - (vol.get(a) ?? 0),
+    );
+    selectedTowns.clear();
+    townsByVolume.slice(0, DEFAULT_TOWNS).forEach((t) => selectedTowns.add(t));
+
+    q('trend-town-add').addEventListener('change', (e) => {
+      const sel = e.currentTarget as HTMLSelectElement;
+      if (!sel.value || selectedTowns.size >= MAX_TOWNS) return;
+      selectedTowns.add(sel.value);
+      refreshTownPicker();
+      renderTrends('town');
+    });
+    refreshTownPicker();
+  }
+
+  // Repaint the tags (colour dot + remove ×) and the "add town" dropdown from the
+  // current selection. Called whenever a town is added or removed.
+  function refreshTownPicker() {
+    const shown = townsByVolume.filter((t) => selectedTowns.has(t));
+    const canRemove = shown.length > 1; // keep at least one line on the chart
+    q('trend-town-tags').innerHTML = shown
+      .map(
+        (t, i) =>
+          `<span class="town-tag"><span class="dot" style="background:${palette[i % palette.length]}"></span>${titleCase(t)}` +
+          `<button type="button" data-town="${t}"${canRemove ? '' : ' disabled'} aria-label="Remove ${titleCase(t)}">&times;</button></span>`,
+      )
+      .join('');
+    q('trend-town-tags')
+      .querySelectorAll<HTMLButtonElement>('button[data-town]')
+      .forEach((b) =>
+        b.addEventListener('click', () => {
+          selectedTowns.delete(b.dataset.town!);
+          refreshTownPicker();
+          renderTrends('town');
+        }),
+      );
+
+    const remaining = townsByVolume.filter((t) => !selectedTowns.has(t));
+    const full = selectedTowns.size >= MAX_TOWNS;
+    const add = q('trend-town-add') as HTMLSelectElement;
+    add.innerHTML =
+      `<option value="" selected>${full ? `Max ${MAX_TOWNS} — remove one first` : 'Add town…'}</option>` +
+      remaining.map((t) => `<option value="${t}">${titleCase(t)}</option>`).join('');
+    add.disabled = full || remaining.length === 0;
   }
 
   document.querySelectorAll<HTMLButtonElement>('#trend-toggle .chip').forEach((btn) => {
@@ -723,6 +854,7 @@ const kpis = stats
     // Replace the SSR placeholder SVG with the interactive canvas chart in one step.
     q('chart-trends').innerHTML = '';
     trendChart = initChart(q('chart-trends'));
+    initTownPicker();
     renderTrends('lease');
     renderMap('town').catch((e) => console.error(e));
     renderBox();
