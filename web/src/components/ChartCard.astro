@@ -14,7 +14,7 @@ const { title, titleId, class: className, style } = Astro.props;
 
 <div class:list={['card', 'chart-card', className]} style={style}>
   <div class="chart-head">
-    <div class="chart-title" id={titleId}>{title}</div>
+    <div class="chart-title" id={titleId}>{title}<slot name="titleTip" /></div>
     <slot name="head" />
   </div>
   <slot />
