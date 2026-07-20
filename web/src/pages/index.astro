@@ -1,5 +1,6 @@
 ---
 import Base from '../layouts/Base.astro';
+import Info from '../components/Info.astro';
 import SecHead from '../components/SecHead.astro';
 import ChartCard from '../components/ChartCard.astro';
 import FieldSelect from '../components/FieldSelect.astro';
@@ -127,6 +128,10 @@ const kpis = stats
 
     <!-- 03 · DISTRIBUTION -->
     <SecHead num="03" title="Price distribution by town">
+      <Info slot="titleTip" label="How do I read this box plot?"
+        >The box holds the middle 50% of sales, the line is the median, and the whiskers reach the
+        typical low and high.</Info
+      >
       Spread of 4-room resale prices, last 12 months — box shows the middle 50%.
     </SecHead>
     <ChartCard title="Resale price spread · 4-room">
@@ -164,7 +169,11 @@ const kpis = stats
           { label: 'Type' },
           { label: 'Area (sqft)', align: 'r' },
           { label: 'Price', align: 'r' },
-          { label: 'PSF', align: 'r' },
+          {
+            label: 'PSF',
+            align: 'r',
+            tip: '<strong>Price per square foot</strong> — sale price ÷ floor area, so different-sized flats compare fairly.',
+          },
         ]}
         bodyId="tbody-recent"
         loadingText="Loading market data…"
