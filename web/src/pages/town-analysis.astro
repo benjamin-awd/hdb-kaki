@@ -642,12 +642,12 @@ import LeafletMap from '../components/LeafletMap.astro';
   // change is snappy — without competing with first paint. Skipped under Save-Data.
   function warmEngineWhenIdle() {
     if ((navigator as any).connection?.saveData) return;
-    const idle: (cb: () => void) => void =
+    const idle: (cb: () => void, opts?: { timeout: number }) => void =
       (window as any).requestIdleCallback || ((cb: () => void) => setTimeout(cb, 1500));
     idle(() => {
       _db = import('../lib/db');
       _db.then((m) => m.prefetch()).catch(() => {});
-    });
+    }, { timeout: 2000 });
   }
 
   window.addEventListener('resize', () => {
