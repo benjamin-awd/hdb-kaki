@@ -3,6 +3,7 @@ import Base from '../layouts/Base.astro';
 import SecHead from '../components/SecHead.astro';
 import ChartCard from '../components/ChartCard.astro';
 import FieldSelect from '../components/FieldSelect.astro';
+import Pager from '../components/Pager.astro';
 import { trendsSVG } from '../lib/echartsSSR';
 import { moneyShort, psf as fpsf } from '../lib/format';
 import fs from 'node:fs';
@@ -170,10 +171,7 @@ const kpis = stats
       </table>
       <div class="tbl-foot">
         <span id="recent-foot">&nbsp;</span>
-        <span class="pager">
-          <button class="ghost pg" id="rec-prev" disabled>← Prev</button>
-          <button class="ghost pg" id="rec-next" disabled>Next →</button>
-        </span>
+        <Pager />
       </div>
     </div>
   </main>
@@ -204,20 +202,6 @@ const kpis = stats
     .map-box {
       height: 300px;
     }
-  }
-  /* Recent-transactions pager: compact ghost buttons anchored to the footer's right. */
-  .pager {
-    display: inline-flex;
-    gap: 8px;
-  }
-  .pager .pg {
-    padding: 7px 13px;
-    font-size: 13px;
-  }
-  .pager .pg:disabled {
-    opacity: 0.4;
-    cursor: default;
-    border-color: var(--line);
   }
 </style>
 

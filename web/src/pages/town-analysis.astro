@@ -3,6 +3,7 @@ import Base from '../layouts/Base.astro';
 import SecHead from '../components/SecHead.astro';
 import ChartCard from '../components/ChartCard.astro';
 import FieldSelect from '../components/FieldSelect.astro';
+import Pager from '../components/Pager.astro';
 ---
 
 <Base active="Town Analysis" title="Town Analysis | HDB Kaki">
@@ -87,10 +88,7 @@ import FieldSelect from '../components/FieldSelect.astro';
       <div class="lead" id="record-list"></div>
       <div class="rec-foot">
         <span id="record-foot">&nbsp;</span>
-        <span class="pager">
-          <button class="ghost pg" id="rec-prev" disabled>← Prev</button>
-          <button class="ghost pg" id="rec-next" disabled>Next →</button>
-        </span>
+        <Pager />
       </div>
     </ChartCard>
 
@@ -252,8 +250,8 @@ import FieldSelect from '../components/FieldSelect.astro';
       white-space: normal;
     }
   }
-  /* Pager footer — mirrors the Recent-transactions pager on the landing page. The
-     negative side margins bleed the divider to the card edges past .chart-card's padding. */
+  /* Record-sales footer holding the <Pager>. The negative side margins bleed the
+     divider to the card edges past .chart-card's padding. */
   .rec-foot {
     display: flex;
     justify-content: space-between;
@@ -264,19 +262,6 @@ import FieldSelect from '../components/FieldSelect.astro';
     border-top: 1px solid var(--line);
     font-size: 13px;
     color: var(--ink-3);
-  }
-  .pager {
-    display: inline-flex;
-    gap: 8px;
-  }
-  .pager .pg {
-    padding: 7px 13px;
-    font-size: 13px;
-  }
-  .pager .pg:disabled {
-    opacity: 0.4;
-    cursor: default;
-    border-color: var(--line);
   }
   /* Leaflet hover tooltip on-brand */
   :global(.leaflet-container) {
