@@ -49,8 +49,8 @@ import Info from '../components/Info.astro';
       <div class="card" style="padding:24px">
         <div class="cap">
           Median resale price<Info label="What does median mean?" end
-            ><strong>Median</strong> is the middle price: half of sales are higher and half are lower.
-            Unlike the average, it isn't skewed by a few unusually expensive or cheap flats.</Info
+            >The middle price — half of sales are higher, half lower. Unlike the average, a few
+            extreme sales don't skew it.</Info
           >
         </div>
         <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:4px">
@@ -64,11 +64,8 @@ import Info from '../components/Info.astro';
         <div style="height:1px;background:var(--line);margin:6px 0 18px"></div>
         <div class="cap" style="margin-bottom:8px">
           Distribution<Info label="How are these bands defined?" end
-            >Each sale is grouped by how its price compares to the median. <strong
-              >Around median</strong
-            >
-            is within the threshold you picked (e.g. ±10%); <strong>Above</strong> and
-            <strong>Below</strong> fall outside it.</Info
+            >Each sale vs the median: <strong>Around</strong> is within your threshold (e.g. ±10%);
+            <strong>Above</strong> and <strong>Below</strong> fall outside.</Info
           >
         </div>
         <div class="cat-line">
@@ -124,9 +121,9 @@ import Info from '../components/Info.astro';
         <thead
           ><tr
             ><th>Sold</th><th>Address</th><th class="r">Price</th><th class="r"
-              >PSF<Info label="What is PSF?" end
-                ><strong>PSF</strong> (price per square foot) is the sale price divided by floor area
-                — it lets you compare flats of different sizes on the same basis.</Info
+              >PSF<Info label="What is PSF?" end down
+                ><strong>Price per square foot</strong> — sale price ÷ floor area, so different-sized
+                flats compare fairly.</Info
               ></th
             ><th class="r">Lease left</th><th>Band</th></tr
           ></thead
