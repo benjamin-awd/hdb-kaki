@@ -177,6 +177,7 @@ const kpis = stats
         ]}
         bodyId="tbody-recent"
         loadingText="Loading market data…"
+        stack
       />
       <div class="tbl-foot">
         <span id="recent-foot">&nbsp;</span>
@@ -629,13 +630,14 @@ const kpis = stats
     q('tbody-recent').innerHTML = rows
       .map(
         (r) => `<tr>
-        <td class="num-cell">${r.month}</td>
-        <td>${titleCase(r.town)}</td>
-        <td>${titleCase(r.address)}</td>
-        <td>${r.flat_type}</td>
-        <td class="r num-cell">${Number(r.floor_area_sqft).toLocaleString()}</td>
-        <td class="r price">${money(Number(r.resale_price))}</td>
-        <td class="r num-cell">${fpsf(Number(r.psf))}</td>
+        <td class="num-cell" data-role="meta">${r.month}</td>
+        <td data-role="meta">${titleCase(r.town)}</td>
+        <td data-role="title">${titleCase(r.address)}</td>
+        <td data-role="meta">${r.flat_type}</td>
+        <td class="r num-cell" data-role="meta" data-suffix="sqft">${Number(r.floor_area_sqft).toLocaleString()}</td>
+        <td class="r price" data-role="primary">${money(Number(r.resale_price))}</td>
+        <td class="r num-cell" data-role="meta" data-suffix="psf">${fpsf(Number(r.psf))}</td>
+        <td class="tbreak" aria-hidden="true"></td>
       </tr>`,
       )
       .join('');

@@ -122,6 +122,7 @@ import LeafletMap from '../components/LeafletMap.astro';
           { label: 'Band' },
         ]}
         bodyId="tbody-town"
+        stack
       />
       <div class="tbl-foot">
         <span id="town-foot">&nbsp;</span><a class="ghost" href="#" id="dl-town"
@@ -399,9 +400,9 @@ import LeafletMap from '../components/LeafletMap.astro';
       .map((r) => {
         const pill = r.band === 'below' ? 'up' : r.band === 'above' ? 'down' : 'flat';
         const lbl = r.band![0].toUpperCase() + r.band!.slice(1);
-        return `<tr><td class="num-cell">${r.month}</td><td>${titleCase(r.address)}</td>
-        <td class="r price">${money(r.price)}</td><td class="r num-cell">${fpsf(r.psf)}</td>
-        <td class="r num-cell">${r.lease} yrs</td><td><span class="pill ${pill}">${lbl}</span></td></tr>`;
+        return `<tr><td class="num-cell" data-role="meta">${r.month}</td><td data-role="title">${titleCase(r.address)}</td>
+        <td class="r price" data-role="primary">${money(r.price)}</td><td class="r num-cell" data-role="meta" data-suffix="psf">${fpsf(r.psf)}</td>
+        <td class="r num-cell" data-role="meta">${r.lease} yrs</td><td data-role="meta"><span class="pill ${pill}">${lbl}</span></td><td class="tbreak" aria-hidden="true"></td></tr>`;
       })
       .join('');
     $('town-foot').textContent =
