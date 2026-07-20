@@ -1,5 +1,6 @@
 ---
 import Base from '../layouts/Base.astro';
+import Info from '../components/Info.astro';
 ---
 
 <Base active="PSF Trends" title="PSF Trends | HDB Kaki">
@@ -39,6 +40,11 @@ import Base from '../layouts/Base.astro';
         <button class="chip on" data-reg="ols">OLS</button>
         <button class="chip" data-reg="loess">LOWESS</button>
       </div>
+      <Info label="What do OLS and LOWESS mean?">
+        <strong>OLS</strong> (Ordinary Least Squares) fits a single straight line — the best overall direction
+        of prices over time. <strong>LOWESS</strong> is a flexible curve that follows local ups and downs,
+        so it can show bends a straight line misses.
+      </Info>
     </div>
 
     <div class="bench-grid">
@@ -58,12 +64,13 @@ import Base from '../layouts/Base.astro';
         </div>
       </div>
       <div class="card bench">
-        <div class="bk">Fit quality · R²</div><div class="bv mono" id="stat-r2">—</div><div
-          class="bsub"
-          id="stat-fit"
-        >
-          &nbsp;
-        </div>
+        <div class="bk">
+          Fit quality · R²<Info label="What is R²?" end>
+            <strong>R²</strong> measures how well the trend line fits the data, from 0 to 1. Higher means
+            the trend explains more of the price movement; lower means prices scatter more around the
+            line.
+          </Info>
+        </div><div class="bv mono" id="stat-r2">—</div><div class="bsub" id="stat-fit">&nbsp;</div>
       </div>
     </div>
 
@@ -91,7 +98,14 @@ import Base from '../layouts/Base.astro';
     <div class="card table-card">
       <table class="comp">
         <thead
-          ><tr><th>Month</th><th class="r">Trend PSF</th><th class="r">MoM change</th></tr></thead
+          ><tr
+            ><th>Month</th><th class="r">Trend PSF</th><th class="r"
+              >MoM change<Info label="What is MoM change?" end
+                ><strong>MoM</strong> (month-on-month) is the change from the month before — how much
+                the trend PSF moved versus the previous month.</Info
+              ></th
+            ></tr
+          ></thead
         >
         <tbody id="tbody-psf"
           ><tr><td colspan="3" style="padding:22px 16px;color:var(--ink-3)">Loading…</td></tr
