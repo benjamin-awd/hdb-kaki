@@ -2,6 +2,7 @@
 import Base from '../layouts/Base.astro';
 import SecHead from '../components/SecHead.astro';
 import ChartCard from '../components/ChartCard.astro';
+import FieldSelect from '../components/FieldSelect.astro';
 import { trendsSVG } from '../lib/echartsSSR';
 import { moneyShort, psf as fpsf } from '../lib/format';
 import fs from 'node:fs';
@@ -149,10 +150,8 @@ const kpis = stats
       months.
     </SecHead>
     <div class="controls" style="margin-bottom:16px">
-      <span class="field-select"><span class="lab">Town</span><select id="rec-town"></select></span>
-      <span class="field-select"
-        ><span class="lab">Flat type</span><select id="rec-flat"></select></span
-      >
+      <FieldSelect label="Town" id="rec-town" />
+      <FieldSelect label="Flat type" id="rec-flat" />
     </div>
     <div class="card table-card">
       <table class="comp">
