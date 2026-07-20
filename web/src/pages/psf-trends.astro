@@ -1,5 +1,11 @@
 ---
 import Base from '../layouts/Base.astro';
+import Info from '../components/Info.astro';
+import Term from '../components/Term.astro';
+import SecHead from '../components/SecHead.astro';
+import ChartCard from '../components/ChartCard.astro';
+import FieldSelect from '../components/FieldSelect.astro';
+import DataTable from '../components/DataTable.astro';
 ---
 
 <Base active="PSF Trends" title="PSF Trends | HDB Kaki">
@@ -22,23 +28,23 @@ import Base from '../layouts/Base.astro';
 
   <main class="wrap pagepad">
     <div class="controls" style="margin:8px 0 22px">
-      <span class="field-select"><span class="lab">Town</span><select id="sel-town"></select></span>
-      <span class="field-select"
-        ><span class="lab">Street</span><select id="sel-street"></select></span
-      >
-      <span class="field-select"
-        ><span class="lab">Storey</span>
-        <select id="sel-storey">
-          <option value="all" selected>All</option>
-          <option value="1-6">01–06</option>
-          <option value="7-12">07–12</option>
-          <option value="13-99">13+</option>
-        </select>
-      </span>
+      <FieldSelect label="Town" id="sel-town" />
+      <FieldSelect label="Street" id="sel-street" />
+      <FieldSelect label="Storey" id="sel-storey">
+        <option value="all" selected>All</option>
+        <option value="1-6">01–06</option>
+        <option value="7-12">07–12</option>
+        <option value="13-99">13+</option>
+      </FieldSelect>
       <div class="chipset" id="reg-toggle">
         <button class="chip on" data-reg="ols">OLS</button>
         <button class="chip" data-reg="loess">LOWESS</button>
       </div>
+      <Info label="What do OLS and LOWESS mean?">
+        <strong>OLS</strong> (Ordinary Least Squares) fits a single straight line — the best overall direction
+        of prices over time. <strong>LOWESS</strong> is a flexible curve that follows local ups and downs,
+        so it can show bends a straight line misses.
+      </Info>
     </div>
 
     <div class="bench-grid">
@@ -58,46 +64,39 @@ import Base from '../layouts/Base.astro';
         </div>
       </div>
       <div class="card bench">
-        <div class="bk">Fit quality · R²</div><div class="bv mono" id="stat-r2">—</div><div
-          class="bsub"
-          id="stat-fit"
-        >
-          &nbsp;
-        </div>
+        <div class="bk">
+          Fit quality · <Term term="R²" end
+            >How well the trend line fits the data, from 0 to 1 — higher means less scatter around
+            the line.</Term
+          >
+        </div><div class="bv mono" id="stat-r2">—</div><div class="bsub" id="stat-fit">&nbsp;</div>
       </div>
     </div>
 
-    <div class="sec-head">
-      <span class="num">01</span><h2>PSF over time</h2>
-      <span class="hint"
-        >Each dot is a transaction (sampled); the line is the fitted trend on monthly medians.</span
-      >
-    </div>
-    <div class="card chart-card">
-      <div class="chart-head">
-        <div class="chart-title" id="chart-title">Price per sqft</div><div
-          id="scatter-note"
-          style="font-size:12.5px;color:var(--ink-3)"
-        >
-        </div>
-      </div>
+    <SecHead num="01" title="PSF over time">
+      Each dot is a transaction (sampled); the line is the fitted trend on monthly medians.
+    </SecHead>
+    <ChartCard title="Price per sqft" titleId="chart-title">
+      <div id="scatter-note" slot="head" style="font-size:12.5px;color:var(--ink-3)"></div>
       <div id="chart-psf" style="width:100%;height:420px"></div>
-    </div>
+    </ChartCard>
 
-    <div class="sec-head">
-      <span class="num">02</span><h2>Fitted PSF by month</h2>
-      <span class="hint">Trend value read off the fit for each month.</span>
-    </div>
+    <SecHead num="02" title="Fitted PSF by month">
+      Trend value read off the fit for each month.
+    </SecHead>
     <div class="card table-card">
-      <table class="comp">
-        <thead
-          ><tr><th>Month</th><th class="r">Trend PSF</th><th class="r">MoM change</th></tr></thead
-        >
-        <tbody id="tbody-psf"
-          ><tr><td colspan="3" style="padding:22px 16px;color:var(--ink-3)">Loading…</td></tr
-          ></tbody
-        >
-      </table>
+      <DataTable
+        headers={[
+          { label: 'Month' },
+          { label: 'Trend PSF', align: 'r' },
+          {
+            label: 'MoM change',
+            align: 'r',
+            tip: '<strong>Month-on-month</strong>: the change in trend PSF from the previous month.',
+          },
+        ]}
+        bodyId="tbody-psf"
+      />
       <div class="tbl-foot"><span id="psf-foot">&nbsp;</span></div>
     </div>
   </main>
@@ -110,7 +109,7 @@ import Base from '../layouts/Base.astro';
 </style>
 
 <script>
-  import echarts from '../lib/echarts';
+  import { initChart } from '../lib/echarts';
   import { regressionLinear, regressionLoess } from 'd3-regression';
   // DuckDB-WASM is heavy and NOT needed for first paint: the default view renders from
   // a precomputed snapshot (psf-trends.json). The engine is imported lazily and only
@@ -142,7 +141,7 @@ import Base from '../layouts/Base.astro';
   const monthLabel = (idx: number) =>
     `${2017 + Math.floor(idx / 12)}-${String((idx % 12) + 1).padStart(2, '0')}`;
 
-  const chart = echarts.init($('chart-psf'));
+  const chart = initChart($('chart-psf'));
   let regType: 'ols' | 'loess' = 'ols';
   let fullMinIdx = 0,
     fullMaxIdx = 0; // full x-extent, for mapping zoom % → months
@@ -433,7 +432,10 @@ import Base from '../layouts/Base.astro';
 
     // Filters (and the semantic-zoom resample) go through DuckDB.
     $('sel-town').addEventListener('change', async () => {
-      setStreets($('sel-street'), await loadStreets(query, ($('sel-town') as HTMLSelectElement).value));
+      setStreets(
+        $('sel-street'),
+        await loadStreets(query, ($('sel-town') as HTMLSelectElement).value),
+      );
       loadRender();
     });
     $('sel-street').addEventListener('change', loadRender);

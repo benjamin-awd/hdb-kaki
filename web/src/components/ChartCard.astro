@@ -1,0 +1,21 @@
+---
+// Card + heading shell shared by every chart / leaderboard panel. The title is a prop
+// (scripts rewrite it via `titleId`); anything that sits beside it in the head — a pill,
+// note or sub-line — goes in the `head` slot, and the body (chart box, table, list…)
+// is the default slot.
+interface Props {
+  title: string;
+  titleId?: string;
+  class?: string;
+  style?: string;
+}
+const { title, titleId, class: className, style } = Astro.props;
+---
+
+<div class:list={['card', 'chart-card', className]} style={style}>
+  <div class="chart-head">
+    <div class="chart-title" id={titleId}>{title}<slot name="titleTip" /></div>
+    <slot name="head" />
+  </div>
+  <slot />
+</div>
