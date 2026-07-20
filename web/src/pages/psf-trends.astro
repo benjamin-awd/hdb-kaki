@@ -109,7 +109,7 @@ import DataTable from '../components/DataTable.astro';
 </style>
 
 <script>
-  import echarts, { initChart } from '../lib/echarts';
+  import { initChart } from '../lib/echarts';
   import { regressionLinear, regressionLoess } from 'd3-regression';
   // DuckDB-WASM is heavy and NOT needed for first paint: the default view renders from
   // a precomputed snapshot (psf-trends.json). The engine is imported lazily and only
