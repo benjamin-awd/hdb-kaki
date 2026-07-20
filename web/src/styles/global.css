@@ -489,7 +489,8 @@ footer {
 .info:focus-visible .info-pop,
 .info.open .info-pop,
 .term:hover .info-pop,
-.term:focus-visible .info-pop {
+.term:focus-visible .info-pop,
+.term.open .info-pop {
   opacity: 1;
   visibility: visible;
   transform: translateX(-50%) translateY(0);
@@ -521,23 +522,30 @@ footer {
   border-top-color: transparent;
   border-bottom-color: var(--ink);
 }
-/* On phones the centred popover overflows the left edge next to left-aligned
-   triggers. Anchor it to the trigger's left instead and cap its width to the
-   viewport so it never clips. `.info-end` already right-anchors, so leave it. */
+/* On phones the centred (or right-anchored) popover overflows the viewport next to
+   left-of-centre triggers — every trigger sits in the left ~third of the screen, so
+   `end` right-anchoring pushes the popover off the left edge. Anchor all of them to
+   the trigger's left instead and cap the width to the viewport so nothing clips. */
 @media (max-width: 560px) {
-  .info:not(.info-end) .info-pop {
+  .info .info-pop,
+  .term .info-pop {
     left: 0;
     right: auto;
     transform: translateY(4px);
     max-width: min(250px, calc(100vw - 32px));
   }
-  .info:not(.info-end):hover .info-pop,
-  .info:not(.info-end):focus-visible .info-pop,
-  .info:not(.info-end).open .info-pop {
+  .info:hover .info-pop,
+  .info:focus-visible .info-pop,
+  .info.open .info-pop,
+  .term:hover .info-pop,
+  .term:focus-visible .info-pop,
+  .term.open .info-pop {
     transform: translateY(0);
   }
-  .info:not(.info-end) .info-pop::after {
+  .info .info-pop::after,
+  .term .info-pop::after {
     left: 4px;
+    right: auto;
     transform: none;
   }
 }
@@ -747,6 +755,16 @@ table.comp tbody tr:hover {
   .kpi-strip {
     grid-template-columns: 1fr 1fr;
     gap: 12px;
+  }
+  /* Two per row: captions wrap to a second line unevenly (e.g. "Million $ flats · 12
+     mo" vs "Median PSF"), which left the value and YoY pill of the shorter card riding
+     higher than its neighbour. Reserve two caption lines so the values line up, and
+     pin the pill to the bottom so it aligns even if a caption still runs long. */
+  .kpi-cap {
+    min-height: 2lh;
+  }
+  .kpi .pill {
+    margin-top: auto;
   }
 }
 
