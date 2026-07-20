@@ -329,22 +329,23 @@ import Base from '../layouts/Base.astro';
   // a precomputed snapshot (town-analysis.json). The engine is imported lazily and only
   // booted when the visitor changes a filter (warmed on idle so that first change is
   // snappy). The query() wrapper primes the same lazy import the warm path reuses.
-  let _db: Promise<typeof import('../lib/db')> | null = null;
-  const query = async <T = any,>(sql: string): Promise<T[]> => {
-    if (!_db) _db = import('../lib/db');
-    return (await _db).query<T>(sql);
-  };
   import { money, moneyShort, psf as fpsf, titleCase } from '../lib/format';
+  import {
+    createQuery,
+    sqlEsc as sql,
+    byId as $,
+    setStreets,
+    loadStreets,
+  } from '../lib/duckdbClient';
 
+  const { query, warmEngineWhenIdle } = createQuery();
   const DEFAULT_TOWN = 'ANG MO KIO';
   const DEFAULT_FLAT = '4 ROOM';
-  const $ = (id: string) => document.getElementById(id)!;
   const BAND_COLOR: Record<string, string> = {
     above: '#fe012b',
     around: '#d98a2b',
     below: '#1f7a4d',
   };
-  const sql = (s: string) => s.replace(/'/g, "''");
 
   type Row = {
     lat: number;
@@ -480,21 +481,6 @@ import Base from '../layouts/Base.astro';
       })),
     );
     paintMap(rows, town, flat);
-  }
-
-  // Street dropdown depends on the selected town (like psf-trends). "__all" keeps
-  // every street in the town, matching the default snapshot.
-  function setStreets(streets: string[]) {
-    ($('sel-street') as HTMLSelectElement).innerHTML =
-      `<option value="__all" selected>All streets</option>` +
-      streets.map((s) => `<option value="${s}">${titleCase(s)}</option>`).join('');
-  }
-  async function loadStreets() {
-    const town = ($('sel-town') as HTMLSelectElement).value;
-    const streets = await query<{ street_name: string }>(
-      `SELECT DISTINCT street_name FROM resale WHERE town='${sql(town)}' ORDER BY street_name`,
-    );
-    setStreets(streets.map((s) => s.street_name));
   }
 
   // ---- record sales (paged, town-scoped or Singapore-wide) ----
@@ -636,7 +622,7 @@ import Base from '../layouts/Base.astro';
     ($('sel-flat') as HTMLSelectElement).innerHTML = data.flatTypes
       .map((f) => `<option${f === data.default.flat ? ' selected' : ''}>${f}</option>`)
       .join('');
-    setStreets(data.streets);
+    setStreets($('sel-street'), data.streets);
 
     // Paint immediately from JSON — no DuckDB needed for the default view.
     paintMap(data.rows, data.default.town, data.default.flat);
@@ -651,7 +637,7 @@ import Base from '../layouts/Base.astro';
     // independent, so it doesn't). The records span all flat types, so sel-flat only
     // drives the map.
     $('sel-town').addEventListener('change', async () => {
-      await loadStreets();
+      setStreets($('sel-street'), await loadStreets(query, ($('sel-town') as HTMLSelectElement).value));
       loadMap();
       if (recordScope === 'town') {
         recordPage = 0;
@@ -684,18 +670,6 @@ import Base from '../layouts/Base.astro';
 
     warmEngineWhenIdle();
   })();
-
-  // Boot DuckDB in the background once the default view is up, so the first filter
-  // change is snappy — without competing with first paint. Skipped under Save-Data.
-  function warmEngineWhenIdle() {
-    if ((navigator as any).connection?.saveData) return;
-    const idle: (cb: () => void) => void =
-      (window as any).requestIdleCallback || ((cb: () => void) => setTimeout(cb, 1500));
-    idle(() => {
-      _db = import('../lib/db');
-      _db.then((m) => m.prefetch()).catch(() => {});
-    });
-  }
 
   window.addEventListener('resize', () => {
     map.invalidateSize();

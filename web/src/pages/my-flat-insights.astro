@@ -910,16 +910,13 @@ import Base from '../layouts/Base.astro';
   import L from 'leaflet';
   // DuckDB-WASM is heavy; load it lazily so the page shell is interactive first and
   // the engine only downloads when the user runs a valuation.
-  let _db: Promise<typeof import('../lib/db')> | null = null;
-  const query = async <T = any,>(sql: string): Promise<T[]> => {
-    if (!_db) _db = import('../lib/db');
-    return (await _db).query<T>(sql);
-  };
+  import { createQuery, sqlEsc as sql, byId as $ } from '../lib/duckdbClient';
+
+  const { query, prefetch } = createQuery();
   // This page auto-computes a default valuation on load, so start warming the engine
   // now — overlapping the WASM download with DOM wiring instead of waiting for the
-  // first query. (Idempotent: primes the same _db the query wrapper reuses.)
-  _db = import('../lib/db');
-  _db.then((m) => m.prefetch()).catch(() => {});
+  // first query. (Idempotent: primes the same lazy import the query wrapper reuses.)
+  prefetch();
   import echarts from '../lib/echarts';
   import {
     baseOption,
@@ -930,11 +927,9 @@ import Base from '../layouts/Base.astro';
     ink3,
     red,
   } from '../lib/echartsTheme';
-  import { money, moneyShort, psf as fpsf, titleCase } from '../lib/format';
+  import { money, moneyShort, psf as fpsf, titleCase, deltaPill } from '../lib/format';
   import { reformatWithCaret, parsePrice, computeReturns } from '../lib/returns';
 
-  const $ = (id: string) => document.getElementById(id)!;
-  const sql = (s: string) => String(s).replace(/'/g, "''");
   const NOW_YEAR = new Date().getFullYear();
 
   let block = { town: '', street: '', address: '', model: '', lc: 0 };
@@ -962,9 +957,6 @@ import Base from '../layouts/Base.astro';
       hi = Math.ceil(i);
     return sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo);
   };
-  const pillClass = (d: number) => (d >= 1 ? 'up' : d <= -1 ? 'down' : 'flat');
-  const arrow = (d: number) => (d >= 0 ? '▲' : '▼');
-
   // ---- Leaflet map ----
   const map = L.map('ins-map', { scrollWheelZoom: false }).setView([1.3521, 103.8198], 12);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
@@ -1064,8 +1056,9 @@ import Base from '../layouts/Base.astro';
     $('traj-hint').textContent =
       `Median PSF for ${flat.toLowerCase()} flats in ${titleCase(town)}, ${first.yr}–${last.yr}.`;
     const pill = $('traj-pill');
-    pill.className = `pill ${growth >= 0 ? 'up' : 'down'}`;
-    pill.textContent = `${growth >= 0 ? '▲' : '▼'} ${Math.abs(growth).toFixed(0)}% since ${first.yr}`;
+    const g = deltaPill(growth, { digits: 0 });
+    pill.className = `pill ${g.cls}`;
+    pill.textContent = `${g.text} since ${first.yr}`;
     el.setOption({
       ...baseOption(),
       grid: { left: 52, right: 18, top: 18, bottom: 30, containLabel: false },
@@ -1393,18 +1386,20 @@ import Base from '../layouts/Base.astro';
         .join('');
     };
     const dPsf = islandPsf ? (medPsf / islandPsf - 1) * 100 : 0;
+    const psfPill = deltaPill(dPsf, { threshold: 1 });
     $('b1-v').textContent = fpsf(medPsf);
-    $('b1-pill').className = `pill ${pillClass(dPsf)}`;
-    $('b1-pill').textContent = `${arrow(dPsf)} ${Math.abs(dPsf).toFixed(1)}% vs island`;
+    $('b1-pill').className = `pill ${psfPill.cls}`;
+    $('b1-pill').textContent = `${psfPill.text} vs island`;
     $('b1-bars').innerHTML = bar([
       { lab: 'This flat', val: medPsf, you: true, fmt: fpsf },
       { lab: 'Island', val: islandPsf, fmt: fpsf },
     ]);
 
     const dPrice = townPrice ? (estimate / townPrice - 1) * 100 : 0;
+    const pricePill = deltaPill(dPrice, { threshold: 1 });
     $('b2-v').textContent = moneyShort(estimate);
-    $('b2-pill').className = `pill ${pillClass(dPrice)}`;
-    $('b2-pill').textContent = `${arrow(dPrice)} ${Math.abs(dPrice).toFixed(1)}% vs town`;
+    $('b2-pill').className = `pill ${pricePill.cls}`;
+    $('b2-pill').textContent = `${pricePill.text} vs town`;
     $('b2-bars').innerHTML = bar([
       { lab: 'This flat', val: estimate, you: true, fmt: moneyShort },
       { lab: `${titleCase(block.town)}`, val: townPrice, fmt: moneyShort },
@@ -1412,12 +1407,11 @@ import Base from '../layouts/Base.astro';
     ]);
 
     const dArea = townArea ? (area / townArea - 1) * 100 : 0;
+    const areaPill = deltaPill(dArea, { threshold: 1, digits: 0 });
     $('b3-v').textContent = `${area.toLocaleString()} sqft`;
-    $('b3-pill').className = `pill ${Math.abs(dArea) < 3 ? 'flat' : pillClass(dArea)}`;
+    $('b3-pill').className = `pill ${Math.abs(dArea) < 3 ? 'flat' : areaPill.cls}`;
     $('b3-pill').textContent =
-      Math.abs(dArea) < 3
-        ? '≈ typical for type'
-        : `${arrow(dArea)} ${Math.abs(dArea).toFixed(0)}% vs town`;
+      Math.abs(dArea) < 3 ? '≈ typical for type' : `${areaPill.text} vs town`;
     $('b3-bars').innerHTML = bar([
       { lab: 'This flat', val: area, you: true, fmt: (v) => v.toLocaleString() },
       {
