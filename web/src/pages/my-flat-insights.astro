@@ -341,9 +341,14 @@ import LeafletMap from '../components/LeafletMap.astro';
     color: var(--ink-3);
     margin-bottom: 9px;
   }
+  /* Values are anchored to the bottom of the cell (margin-top:auto) so that
+     across a row the differently-sized values — the 26px postal code vs the
+     17px selects — share a baseline. Their sub-labels then line up too, with a
+     uniform gap below each value. */
   .field .val {
     font-size: 17px;
     font-weight: 500;
+    margin-top: auto;
   }
   .field input,
   .field select {
@@ -356,6 +361,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     color: var(--ink);
     outline: none;
     padding: 0;
+    margin-top: auto;
   }
   .field input.big {
     font-family: var(--font-mono);
@@ -369,8 +375,7 @@ import LeafletMap from '../components/LeafletMap.astro';
   .field .sub {
     font-size: 12.5px;
     color: var(--ink-3);
-    margin-top: auto;
-    padding-top: 5px;
+    margin-top: 5px;
   }
   .form-foot {
     display: flex;
