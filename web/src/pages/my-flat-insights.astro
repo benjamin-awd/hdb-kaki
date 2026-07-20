@@ -378,6 +378,20 @@ import LeafletMap from '../components/LeafletMap.astro';
   }
   .field select {
     cursor: pointer;
+    /* A native <select> renders its text with a small, browser-specific left
+       inset that padding can't remove, so the value drifts right of the label.
+       appearance:none drops the native widget (and its inset) so the value sits
+       flush-left like the inputs; the chevron is re-added as a background. This
+       is the standard pattern (cf. Bootstrap's .form-select). The stroke colour
+       is hard-coded to --ink-3 (#8c8479) because a data-URI SVG can't read a CSS
+       variable — keep it in sync if that token changes. */
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    padding-right: 18px;
+    background: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='14' viewBox='0 0 10 14' fill='none' stroke='%238c8479' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='M2.5 5.5 5 3l2.5 2.5'/><path d='M2.5 8.5 5 11l2.5-2.5'/></svg>")
+      no-repeat right center;
+    background-size: 10px 14px;
   }
   .field .sub {
     font-size: 12.5px;
