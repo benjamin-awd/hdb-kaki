@@ -1,5 +1,7 @@
 ---
-// Small "i" info button with a hover/focus tooltip that explains a term or metric.
+// Small "i" info button that explains a term or metric. Desktop reveals the
+// popover on hover/focus; touch (no hover, and no reliable :focus-visible on tap)
+// toggles it on click via the script below, with outside-click / Escape to close.
 // The tooltip text is passed as the default slot (may contain <strong>, etc.).
 // `label` is the button's accessible name; the slot is wired to the button via
 // aria-describedby so screen readers read the explanation on focus. Set `end`
@@ -20,7 +22,33 @@ const id = `info-${Math.random().toString(36).slice(2, 9)}`;
   class:list={['info', { 'info-end': end, 'info-down': down }]}
   aria-label={label}
   aria-describedby={id}
+  aria-expanded="false"
 >
   i
   <span class="info-pop" role="tooltip" id={id}><slot /></span>
 </button>
+
+<script>
+  // Tap-to-toggle for touch (where hover/:focus-visible don't fire). Astro bundles
+  // this module once no matter how many <Info /> instances render, so one delegated
+  // listener drives them all. Hover/focus behaviour stays purely in CSS.
+  const closeAll = (except?: Element | null) => {
+    document.querySelectorAll('.info.open').forEach((el) => {
+      if (el === except) return;
+      el.classList.remove('open');
+      el.setAttribute('aria-expanded', 'false');
+    });
+  };
+  document.addEventListener('click', (e) => {
+    const btn = (e.target as Element)?.closest('.info');
+    closeAll(btn);
+    if (btn) {
+      e.preventDefault();
+      const open = btn.classList.toggle('open');
+      btn.setAttribute('aria-expanded', String(open));
+    }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeAll();
+  });
+</script>
