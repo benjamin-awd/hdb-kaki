@@ -138,7 +138,7 @@ body.nav-open .nav-toggle-bar:nth-child(3) {
   background: var(--red);
 }
 h1.title {
-  font-family: var(--font-fraunces);
+  font-family: var(--font-newsreader);
   font-weight: 600;
   font-size: clamp(38px, 6vw, 64px);
   line-height: 1.02;
@@ -316,7 +316,7 @@ footer {
 }
 .sec-head h2 {
   grid-column: 2;
-  font-family: var(--font-fraunces);
+  font-family: var(--font-newsreader);
   font-weight: 600;
   font-size: 27px;
   letter-spacing: -0.02em;
@@ -573,7 +573,7 @@ footer {
   letter-spacing: 0.02em;
 }
 .bench .bv {
-  font-family: var(--font-fraunces);
+  font-family: var(--font-newsreader);
   font-weight: 600;
   font-size: 34px;
   letter-spacing: -0.02em;
@@ -596,7 +596,7 @@ footer {
   margin-bottom: 14px;
 }
 .chart-title {
-  font-family: var(--font-fraunces);
+  font-family: var(--font-newsreader);
   font-weight: 600;
   font-size: 18px;
 }

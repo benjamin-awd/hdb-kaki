@@ -25,8 +25,8 @@ export const FONTS_DIR = 'src/assets/fonts';
 // new weight/style in CSS means adding it here too (and re-running vendor-fonts).
 export const families = [
   {
-    googleName: 'Fraunces',
-    cssVariable: '--font-fraunces',
+    googleName: 'Newsreader',
+    cssVariable: '--font-newsreader',
     fallbacks: ['Georgia', 'serif'],
     weights: [600],
     styles: ['normal', 'italic'],
