@@ -26,10 +26,10 @@ const {
     <title>{title}</title>
     <!-- Self-hosted fonts (astro:assets). Each <Font> injects its @font-face + the
          var(--font-*) declaration and, with `preload`, a same-origin preload link.
-         Only Fraunces 600 (the hero <h1>, the LCP element on every page) is preloaded;
+         Only Newsreader 600 (the hero <h1>, the LCP element on every page) is preloaded;
          Public Sans and IBM Plex Mono rely on Astro's metric-adjusted fallbacks so their
          swap is near-invisible and doesn't compete with the LCP font's download. -->
-    <Font cssVariable="--font-fraunces" preload={[{ weight: 600, style: 'normal' }]} />
+    <Font cssVariable="--font-newsreader" preload={[{ weight: 600, style: 'normal' }]} />
     <Font cssVariable="--font-sans" />
     <Font cssVariable="--font-mono" />
     <Font cssVariable="--font-brand" />
