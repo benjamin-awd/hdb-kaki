@@ -1,0 +1,11 @@
+---
+// Labelled native <select> for the filter bars. Options are usually populated by the
+// page script (empty slot), but static ones can be passed as the default slot.
+interface Props {
+  label: string;
+  id: string;
+}
+const { label, id } = Astro.props;
+---
+
+<span class="field-select"><span class="lab">{label}</span><select id={id}><slot /></select></span>
