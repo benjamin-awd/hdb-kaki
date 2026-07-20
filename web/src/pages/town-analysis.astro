@@ -2,6 +2,7 @@
 import Base from '../layouts/Base.astro';
 import SecHead from '../components/SecHead.astro';
 import ChartCard from '../components/ChartCard.astro';
+import FieldSelect from '../components/FieldSelect.astro';
 ---
 
 <Base active="Town Analysis" title="Town Analysis | HDB Kaki">
@@ -25,21 +26,14 @@ import ChartCard from '../components/ChartCard.astro';
     </SecHead>
 
     <div class="controls" style="margin-bottom:16px">
-      <span class="field-select"><span class="lab">Town</span><select id="sel-town"></select></span>
-      <span class="field-select"
-        ><span class="lab">Street</span><select id="sel-street"></select></span
-      >
-      <span class="field-select"
-        ><span class="lab">Flat type</span><select id="sel-flat"></select></span
-      >
-      <span class="field-select"
-        ><span class="lab">Threshold</span>
-        <select id="sel-thr"
-          ><option value="0.05">±5%</option><option value="0.1" selected>±10%</option><option
-            value="0.15">±15%</option
-          ></select
-        >
-      </span>
+      <FieldSelect label="Town" id="sel-town" />
+      <FieldSelect label="Street" id="sel-street" />
+      <FieldSelect label="Flat type" id="sel-flat" />
+      <FieldSelect label="Threshold" id="sel-thr">
+        <option value="0.05">±5%</option>
+        <option value="0.1" selected>±10%</option>
+        <option value="0.15">±15%</option>
+      </FieldSelect>
     </div>
 
     <div class="split" style="grid-template-columns:1.55fr 1fr">

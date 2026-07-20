@@ -2,6 +2,7 @@
 import Base from '../layouts/Base.astro';
 import SecHead from '../components/SecHead.astro';
 import ChartCard from '../components/ChartCard.astro';
+import FieldSelect from '../components/FieldSelect.astro';
 ---
 
 <Base active="PSF Trends" title="PSF Trends | HDB Kaki">
@@ -24,19 +25,14 @@ import ChartCard from '../components/ChartCard.astro';
 
   <main class="wrap pagepad">
     <div class="controls" style="margin:8px 0 22px">
-      <span class="field-select"><span class="lab">Town</span><select id="sel-town"></select></span>
-      <span class="field-select"
-        ><span class="lab">Street</span><select id="sel-street"></select></span
-      >
-      <span class="field-select"
-        ><span class="lab">Storey</span>
-        <select id="sel-storey">
-          <option value="all" selected>All</option>
-          <option value="1-6">01–06</option>
-          <option value="7-12">07–12</option>
-          <option value="13-99">13+</option>
-        </select>
-      </span>
+      <FieldSelect label="Town" id="sel-town" />
+      <FieldSelect label="Street" id="sel-street" />
+      <FieldSelect label="Storey" id="sel-storey">
+        <option value="all" selected>All</option>
+        <option value="1-6">01–06</option>
+        <option value="7-12">07–12</option>
+        <option value="13-99">13+</option>
+      </FieldSelect>
       <div class="chipset" id="reg-toggle">
         <button class="chip on" data-reg="ols">OLS</button>
         <button class="chip" data-reg="loess">LOWESS</button>
