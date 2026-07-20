@@ -1,6 +1,7 @@
 ---
 import Base from '../layouts/Base.astro';
 import Info from '../components/Info.astro';
+import Term from '../components/Term.astro';
 ---
 
 <Base active="PSF Trends" title="PSF Trends | HDB Kaki">
@@ -65,10 +66,10 @@ import Info from '../components/Info.astro';
       </div>
       <div class="card bench">
         <div class="bk">
-          Fit quality · R²<Info label="What is R²?" end>
-            How well the trend line fits the data, from 0 to 1 — higher means less scatter around
-            the line.
-          </Info>
+          Fit quality · <Term term="R²" end
+            >How well the trend line fits the data, from 0 to 1 — higher means less scatter around
+            the line.</Term
+          >
         </div><div class="bv mono" id="stat-r2">—</div><div class="bsub" id="stat-fit">&nbsp;</div>
       </div>
     </div>
@@ -99,8 +100,8 @@ import Info from '../components/Info.astro';
         <thead
           ><tr
             ><th>Month</th><th class="r">Trend PSF</th><th class="r"
-              >MoM change<Info label="What is MoM change?" end down
-                ><strong>Month-on-month</strong>: the change in trend PSF from the previous month.</Info
+              ><Term term="MoM change" end down
+                ><strong>Month-on-month</strong>: the change in trend PSF from the previous month.</Term
               ></th
             ></tr
           ></thead
