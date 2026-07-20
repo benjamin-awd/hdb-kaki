@@ -90,4 +90,19 @@ test('flat-insights form card: values and sub-labels align within each row', asy
       label('value→caption gap spread'),
     ).toBeLessThanOrEqual(TOL);
   }
+
+  // A native <select> insets its text by a browser-specific amount that bounding
+  // boxes can't see, pushing the value right of the label. The fix relies on
+  // appearance:none + zero left padding, so guard those directly.
+  const selects = await page.$$eval('.form-grid .field select', (els) =>
+    els.map((el) => {
+      const s = getComputedStyle(el);
+      return { appearance: s.appearance, paddingLeft: s.paddingLeft };
+    }),
+  );
+  expect(selects.length).toBeGreaterThan(0);
+  for (const s of selects) {
+    expect(s.appearance, 'select must drop native appearance (it insets text)').toBe('none');
+    expect(parseFloat(s.paddingLeft), 'select must be flush-left with the label').toBe(0);
+  }
 });
