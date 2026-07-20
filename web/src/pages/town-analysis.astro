@@ -4,6 +4,7 @@ import SecHead from '../components/SecHead.astro';
 import ChartCard from '../components/ChartCard.astro';
 import FieldSelect from '../components/FieldSelect.astro';
 import Pager from '../components/Pager.astro';
+import DataTable from '../components/DataTable.astro';
 ---
 
 <Base active="Town Analysis" title="Town Analysis | HDB Kaki">
@@ -95,19 +96,17 @@ import Pager from '../components/Pager.astro';
     <!-- 03 · DATA TABLE -->
     <SecHead num="03" title="Data behind the map"> Every point currently in view. </SecHead>
     <div class="card table-card">
-      <table class="comp">
-        <thead
-          ><tr
-            ><th>Sold</th><th>Address</th><th class="r">Price</th><th class="r">PSF</th><th
-              class="r">Lease left</th
-            ><th>Band</th></tr
-          ></thead
-        >
-        <tbody id="tbody-town"
-          ><tr><td colspan="6" style="padding:22px 16px;color:var(--ink-3)">Loading…</td></tr
-          ></tbody
-        >
-      </table>
+      <DataTable
+        headers={[
+          { label: 'Sold' },
+          { label: 'Address' },
+          { label: 'Price', align: 'r' },
+          { label: 'PSF', align: 'r' },
+          { label: 'Lease left', align: 'r' },
+          { label: 'Band' },
+        ]}
+        bodyId="tbody-town"
+      />
       <div class="tbl-foot">
         <span id="town-foot">&nbsp;</span><a class="ghost" href="#" id="dl-town"
           >Download data in view (CSV) ↓</a

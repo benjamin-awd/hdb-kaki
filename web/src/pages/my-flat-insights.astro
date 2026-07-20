@@ -2,6 +2,7 @@
 import Base from '../layouts/Base.astro';
 import SecHead from '../components/SecHead.astro';
 import ChartCard from '../components/ChartCard.astro';
+import DataTable from '../components/DataTable.astro';
 ---
 
 <Base active="My Flat Insights" title="My Flat Insights | HDB Kaki">
@@ -263,22 +264,19 @@ import ChartCard from '../components/ChartCard.astro';
 
       <div class="split">
         <div class="card comp-wrap">
-          <table class="comp">
-            <thead
-              ><tr
-                ><th>Address</th><th>Storey</th><th class="r">Area</th><th class="r">Lease</th><th
-                  class="r">Price</th
-                ><th class="r">PSF</th><th class="r">Sold</th></tr
-              ></thead
-            >
-            <tbody id="comp-body"
-              ><tr
-                ><td colspan="7" style="padding:22px 16px;color:var(--ink-3)"
-                  >Enter a postal code…</td
-                ></tr
-              ></tbody
-            >
-          </table>
+          <DataTable
+            headers={[
+              { label: 'Address' },
+              { label: 'Storey' },
+              { label: 'Area', align: 'r' },
+              { label: 'Lease', align: 'r' },
+              { label: 'Price', align: 'r' },
+              { label: 'PSF', align: 'r' },
+              { label: 'Sold', align: 'r' },
+            ]}
+            bodyId="comp-body"
+            loadingText="Enter a postal code…"
+          />
           <div class="comp-foot"><span id="comp-foot">&nbsp;</span></div>
         </div>
         <div id="ins-map" class="map-real"></div>
