@@ -340,6 +340,13 @@ import LeafletMap from '../components/LeafletMap.astro';
     color: var(--ink-3);
     margin-bottom: 9px;
   }
+  /* The step chip is out of flow (absolute), so the postal label keeps the same height
+     as its neighbours; the form-alignment test asserts every cell in a row shares one
+     value baseline. padding-left just reserves the space the chip overlays. */
+  .field label[for='f-postal'] {
+    position: relative;
+    padding-left: 25px;
+  }
   .field .val {
     font-size: 17px;
     font-weight: 500;
@@ -412,13 +419,15 @@ import LeafletMap from '../components/LeafletMap.astro';
     font-weight: 600;
   }
   .field label .step {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 17px;
     height: 17px;
-    margin-right: 7px;
-    vertical-align: -3px;
     border-radius: 50%;
     background: var(--red);
     color: #fff;
