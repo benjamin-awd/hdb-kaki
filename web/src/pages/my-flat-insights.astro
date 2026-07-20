@@ -9,10 +9,9 @@ import LeafletMap from '../components/LeafletMap.astro';
 ---
 
 <Base active="My Flat Insights" title="My Flat Insights | HDB Kaki">
-  <!-- The DuckDB engine is warmed from JS (at idle after load, and on first focus of the
-       postal field), so we deliberately do NOT <link rel="prefetch"> the wasm here: a
-       declarative prefetch would pull the ~4.7 MB wasm a second time, since the worker's
-       instantiate fetch doesn't reuse the prefetch cache. -->
+  <!-- The DuckDB engine is warmed from JS (at idle after load), so we deliberately do NOT
+       <link rel="prefetch"> the wasm here: a declarative prefetch would pull the ~4.7 MB wasm
+       a second time, since the worker's instantiate fetch doesn't reuse the prefetch cache. -->
   <section class="hero">
     <div class="wrap">
       <span class="eyebrow rise"><span class="dot"></span> New · Personalised</span>
@@ -20,22 +19,24 @@ import LeafletMap from '../components/LeafletMap.astro';
         What's your flat<br /><em>really</em> worth?
       </h1>
       <p class="lede solo rise" style="animation-delay:.1s">
-        Enter your postal code and we'll value your flat against nearby transactions.
+        Start with your postal code, and we'll value your flat against nearby transactions.
       </p>
 
       <div class="form-card rise" style="animation-delay:.16s">
         <div class="form-grid">
           <div class="field">
-            <label for="f-postal">Postal code</label>
+            <label for="f-postal"><span class="step">1</span>Postal code</label>
             <input
               id="f-postal"
               class="big"
               type="text"
               inputmode="numeric"
               maxlength="6"
+              placeholder="e.g. 560123"
               value=""
+              autofocus
             />
-            <div class="sub" id="f-postal-sub">&nbsp;</div>
+            <div class="sub cue" id="f-postal-sub">Start here · your 6-digit code</div>
           </div>
           <div class="field">
             <label for="f-flat">Flat type</label>
@@ -405,6 +406,25 @@ import LeafletMap from '../components/LeafletMap.astro';
     font-size: 12.5px;
     color: var(--ink-3);
     margin-top: 5px;
+  }
+  .field .sub.cue {
+    color: var(--red-ink);
+    font-weight: 600;
+  }
+  .field label .step {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 17px;
+    height: 17px;
+    margin-right: 7px;
+    vertical-align: -3px;
+    border-radius: 50%;
+    background: var(--red);
+    color: #fff;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0;
   }
   .form-foot {
     display: flex;
@@ -922,12 +942,15 @@ import LeafletMap from '../components/LeafletMap.astro';
   // the engine only downloads when the user runs a valuation.
   import { createQuery, sqlEsc as sql, byId as $ } from '../lib/duckdbClient';
 
-  const { query, prefetch, warmEngineWhenIdle } = createQuery();
-  // No default valuation is auto-loaded any more, so there's no query to front-run on load.
-  // Still warm the engine speculatively at idle (skipped under Save-Data, deferred while the
-  // page is only being prerendered) so it's ready by the time the user finishes typing their
-  // postal; a focus on the field below warms eagerly on explicit intent. Both are idempotent
-  // and reuse the one lazy engine import.
+  const { query, warmEngineWhenIdle } = createQuery();
+  // No default valuation is auto-loaded, so there's no query to front-run on load. Warm the
+  // engine speculatively at idle instead (skipped under Save-Data; deferred while the page is
+  // only being prerendered, though this page is noPrefetch so that never fires) so it's ready
+  // by the time the user finishes typing their postal — without contending with first paint,
+  // which matters on this map- and chart-heavy page. Idempotent; reuses the one lazy engine
+  // import. There is no focus-triggered warm: the postal field autofocuses on load, so a
+  // focus listener would warm eagerly for everyone (including Save-Data), so the idle warm is
+  // the single entry point.
   warmEngineWhenIdle();
   import echarts, { initChart } from '../lib/echarts';
   import {
@@ -1011,7 +1034,9 @@ import LeafletMap from '../components/LeafletMap.astro';
       lc: Number(meta[0].lc),
     };
     userLatLng = meta[0].lat != null ? [Number(meta[0].lat), Number(meta[0].lng)] : null;
-    $('f-postal-sub').textContent = `${titleCase(block.address)} · ${titleCase(block.town)}`;
+    const postalSub = $('f-postal-sub');
+    postalSub.classList.remove('cue'); // resolved: drop the red "start here" prompt
+    postalSub.textContent = `${titleCase(block.address)} · ${titleCase(block.town)}`;
     $('resolved').textContent = ''; // clear any prior error now that we've resolved
     // flat_model is already stored in its canonical mixed case (DBSS, Model A, Type S1,
     // 3Gen), so render it as-is — titleCase would lowercase acronyms like DBSS -> Dbss.
@@ -1565,9 +1590,6 @@ import LeafletMap from '../components/LeafletMap.astro';
   }
 
   // ---- wiring ----
-  // Front-run the engine download the moment the user engages the form (explicit intent,
-  // so boot immediately rather than waiting for idle).
-  ($('f-postal') as HTMLInputElement).addEventListener('focus', prefetch, { once: true });
   ($('f-postal') as HTMLInputElement).addEventListener('change', async () => {
     if (await resolveBlock()) compute();
   });
