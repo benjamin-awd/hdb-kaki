@@ -1,0 +1,17 @@
+---
+// Numbered section header: a mono number in the gutter, a Fraunces heading, and an
+// optional deck (the ".hint") beneath it. The deck text is passed as the default slot;
+// `hintId` exposes it for scripts that rewrite the copy (e.g. My Flat Insights).
+interface Props {
+  num: string;
+  title: string;
+  rise?: boolean;
+  hintId?: string;
+}
+const { num, title, rise = false, hintId } = Astro.props;
+---
+
+<div class:list={['sec-head', { rise }]}>
+  <span class="num">{num}</span><h2>{title}</h2>
+  <span class="hint" id={hintId}><slot /></span>
+</div>
