@@ -296,6 +296,7 @@ import LeafletMap from '../components/LeafletMap.astro';
             ]}
             bodyId="comp-body"
             loadingText="Enter a postal code…"
+            stack
           />
           <div class="comp-foot"><span id="comp-foot">&nbsp;</span></div>
         </div>
@@ -1480,17 +1481,17 @@ import LeafletMap from '../components/LeafletMap.astro';
     const sorted = [...comps].sort(
       (a, b) => Number(sameStreet(b)) - Number(sameStreet(a)) || b.month.localeCompare(a.month),
     );
-    const youRow = `<tr class="you"><td class="addr"><b>${titleCase(block.address)}</b><span class="badge">YOUR FLAT</span><br><span class="st">Estimated</span></td>
-      <td>${storey}</td><td class="r">${area.toLocaleString()}</td><td class="r">${rem} yr</td>
-      <td class="r price">${money(estimate)}</td><td class="r psf">${fpsf(medPsf)}</td><td class="r">—</td></tr>`;
+    const youRow = `<tr class="you"><td class="addr" data-role="title"><b>${titleCase(block.address)}</b><span class="badge">YOUR FLAT</span><br><span class="st">Estimated</span></td>
+      <td data-role="meta">${storey}</td><td class="r" data-role="meta" data-suffix="sqft">${area.toLocaleString()}</td><td class="r" data-role="meta">${rem} yr</td>
+      <td class="r price" data-role="primary">${money(estimate)}</td><td class="r psf" data-role="meta" data-suffix="psf">${fpsf(medPsf)}</td><td class="r" data-role="meta">—</td><td class="tbreak" aria-hidden="true"></td></tr>`;
     const rows = sorted
       .slice(0, 8)
       .map(
         (
           c,
-        ) => `<tr><td class="addr"><b>${titleCase(c.address)}</b><br><span class="st">${titleCase(c.street_name)}</span></td>
-      <td>${c.storey_range}</td><td class="r">${c.area.toLocaleString()}</td><td class="r">${c.lease} yr</td>
-      <td class="r price">${money(c.price)}</td><td class="r psf">${fpsf(c.psf)}</td><td class="r">${c.month}</td></tr>`,
+        ) => `<tr><td class="addr" data-role="title"><b>${titleCase(c.address)}</b><br><span class="st">${titleCase(c.street_name)}</span></td>
+      <td data-role="meta">${c.storey_range}</td><td class="r" data-role="meta" data-suffix="sqft">${c.area.toLocaleString()}</td><td class="r" data-role="meta">${c.lease} yr</td>
+      <td class="r price" data-role="primary">${money(c.price)}</td><td class="r psf" data-role="meta" data-suffix="psf">${fpsf(c.psf)}</td><td class="r" data-role="meta">${c.month}</td><td class="tbreak" aria-hidden="true"></td></tr>`,
       )
       .join('');
     $('comp-body').innerHTML = youRow + rows;
