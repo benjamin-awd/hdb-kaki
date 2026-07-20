@@ -323,8 +323,6 @@ import LeafletMap from '../components/LeafletMap.astro';
     gap: 0;
   }
   .field {
-    display: flex;
-    flex-direction: column;
     padding: 18px 22px;
     border-right: 1px solid var(--line);
     border-bottom: 1px solid var(--line);
@@ -341,14 +339,9 @@ import LeafletMap from '../components/LeafletMap.astro';
     color: var(--ink-3);
     margin-bottom: 9px;
   }
-  /* Values are anchored to the bottom of the cell (margin-top:auto) so that
-     across a row the differently-sized values (the 26px postal code vs the
-     17px selects) share a baseline. Their sub-labels then line up too, with a
-     uniform gap below each value. */
   .field .val {
     font-size: 17px;
     font-weight: 500;
-    margin-top: auto;
   }
   .field input,
   .field select {
@@ -361,7 +354,21 @@ import LeafletMap from '../components/LeafletMap.astro';
     color: var(--ink);
     outline: none;
     padding: 0;
-    margin-top: auto;
+  }
+  /* Every value occupies the same fixed-height box (tall enough for the 26px
+     postal code) so the differently-sized values don't change their own cell's
+     height. Because all six cells then have identical structure, the labels,
+     values and sub-labels line up across each row with uniform gaps, whatever
+     the font size. An explicit height (not just line-height) is needed because
+     <select> ignores line-height for its box height. The postal glyphs are
+     still larger; they just sit centred in the same box. */
+  .field .val,
+  .field input,
+  .field select {
+    box-sizing: border-box;
+    display: block;
+    height: 32px;
+    line-height: 32px;
   }
   .field input.big {
     font-family: var(--font-mono);
