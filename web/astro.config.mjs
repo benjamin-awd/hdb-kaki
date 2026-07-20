@@ -65,7 +65,7 @@ export default defineConfig({
     // single source of truth). The production build therefore NEVER fetches from Google;
     // scripts/vendor-fonts.mjs downloads the files on demand (`bun run vendor-fonts`).
     //
-    // NB: the @font-face family names Astro emits are hashed (e.g. "Fraunces-<hash>"),
+    // NB: the @font-face family names Astro emits are hashed (e.g. "Newsreader-<hash>"),
     // so fonts are reachable ONLY through the cssVariable. All CSS and ECharts
     // fontFamily strings reference var(--font-*), never the literal family name.
     fonts: fontFamilies.map((f) => ({
