@@ -1,0 +1,51 @@
+---
+// Leaflet map container. Renders the sized box the page script mounts a map into
+// (`L.map(id)`), and owns the on-brand container + tooltip styling that was previously
+// duplicated across the two map pages. The `.hdb-tip` / `.leaflet-*` overrides are
+// :global because Leaflet builds those elements at runtime. Height is per-page: Town
+// Analysis fixes it, My Flat Insights uses a min-height.
+interface Props {
+  id: string;
+  height?: string;
+  minHeight?: string;
+}
+const { id, height, minHeight } = Astro.props;
+const style = [height && `height:${height}`, minHeight && `min-height:${minHeight}`]
+  .filter(Boolean)
+  .join(';');
+---
+
+<div id={id} class="map-real" style={style || undefined}></div>
+
+<style>
+  .map-real {
+    border-radius: var(--radius);
+    border: 1px solid var(--line);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    z-index: 0;
+  }
+  /* Leaflet builds these elements at runtime, so they must be :global. */
+  :global(.leaflet-container) {
+    font-family: var(--font-sans);
+    background: #f3ede1;
+  }
+  :global(.leaflet-tooltip.hdb-tip) {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    padding: 9px 12px;
+    line-height: 1.5;
+    white-space: nowrap;
+  }
+  :global(.leaflet-tooltip.hdb-tip b) {
+    font-weight: 600;
+  }
+  :global(.leaflet-tooltip-top.hdb-tip::before) {
+    border-top-color: var(--paper-2);
+  }
+</style>
