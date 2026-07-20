@@ -3,6 +3,7 @@ import Base from '../layouts/Base.astro';
 import SecHead from '../components/SecHead.astro';
 import ChartCard from '../components/ChartCard.astro';
 import DataTable from '../components/DataTable.astro';
+import LeafletMap from '../components/LeafletMap.astro';
 ---
 
 <Base active="My Flat Insights" title="My Flat Insights | HDB Kaki">
@@ -279,7 +280,7 @@ import DataTable from '../components/DataTable.astro';
           />
           <div class="comp-foot"><span id="comp-foot">&nbsp;</span></div>
         </div>
-        <div id="ins-map" class="map-real"></div>
+        <LeafletMap id="ins-map" minHeight="340px" />
       </div>
     </div>
   </section>
@@ -838,37 +839,6 @@ import DataTable from '../components/DataTable.astro';
   .lease-flag.warn {
     border-color: var(--red);
     background: var(--red-wash);
-  }
-  /* leaflet map */
-  .map-real {
-    min-height: 340px;
-    border-radius: var(--radius);
-    border: 1px solid var(--line);
-    box-shadow: var(--shadow);
-    overflow: hidden;
-    z-index: 0;
-  }
-  :global(.leaflet-container) {
-    font-family: var(--font-sans);
-    background: #f3ede1;
-  }
-  :global(.leaflet-tooltip.hdb-tip) {
-    background: var(--paper-2);
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    box-shadow: var(--shadow);
-    color: var(--ink);
-    font-family: var(--font-sans);
-    font-size: 13px;
-    padding: 9px 12px;
-    line-height: 1.5;
-    white-space: nowrap;
-  }
-  :global(.leaflet-tooltip.hdb-tip b) {
-    font-weight: 600;
-  }
-  :global(.leaflet-tooltip-top.hdb-tip::before) {
-    border-top-color: var(--paper-2);
   }
   @media (max-width: 900px) {
     .form-grid {
