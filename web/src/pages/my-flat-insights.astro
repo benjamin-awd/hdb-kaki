@@ -2,6 +2,10 @@
 import Base from '../layouts/Base.astro';
 import Info from '../components/Info.astro';
 import Term from '../components/Term.astro';
+import SecHead from '../components/SecHead.astro';
+import ChartCard from '../components/ChartCard.astro';
+import DataTable from '../components/DataTable.astro';
+import LeafletMap from '../components/LeafletMap.astro';
 ---
 
 <Base active="My Flat Insights" title="My Flat Insights | HDB Kaki">
@@ -70,12 +74,9 @@ import Term from '../components/Term.astro';
   <section class="results">
     <div class="wrap">
       <!-- 01 VALUATION -->
-      <div class="sec-head">
-        <span class="num">01</span><h2>Estimated valuation</h2>
-        <span class="hint" id="val-hint"
-          >Modelled from median PSF of comparable sales in your town.</span
-        >
-      </div>
+      <SecHead num="01" title="Estimated valuation" hintId="val-hint">
+        Modelled from median PSF of comparable sales in your town.
+      </SecHead>
 
       <div class="card val-hero">
         <div class="val-main">
@@ -135,19 +136,15 @@ import Term from '../components/Term.astro';
       </div>
 
       <!-- 02 PRICE TRAJECTORY -->
-      <div class="sec-head">
-        <span class="num">02</span><h2>Price trajectory</h2>
-        <span class="hint" id="traj-hint">How your flat type has moved here over the years.</span>
-      </div>
+      <SecHead num="02" title="Price trajectory" hintId="traj-hint">
+        How your flat type has moved here over the years.
+      </SecHead>
 
       <div class="split" style="grid-template-columns:1.55fr 1fr">
-        <div class="card chart-card">
-          <div class="chart-head">
-            <div class="chart-title" id="traj-title">Median PSF over time</div>
-            <span class="pill" id="traj-pill">—</span>
-          </div>
+        <ChartCard title="Median PSF over time" titleId="traj-title">
+          <span class="pill" id="traj-pill" slot="head">—</span>
           <div id="traj-chart" style="width:100%;height:300px"></div>
-        </div>
+        </ChartCard>
         <div class="card returns">
           <div class="ret-head">Your return so far</div>
           <p class="ret-lede">
@@ -184,10 +181,9 @@ import Term from '../components/Term.astro';
       </div>
 
       <!-- 03 BENCHMARKING -->
-      <div class="sec-head">
-        <span class="num">03</span><h2>How it benchmarks</h2>
-        <span class="hint" id="bench-hint">Your flat vs the town and island-wide market.</span>
-      </div>
+      <SecHead num="03" title="How it benchmarks" hintId="bench-hint">
+        Your flat vs the town and island-wide market.
+      </SecHead>
 
       <div class="bench-grid">
         <div class="card bench">
@@ -208,19 +204,15 @@ import Term from '../components/Term.astro';
       </div>
 
       <div class="split" style="grid-template-columns:1.4fr 1fr;margin-top:18px">
-        <div class="card chart-card">
-          <div class="chart-head">
-            <div class="chart-title">
-              Where you sit in the market<Info label="What does percentile mean?"
-                >The share of nearby sales priced below your estimate — e.g. 70th percentile beats
-                about 70% of them.</Info
-              >
-            </div>
-            <span class="pill" id="pctile-pill">—</span>
-          </div>
+        <ChartCard title="Where you sit in the market">
+          <Info slot="titleTip" label="What does percentile mean?"
+            >The share of nearby sales priced below your estimate — e.g. 70th percentile beats about
+            70% of them.</Info
+          >
+          <span class="pill" id="pctile-pill" slot="head">—</span>
           <div id="dist-chart" style="width:100%;height:210px"></div>
           <div class="dist-cap" id="dist-cap">&nbsp;</div>
-        </div>
+        </ChartCard>
         <div class="market-tiles">
           <div class="card mt">
             <div class="mt-k">Sales this window</div><div class="mt-v" id="mt-vel">—</div><div
@@ -250,12 +242,9 @@ import Term from '../components/Term.astro';
       </div>
 
       <!-- 04 LEASE & VALUE RUNWAY -->
-      <div class="sec-head">
-        <span class="num">04</span><h2>Lease &amp; value runway</h2>
-        <span class="hint"
-          >How prices soften as the lease runs down — and the ages that affect CPF &amp; loans.</span
-        >
-      </div>
+      <SecHead num="04" title="Lease & value runway">
+        How prices soften as the lease runs down — and the ages that affect CPF & loans.
+      </SecHead>
 
       <div class="card lease-card">
         <div class="lease-top">
@@ -276,45 +265,40 @@ import Term from '../components/Term.astro';
         <div class="lease-flags" id="lease-flags"></div>
       </div>
 
-      <div class="card chart-card" style="margin-top:18px">
-        <div class="chart-head">
-          <div class="chart-title" id="leasecurve-title">Median PSF by remaining lease</div>
-          <span class="chart-sub" id="leasecurve-sub"
-            >Same flat type, island-wide, last 24 months</span
-          >
-        </div>
+      <ChartCard
+        title="Median PSF by remaining lease"
+        titleId="leasecurve-title"
+        style="margin-top:18px"
+      >
+        <span class="chart-sub" id="leasecurve-sub" slot="head"
+          >Same flat type, island-wide, last 24 months</span
+        >
         <div id="lease-chart" style="width:100%;height:260px"></div>
-      </div>
+      </ChartCard>
 
       <!-- 05 COMPARABLES -->
-      <div class="sec-head">
-        <span class="num">05</span><h2>Nearby comparables</h2>
-        <span class="hint" id="comp-hint"
-          >Recent sales of the same flat type in your town, same street first.</span
-        >
-      </div>
+      <SecHead num="05" title="Nearby comparables" hintId="comp-hint">
+        Recent sales of the same flat type in your town, same street first.
+      </SecHead>
 
       <div class="split">
         <div class="card comp-wrap">
-          <table class="comp">
-            <thead
-              ><tr
-                ><th>Address</th><th>Storey</th><th class="r">Area</th><th class="r">Lease</th><th
-                  class="r">Price</th
-                ><th class="r">PSF</th><th class="r">Sold</th></tr
-              ></thead
-            >
-            <tbody id="comp-body"
-              ><tr
-                ><td colspan="7" style="padding:22px 16px;color:var(--ink-3)"
-                  >Enter a postal code…</td
-                ></tr
-              ></tbody
-            >
-          </table>
+          <DataTable
+            headers={[
+              { label: 'Address' },
+              { label: 'Storey' },
+              { label: 'Area', align: 'r' },
+              { label: 'Lease', align: 'r' },
+              { label: 'Price', align: 'r' },
+              { label: 'PSF', align: 'r' },
+              { label: 'Sold', align: 'r' },
+            ]}
+            bodyId="comp-body"
+            loadingText="Enter a postal code…"
+          />
           <div class="comp-foot"><span id="comp-foot">&nbsp;</span></div>
         </div>
-        <div id="ins-map" class="map-real"></div>
+        <LeafletMap id="ins-map" minHeight="340px" />
       </div>
     </div>
   </section>
@@ -873,37 +857,6 @@ import Term from '../components/Term.astro';
   .lease-flag.warn {
     border-color: var(--red);
     background: var(--red-wash);
-  }
-  /* leaflet map */
-  .map-real {
-    min-height: 340px;
-    border-radius: var(--radius);
-    border: 1px solid var(--line);
-    box-shadow: var(--shadow);
-    overflow: hidden;
-    z-index: 0;
-  }
-  :global(.leaflet-container) {
-    font-family: var(--font-sans);
-    background: #f3ede1;
-  }
-  :global(.leaflet-tooltip.hdb-tip) {
-    background: var(--paper-2);
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    box-shadow: var(--shadow);
-    color: var(--ink);
-    font-family: var(--font-sans);
-    font-size: 13px;
-    padding: 9px 12px;
-    line-height: 1.5;
-    white-space: nowrap;
-  }
-  :global(.leaflet-tooltip.hdb-tip b) {
-    font-weight: 600;
-  }
-  :global(.leaflet-tooltip-top.hdb-tip::before) {
-    border-top-color: var(--paper-2);
   }
   @media (max-width: 900px) {
     .form-grid {

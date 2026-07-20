@@ -32,3 +32,28 @@ repos:
       - id: ruff
         entry: ruff check
         args: [ --fix ]
+
+  # web/ (Astro site) — mirrors the checks in .github/workflows/validate.yaml.
+  # pre-commit has no per-hook cwd, so each entry cds into web/ and runs the
+  # matching bun script. pass_filenames is false because these tools glob the
+  # whole project themselves (as they do in CI).
+  - repo: local
+    hooks:
+      - id: web-astro-check
+        name: astro check (web)
+        entry: bash -c 'cd web && bun run check'
+        language: system
+        files: ^web/
+        pass_filenames: false
+      - id: web-eslint
+        name: eslint (web)
+        entry: bash -c 'cd web && bun run lint'
+        language: system
+        files: ^web/
+        pass_filenames: false
+      - id: web-prettier
+        name: prettier (web)
+        entry: bash -c 'cd web && bun run format:check'
+        language: system
+        files: ^web/
+        pass_filenames: false
