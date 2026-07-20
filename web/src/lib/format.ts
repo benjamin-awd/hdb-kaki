@@ -1,7 +1,6 @@
 // Shared number/label formatting for charts and tables.
 
-export const money = (n: number): string =>
-  '$' + Math.round(n).toLocaleString('en-SG');
+export const money = (n: number): string => '$' + Math.round(n).toLocaleString('en-SG');
 
 export const moneyShort = (n: number): string => {
   if (n >= 1e6) return '$' + (n / 1e6).toFixed(2) + 'm';

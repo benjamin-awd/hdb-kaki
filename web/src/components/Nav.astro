@@ -19,7 +19,9 @@ const links = [
 
 <header class="nav">
   <div class="wrap nav-in">
-    <a class="brand" href="/"><img class="brand-icon" src={`${base}logo-icon.svg`} alt="" width="30" height="30" /> HDB&nbsp;Kaki</a>
+    <a class="brand" href="/"
+      ><img class="brand-icon" src={`${base}logo-icon.svg`} alt="" width="30" height="30" /> hdb&nbsp;kaki</a
+    >
     <button
       class="nav-toggle"
       type="button"
@@ -32,9 +34,17 @@ const links = [
       <span class="nav-toggle-bar"></span>
     </button>
     <nav class="nav-links" id="nav-links">
-      {links.map((l) => (
-        <a href={l.href} class={l.label === active ? 'active' : ''} data-astro-prefetch={l.noPrefetch ? 'false' : undefined}>{l.label}</a>
-      ))}
+      {
+        links.map((l) => (
+          <a
+            href={l.href}
+            class={l.label === active ? 'active' : ''}
+            data-astro-prefetch={l.noPrefetch ? 'false' : undefined}
+          >
+            {l.label}
+          </a>
+        ))
+      }
     </nav>
   </div>
 </header>

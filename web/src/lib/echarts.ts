@@ -16,9 +16,18 @@ import {
 import { CanvasRenderer } from 'echarts/renderers';
 
 echarts.use([
-  LineChart, BarChart, ScatterChart, BoxplotChart, MapChart,
-  GridComponent, TooltipComponent, LegendComponent, MarkLineComponent,
-  AxisPointerComponent, DataZoomInsideComponent, DataZoomSliderComponent,
+  LineChart,
+  BarChart,
+  ScatterChart,
+  BoxplotChart,
+  MapChart,
+  GridComponent,
+  TooltipComponent,
+  LegendComponent,
+  MarkLineComponent,
+  AxisPointerComponent,
+  DataZoomInsideComponent,
+  DataZoomSliderComponent,
   VisualMapComponent,
   CanvasRenderer,
 ]);

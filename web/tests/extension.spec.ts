@@ -10,10 +10,9 @@ test('read_parquet uses the self-hosted extension, not extensions.duckdb.org', a
     return r.abort();
   });
 
-  const extReq = page.waitForRequest(
-    /\/duckdb\/.*\/ext\/.*parquet\.duckdb_extension\.wasm$/,
-    { timeout: 45_000 },
-  );
+  const extReq = page.waitForRequest(/\/duckdb\/.*\/ext\/.*parquet\.duckdb_extension\.wasm$/, {
+    timeout: 45_000,
+  });
 
   await page.goto('/town-analysis/');
   await expect(page.locator('#map-sub')).toContainText('Ang Mo Kio', { timeout: 20_000 });
