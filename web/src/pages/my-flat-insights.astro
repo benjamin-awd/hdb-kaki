@@ -97,6 +97,20 @@ import LeafletMap from '../components/LeafletMap.astro';
               >
             </div>
           </div>
+          <div class="toolbar">
+            <button class="btn primary" id="copy-link" type="button">
+              <span class="ic">🔗</span> Copy shareable link
+            </button>
+            <button class="btn" id="dl-comps" type="button">
+              <span class="ic">⭳</span> Download comps (CSV)
+            </button>
+            <button class="btn" id="print-btn" type="button">
+              <span class="ic">🖨</span> Print / save PDF
+            </button>
+          </div>
+          <div class="toast" id="copy-toast" role="status" aria-live="polite">
+            ✓ Link copied · anyone who opens it sees this exact valuation
+          </div>
         </div>
         <div class="val-side">
           <div class="vs-label">How we got here</div>
@@ -134,6 +148,20 @@ import LeafletMap from '../components/LeafletMap.astro';
             resale transactions from data.gov.sg.
           </p>
         </div>
+      </div>
+
+      <!-- One-page printable summary. Hidden on screen; the print stylesheet hides the
+           app shell and reveals only this. Populated by fillPrintSummary() on each compute. -->
+      <div class="print-summary" id="print-summary" aria-hidden="true">
+        <div class="ps-brand">HDB Kaki · Flat valuation</div>
+        <div class="ps-sub" id="ps-sub"></div>
+        <div class="ps-est" id="ps-est">—</div>
+        <div class="ps-rng" id="ps-rng"></div>
+        <h4>Comparable sales</h4>
+        <div id="ps-comps"></div>
+        <h4>Benchmarks</h4>
+        <div id="ps-bench"></div>
+        <div class="ps-foot" id="ps-foot"></div>
       </div>
 
       <!-- 02 PRICE TRAJECTORY -->
@@ -943,6 +971,132 @@ import LeafletMap from '../components/LeafletMap.astro';
       grid-template-columns: 1fr !important;
     }
   }
+
+  /* ---- export toolbar (in the valuation hero) ---- */
+  .toolbar {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 20px;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font: inherit;
+    font-size: 13.5px;
+    font-weight: 600;
+    border: 1px solid var(--line);
+    background: var(--paper-2);
+    color: var(--ink);
+    border-radius: 10px;
+    padding: 9px 14px;
+    cursor: pointer;
+  }
+  .btn:hover {
+    border-color: var(--ink);
+  }
+  .btn.primary {
+    background: var(--red);
+    border-color: var(--red);
+    color: #fff;
+  }
+  .btn .ic {
+    font-family: var(--font-mono);
+    font-weight: 700;
+  }
+  .toast {
+    display: none;
+    align-items: center;
+    gap: 7px;
+    font-size: 12.5px;
+    color: var(--good);
+    background: var(--good-wash);
+    border: 1px solid #cfe6d8;
+    border-radius: 999px;
+    padding: 6px 12px;
+    margin-top: 12px;
+    width: fit-content;
+  }
+  .toast.show {
+    display: inline-flex;
+  }
+
+  /* ---- printable one-page summary: hidden on screen, revealed for print ---- */
+  .print-summary {
+    display: none;
+  }
+  .print-summary .ps-brand {
+    font-family: var(--font-brand);
+    font-weight: 700;
+    font-size: 18px;
+  }
+  .print-summary .ps-sub {
+    font-size: 13px;
+    color: var(--ink-3);
+    margin-top: 2px;
+  }
+  .print-summary .ps-est {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 34px;
+    color: var(--red-ink);
+    margin-top: 10px;
+    letter-spacing: -0.02em;
+  }
+  .print-summary .ps-rng {
+    font-size: 13px;
+    color: var(--ink-2);
+    margin-top: 2px;
+  }
+  .print-summary h4 {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 18px 0 6px;
+  }
+  .print-summary .ps-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12.5px;
+    color: var(--ink-2);
+    padding: 3px 0;
+    border-bottom: 1px dashed var(--line);
+  }
+  .print-summary .ps-row .mono {
+    color: var(--ink);
+  }
+  .print-summary .ps-bench-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12.5px;
+    color: var(--ink-2);
+    padding: 2px 0;
+  }
+  .print-summary .ps-foot {
+    font-size: 10.5px;
+    color: var(--ink-3);
+    margin-top: 14px;
+  }
+
+  @media print {
+    /* Print only the one-page summary: drop the interactive shell, forms, charts, map. */
+    .hero,
+    .results > .wrap > *:not(.print-summary) {
+      display: none !important;
+    }
+    .results {
+      padding: 0 !important;
+    }
+    .print-summary {
+      display: block;
+    }
+    @page {
+      margin: 14mm;
+    }
+  }
 </style>
 
 <script>
@@ -951,6 +1105,8 @@ import LeafletMap from '../components/LeafletMap.astro';
   // DuckDB-WASM is heavy; load it lazily so the page shell is interactive first and
   // the engine only downloads when the user runs a valuation.
   import { createQuery, sqlEsc as sql, byId as $ } from '../lib/duckdbClient';
+  import { createUrlState, selectBinding, inputBinding } from '../lib/urlState';
+  import { downloadCsv } from '../lib/csv';
 
   const { query, warmEngineWhenIdle } = createQuery();
   // No default valuation is auto-loaded, so there's no query to front-run on load. Warm the
@@ -986,6 +1142,22 @@ import LeafletMap from '../components/LeafletMap.astro';
   const ec = (id: string) => (charts[id] ??= initChart($(id)));
   // State the "returns" panel needs so it can recompute on input change without re-querying.
   let currentEstimate = 0;
+  let currentComps: any[] = []; // last compute()'s comps — for the CSV export
+
+  // URL-synced form state (see web/src/lib/urlState.ts). All default to '' so an empty form
+  // yields an empty query string; a computed view syncs the full deep link. The selects are
+  // populated async (f-flat by resolveBlock, f-storey by onFlatChange) — restoreFromUrl()
+  // handles that ordering explicitly, so writes always land on real options.
+  const url = createUrlState(
+    [
+      inputBinding('f-postal', 'postal', ''),
+      selectBinding('f-flat', 'flat', ''),
+      selectBinding('f-storey', 'storey', ''),
+      inputBinding('f-area', 'area', ''),
+      inputBinding('f-lease', 'lease', ''),
+    ],
+    ['postal', 'flat', 'storey', 'area', 'lease'],
+  );
   let townYearPrice: Record<string, number> = {}; // 'YYYY' -> town median price for the flat type
   let latestYear = '';
 
@@ -1597,6 +1769,51 @@ import LeafletMap from '../components/LeafletMap.astro';
     }
     if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.15));
     setTimeout(() => map.invalidateSize(), 50);
+
+    // Export state: keep the comps for the CSV, refresh the print summary, and track the
+    // computed view in the URL so copy-link / bookmarks reproduce it.
+    currentComps = comps;
+    fillPrintSummary({ flat, storey, area, rem, estimate, low, high, medPsf, townPrice, months });
+    url.sync();
+  }
+
+  // Populate the hidden one-page print summary from a finished compute().
+  function fillPrintSummary(d: {
+    flat: string;
+    storey: string;
+    area: number;
+    rem: number;
+    estimate: number;
+    low: number;
+    high: number;
+    medPsf: number;
+    townPrice: number;
+    months: number;
+  }) {
+    $('ps-sub').textContent =
+      `${titleCase(block.address)} · ${titleCase(block.town)} · ${titleCase(d.flat)} · ` +
+      `${d.area.toLocaleString()} sqft` +
+      (block.lc ? ` · lease from ${block.lc}` : '');
+    $('ps-est').textContent = money(d.estimate);
+    $('ps-rng').textContent =
+      `Likely range ${moneyShort(d.low)} – ${moneyShort(d.high)} · based on ` +
+      `${currentComps.length} comparable sale${currentComps.length === 1 ? '' : 's'} in the last ${d.months} months`;
+    const topComps = [...currentComps].sort((a, b) => b.month.localeCompare(a.month)).slice(0, 5);
+    $('ps-comps').innerHTML = topComps
+      .map(
+        (c) =>
+          `<div class="ps-row"><span>${titleCase(c.address)} · storey ${c.storey_range} · ${c.month}</span><span class="mono">${money(c.price)}</span></div>`,
+      )
+      .join('');
+    $('ps-bench').innerHTML =
+      `<div class="ps-bench-row"><span>Town median (${titleCase(d.flat)})</span><span class="mono">${money(d.townPrice)}</span></div>` +
+      `<div class="ps-bench-row"><span>Median PSF</span><span class="mono">${fpsf(d.medPsf)}</span></div>`;
+    $('ps-foot').textContent =
+      `Estimate only, not a formal valuation. Generated ${new Date().toLocaleDateString('en-SG', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      })}.`;
   }
 
   // ---- wiring ----
@@ -1623,6 +1840,82 @@ import LeafletMap from '../components/LeafletMap.astro';
     await compute();
     document.querySelector('.results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
+
+  // ---- export toolbar ----
+  $('copy-link').addEventListener('click', async () => {
+    url.sync(); // make sure the URL reflects the current computed view before copying
+    const link = location.href;
+    try {
+      await navigator.clipboard.writeText(link);
+    } catch {
+      // Older Safari / non-secure contexts: fall back to a hidden textarea + execCommand.
+      const ta = document.createElement('textarea');
+      ta.value = link;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+      } catch {
+        /* nothing else to try */
+      }
+      document.body.removeChild(ta);
+    }
+    const toast = $('copy-toast');
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 2500);
+  });
+
+  $('dl-comps').addEventListener('click', () => {
+    if (!currentComps.length) return;
+    downloadCsv(
+      'my-flat-comps.csv',
+      ['month', 'address', 'street_name', 'storey_range', 'area', 'lease', 'price', 'psf'],
+      currentComps.map((c) => [
+        c.month,
+        c.address,
+        c.street_name,
+        c.storey_range,
+        c.area,
+        c.lease,
+        c.price,
+        Math.round(c.psf),
+      ]),
+    );
+  });
+
+  $('print-btn').addEventListener('click', () => window.print());
+
+  // ---- deep-link restore ----
+  // No postal param → the page stays inert (no DuckDB boot), preserving the JS-free-ish
+  // cold load. resolveBlock()/onFlatChange() auto-overwrite storey/area/lease every run, so
+  // URL overrides for those are applied strictly AFTER the last onFlatChange().
+  async function restoreFromUrl() {
+    const params = new URLSearchParams(location.search);
+    const postal = params.get('postal');
+    if (!postal) return;
+    ($('f-postal') as HTMLInputElement).value = postal;
+    if (!(await resolveBlock())) return; // populates f-flat + runs onFlatChange
+    const flat = params.get('flat');
+    if (flat) {
+      const sel = $('f-flat') as HTMLSelectElement;
+      if ([...sel.options].some((o) => o.value === flat)) {
+        sel.value = flat;
+        await onFlatChange();
+      }
+    }
+    // Apply the storey/area/lease overrides last (unknown values are graceful no-op sets).
+    const storey = params.get('storey');
+    if (storey) ($('f-storey') as HTMLSelectElement).value = storey;
+    const area = params.get('area');
+    if (area) ($('f-area') as HTMLInputElement).value = area;
+    const lease = params.get('lease');
+    if (lease) ($('f-lease') as HTMLInputElement).value = lease;
+    await compute();
+    document.querySelector('.results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  restoreFromUrl();
 
   window.addEventListener('resize', () => {
     map.invalidateSize();

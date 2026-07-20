@@ -25,3 +25,13 @@ test('changing the Town filter boots DuckDB and re-renders', async ({ page }) =>
   await page.selectOption('#sel-town', 'BEDOK');
   await expect(page.locator('#chart-title')).toContainText('Bedok', { timeout: 45_000 });
 });
+
+test('a deep link restores town, storey and regression mode', async ({ page }) => {
+  await page.goto('/psf-trends/?town=CLEMENTI&storey=13-99&reg=loess');
+
+  await expect(page.locator('#sel-town')).toHaveValue('CLEMENTI');
+  await expect(page.locator('#sel-storey')).toHaveValue('13-99');
+  // The regression toggle's .on chip follows the `reg` param.
+  await expect(page.locator('#reg-toggle .chip.on')).toHaveAttribute('data-reg', 'loess');
+  await expect(page.locator('#chart-title')).toContainText('Clementi', { timeout: 45_000 });
+});

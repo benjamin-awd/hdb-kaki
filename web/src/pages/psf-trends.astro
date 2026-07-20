@@ -131,6 +131,7 @@ import DataTable from '../components/DataTable.astro';
     setStreets,
     loadStreets,
   } from '../lib/duckdbClient';
+  import { createUrlState, selectBinding, chipBinding } from '../lib/urlState';
 
   const { query, warmEngineWhenIdle } = createQuery();
   const START = '2020-01';
@@ -427,8 +428,34 @@ import DataTable from '../components/DataTable.astro';
       .join('');
     setStreets($('sel-street'), data.streets);
 
+    // URL-synced filter state (see web/src/lib/urlState.ts), declared now the selects are
+    // populated. The town default is the snapshot's own default town.
+    const url = createUrlState(
+      [
+        selectBinding('sel-town', 'town', data.default.town),
+        selectBinding('sel-street', 'street', '__all'),
+        selectBinding('sel-storey', 'storey', 'all'),
+        chipBinding('#reg-toggle', 'reg', 'reg', 'ols'),
+      ],
+      ['town', 'street', 'storey', 'reg'],
+    );
+
     // Paint immediately from JSON — no DuckDB needed for the default view.
     paintChart(data.sample, data.monthly);
+
+    // Deep-link restore, gated on deviation so a bare /psf-trends/ stays JS-free. Street
+    // is deferred: snapshot streets only cover the default town, so a non-default town
+    // repopulates them (booting the engine) before the street value is applied.
+    if (url.deviates()) {
+      url.restore({ only: ['town', 'storey', 'reg'] });
+      regType =
+        ((document.querySelector('#reg-toggle .chip.on') as HTMLElement | null)?.dataset.reg as
+          'ols' | 'loess') ?? regType;
+      const town = ($('sel-town') as HTMLSelectElement).value;
+      if (town !== data.default.town) setStreets($('sel-street'), await loadStreets(query, town));
+      url.applyKey('street');
+      loadRender();
+    }
 
     // Filters (and the semantic-zoom resample) go through DuckDB.
     $('sel-town').addEventListener('change', async () => {
@@ -437,9 +464,22 @@ import DataTable from '../components/DataTable.astro';
         await loadStreets(query, ($('sel-town') as HTMLSelectElement).value),
       );
       loadRender();
+      url.sync();
     });
-    $('sel-street').addEventListener('change', loadRender);
-    $('sel-storey').addEventListener('change', loadRender);
+    $('sel-street').addEventListener('change', () => {
+      loadRender();
+      url.sync();
+    });
+    $('sel-storey').addEventListener('change', () => {
+      loadRender();
+      url.sync();
+    });
+
+    // Keep the OLS/LOWESS toggle in the URL. Declared here (needs `url`), so the earlier
+    // module-level #reg-toggle handler only re-fits; this one records the choice.
+    document.querySelectorAll<HTMLButtonElement>('#reg-toggle .chip').forEach((btn) => {
+      btn.addEventListener('click', () => url.sync());
+    });
 
     warmEngineWhenIdle();
   })();
