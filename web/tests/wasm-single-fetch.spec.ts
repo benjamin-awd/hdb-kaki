@@ -4,7 +4,9 @@ import { test, expect } from '@playwright/test';
 // load; that warm both downloads and instantiates the wasm. A stray <link rel="prefetch">
 // for the same wasm used to fire a SECOND download (the prefetch cache isn't reused by
 // the worker's instantiate fetch), so the engine came down twice. It must be exactly once.
-test('the engine wasm is downloaded exactly once on a page that boots on load', async ({ page }) => {
+test('the engine wasm is downloaded exactly once on a page that boots on load', async ({
+  page,
+}) => {
   const wasmReqs: string[] = [];
   page.on('request', (r) => {
     if (/\/duckdb\/.*\/duckdb-eh\.wasm$/.test(r.url())) wasmReqs.push(r.url());

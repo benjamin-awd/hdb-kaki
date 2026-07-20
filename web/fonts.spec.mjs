@@ -32,6 +32,16 @@ export const families = [
     styles: ['normal', 'italic'],
   },
   {
+    // The logo wordmark ("hdb kaki") is set in Quicksand Bold; the nav brand text
+    // uses this to match it (src/components/Nav.astro + the .brand rule in
+    // src/styles/global.css).
+    googleName: 'Quicksand',
+    cssVariable: '--font-brand',
+    fallbacks: ['sans-serif'],
+    weights: [700],
+    styles: ['normal'],
+  },
+  {
     googleName: 'Public Sans',
     cssVariable: '--font-sans',
     fallbacks: ['sans-serif'],
@@ -47,7 +57,11 @@ export const families = [
   },
 ];
 
-const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+const slug = (s) =>
+  s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
 
 /** Deterministic path (relative to web/) for one variant's woff2 file. */
 export function variantFile(googleName, weight, style) {

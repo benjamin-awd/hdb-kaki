@@ -82,5 +82,8 @@ function upstreamFallback(pathname: string): Response {
   if (slash === -1) return new Response('Not found', { status: 404 });
   const version = key.slice(0, slash);
   const file = key.slice(slash + 1);
-  return Response.redirect(`https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@${version}/dist/${file}`, 302);
+  return Response.redirect(
+    `https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@${version}/dist/${file}`,
+    302,
+  );
 }
