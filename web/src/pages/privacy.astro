@@ -1,0 +1,77 @@
+---
+import Base from '../layouts/Base.astro';
+---
+
+<Base
+  title="Privacy Policy | HDB Kaki"
+  description="How HDB Kaki handles your data: no accounts, no tracking, and your flat details never leave your browser."
+>
+  <section class="hero">
+    <div class="wrap">
+      <span class="eyebrow rise"><span class="dot"></span> Privacy</span>
+      <h1 class="title rise" style="animation-delay:.05s">
+        Your privacy,<br /><em>by design</em>.
+      </h1>
+      <p class="lede rise" style="animation-delay:.1s">
+        HDB Kaki is built to work without knowing who you are. There is no account, no tracking, and
+        the details you type about your flat never leave your device.
+      </p>
+    </div>
+  </section>
+
+  <main class="wrap pagepad">
+    <div class="prose">
+      <p class="updated">Last updated: 20 July 2026</p>
+
+      <h2>What we collect</h2>
+      <p>
+        Nothing that identifies you. HDB Kaki has no sign-up, no login, and no advertising or
+        analytics scripts. We do not set cookies to track you across pages or sites, and we do not
+        build a profile of your visits.
+      </p>
+
+      <h2>Your flat details stay on your device</h2>
+      <p>
+        The <a href="/my-flat-insights">My Flat Insights</a> tool asks for your postal code and a few
+        details about your flat. That information is processed entirely inside your browser. The public
+        resale dataset is downloaded to your device and queried locally, so your postal code and inputs
+        are <strong>never sent to us or to any third party</strong>. Nothing you enter is stored on
+        a server.
+      </p>
+
+      <h2>Hosting and server logs</h2>
+      <p>
+        The site is served as static files through Cloudflare. Like any website, incoming requests
+        may be processed by Cloudflare to keep the service secure and reliable, which can include
+        technical details such as your IP address and browser type. That handling is governed by
+        <a href="https://www.cloudflare.com/privacypolicy/" rel="noopener" target="_blank"
+          >Cloudflare's privacy policy</a
+        >. HDB Kaki does not receive, keep, or analyse those logs for any purpose of its own.
+      </p>
+
+      <h2>Third-party data</h2>
+      <p>
+        Resale transaction data comes from
+        <a
+          href="https://data.gov.sg/datasets/d_8b84c4ee58e3cfc0ece0d773c8ca6abc/view"
+          rel="noopener"
+          target="_blank">data.gov.sg</a
+        >. That data is about past transactions, not about you.
+      </p>
+
+      <h2>Changes to this policy</h2>
+      <p>
+        If this policy changes, the date at the top of this page will be updated. Because the site
+        holds so little to begin with, changes are expected to be rare.
+      </p>
+
+      <h2>Contact</h2>
+      <p>
+        Questions about privacy? Open an issue on the
+        <a href="https://github.com/benjamin-awd/hdb-kaki/issues" rel="noopener" target="_blank"
+          >project's GitHub repository</a
+        >.
+      </p>
+    </div>
+  </main>
+</Base>
