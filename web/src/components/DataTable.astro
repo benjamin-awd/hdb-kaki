@@ -2,9 +2,13 @@
 // The <table class="comp"> shell shared by every data table: a header row plus a
 // single full-width placeholder row the page script replaces once data loads. The
 // surrounding card and footer vary per page, so they stay in the page.
+import Term from './Term.astro';
 interface Header {
   label: string;
   align?: 'r';
+  // When set, the header becomes a dotted-underline Term whose tooltip is this HTML.
+  // The popover opens downward (the table card clips anything above the header row).
+  tip?: string;
 }
 interface Props {
   headers: Header[];
@@ -17,7 +21,19 @@ const { headers, bodyId, loadingText = 'Loading…' } = Astro.props;
 <table class="comp">
   <thead>
     <tr>
-      {headers.map((h) => <th class={h.align}>{h.label}</th>)}
+      {
+        headers.map((h) => (
+          <th class={h.align}>
+            {h.tip ? (
+              <Term term={h.label} end down>
+                <Fragment set:html={h.tip} />
+              </Term>
+            ) : (
+              h.label
+            )}
+          </th>
+        ))
+      }
     </tr>
   </thead>
   <tbody id={bodyId}>
