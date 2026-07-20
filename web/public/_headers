@@ -24,10 +24,13 @@
 /data/resale.parquet
   Cache-Control: public, max-age=3600, must-revalidate
 
-# The manifest gates which shards load and carries lastUpdated — always revalidate
-# so a returning visitor never renders against a stale shard list.
+# The manifest gates which shards load and carries lastUpdated. Serve it instantly
+# from cache and revalidate in the background (stale-while-revalidate): a returning
+# visitor never blocks on the round-trip, and at worst one load renders against a
+# manifest a few hours old before the next load picks up the refresh. The actual
+# numbers can't go stale regardless — resale.parquet is validated independently.
 /data/manifest.json
-  Cache-Control: public, max-age=0, must-revalidate
+  Cache-Control: public, max-age=0, stale-while-revalidate=86400
 
 # Precomputed page snapshots (landing + town-analysis default view). Stable names,
 # change daily — cache like the data file so repeat visits paint from disk instead of
