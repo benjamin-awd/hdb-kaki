@@ -286,7 +286,7 @@ def emit_town_analysis(df: pl.DataFrame) -> None:
             pl.col("resale_price").alias("price"),
             "address",
             pl.col("storey_range").alias("storey"),
-            pl.col("floor_area_sqm").alias("area"),
+            pl.col("floor_area_sqft").alias("area"),
             "month",
             pl.col("flat_type").alias("flat"),
             "psf",
