@@ -12,6 +12,6 @@ const { num, title, rise = false, hintId } = Astro.props;
 ---
 
 <div class:list={['sec-head', { rise }]}>
-  <span class="num">{num}</span><h2>{title}</h2>
+  <span class="num">{num}</span><h2>{title}<slot name="titleTip" /></h2>
   <span class="hint" id={hintId}><slot /></span>
 </div>

@@ -1,5 +1,7 @@
 ---
 import Base from '../layouts/Base.astro';
+import Info from '../components/Info.astro';
+import Term from '../components/Term.astro';
 import SecHead from '../components/SecHead.astro';
 import ChartCard from '../components/ChartCard.astro';
 import FieldSelect from '../components/FieldSelect.astro';
@@ -38,6 +40,11 @@ import DataTable from '../components/DataTable.astro';
         <button class="chip on" data-reg="ols">OLS</button>
         <button class="chip" data-reg="loess">LOWESS</button>
       </div>
+      <Info label="What do OLS and LOWESS mean?">
+        <strong>OLS</strong> (Ordinary Least Squares) fits a single straight line — the best overall direction
+        of prices over time. <strong>LOWESS</strong> is a flexible curve that follows local ups and downs,
+        so it can show bends a straight line misses.
+      </Info>
     </div>
 
     <div class="bench-grid">
@@ -57,12 +64,12 @@ import DataTable from '../components/DataTable.astro';
         </div>
       </div>
       <div class="card bench">
-        <div class="bk">Fit quality · R²</div><div class="bv mono" id="stat-r2">—</div><div
-          class="bsub"
-          id="stat-fit"
-        >
-          &nbsp;
-        </div>
+        <div class="bk">
+          Fit quality · <Term term="R²" end
+            >How well the trend line fits the data, from 0 to 1 — higher means less scatter around
+            the line.</Term
+          >
+        </div><div class="bv mono" id="stat-r2">—</div><div class="bsub" id="stat-fit">&nbsp;</div>
       </div>
     </div>
 
@@ -82,7 +89,11 @@ import DataTable from '../components/DataTable.astro';
         headers={[
           { label: 'Month' },
           { label: 'Trend PSF', align: 'r' },
-          { label: 'MoM change', align: 'r' },
+          {
+            label: 'MoM change',
+            align: 'r',
+            tip: '<strong>Month-on-month</strong>: the change in trend PSF from the previous month.',
+          },
         ]}
         bodyId="tbody-psf"
       />
@@ -98,7 +109,7 @@ import DataTable from '../components/DataTable.astro';
 </style>
 
 <script>
-  import echarts from '../lib/echarts';
+  import { initChart } from '../lib/echarts';
   import { regressionLinear, regressionLoess } from 'd3-regression';
   // DuckDB-WASM is heavy and NOT needed for first paint: the default view renders from
   // a precomputed snapshot (psf-trends.json). The engine is imported lazily and only
@@ -129,7 +140,7 @@ import DataTable from '../components/DataTable.astro';
   const monthLabel = (idx: number) =>
     `${2017 + Math.floor(idx / 12)}-${String((idx % 12) + 1).padStart(2, '0')}`;
 
-  const chart = echarts.init($('chart-psf'));
+  const chart = initChart($('chart-psf'));
   let regType: 'ols' | 'loess' = 'ols';
   let fullMinIdx = 0,
     fullMaxIdx = 0; // full x-extent, for mapping zoom % → months
