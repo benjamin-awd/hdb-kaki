@@ -323,6 +323,8 @@ import LeafletMap from '../components/LeafletMap.astro';
     gap: 0;
   }
   .field {
+    display: flex;
+    flex-direction: column;
     padding: 18px 22px;
     border-right: 1px solid var(--line);
     border-bottom: 1px solid var(--line);
@@ -367,7 +369,8 @@ import LeafletMap from '../components/LeafletMap.astro';
   .field .sub {
     font-size: 12.5px;
     color: var(--ink-3);
-    margin-top: 5px;
+    margin-top: auto;
+    padding-top: 5px;
   }
   .form-foot {
     display: flex;
