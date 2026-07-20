@@ -1,0 +1,14 @@
+---
+// Prev / Next pager buttons. Both start disabled; the page script toggles them by id
+// as it pages through results. Styling lives in global.css (.pager).
+interface Props {
+  prevId?: string;
+  nextId?: string;
+}
+const { prevId = 'rec-prev', nextId = 'rec-next' } = Astro.props;
+---
+
+<span class="pager">
+  <button class="ghost pg" id={prevId} disabled>← Prev</button>
+  <button class="ghost pg" id={nextId} disabled>Next →</button>
+</span>
