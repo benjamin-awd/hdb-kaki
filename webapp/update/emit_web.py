@@ -266,18 +266,23 @@ def emit_town_analysis(df: pl.DataFrame) -> None:
         .to_dicts()
     )
 
-    # Record sale per town for the default flat — mirrors loadRecords()'s query: the
-    # single highest sale per town, with its flat's context and the town median.
-    scoped = df.filter(pl.col("flat_type") == TA_DEFAULT_FLAT)
-    town_med = scoped.group_by("town").agg(pl.col("resale_price").median().alias("med"))
+    # Record sale per town across every flat type — mirrors loadRecords()'s query: the
+    # single highest sale per town, with its flat's context (type, address, storey, area,
+    # psf, month) and the median for that same flat type in the town, so the outlier reads
+    # against a like-for-like typical. Only the first page is precomputed; paging past it
+    # boots DuckDB (see town-analysis.astro).
+    RECORDS_PAGE_SIZE = 8  # keep in sync with RECORDS_PAGE_SIZE in web/src/pages/town-analysis.astro
+    town_flat_med = df.group_by(["town", "flat_type"]).agg(
+        pl.col("resale_price").median().alias("med")
+    )
     records = (
         # Sort price-desc then take the first (=max) row per town, keeping its columns aligned.
-        scoped.sort(["resale_price", "month"], descending=[True, True])
+        df.sort(["resale_price", "month"], descending=[True, True])
         .group_by("town", maintain_order=True)
         .agg(pl.exclude("town").first())
-        .join(town_med, on="town")
+        .join(town_flat_med, on=["town", "flat_type"])
         .sort("resale_price", descending=True)
-        .head(12)
+        .head(RECORDS_PAGE_SIZE)
         .select(
             "town",
             pl.col("resale_price").alias("price"),
@@ -285,6 +290,8 @@ def emit_town_analysis(df: pl.DataFrame) -> None:
             pl.col("storey_range").alias("storey"),
             pl.col("floor_area_sqm").alias("area"),
             "month",
+            pl.col("flat_type").alias("flat"),
+            "psf",
             "med",
         )
         .to_dicts()
@@ -303,6 +310,7 @@ def emit_town_analysis(df: pl.DataFrame) -> None:
         "streets": streets,
         "rows": rows,
         "records": records,
+        "recordsTotal": df["town"].n_unique(),
     }
     out = OUT_DIR / "town-analysis.json"
     out.write_text(json.dumps(payload))
