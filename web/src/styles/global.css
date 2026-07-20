@@ -345,6 +345,54 @@ footer {
   padding-bottom: 80px;
 }
 
+/* ---------- long-form prose (privacy / terms / about) ---------- */
+/* Sits inside a .wrap so it aligns to the hero's left edge, but caps the
+   measure for readable line length rather than filling the 1160px shell. */
+.prose {
+  max-width: 68ch;
+}
+.prose .updated {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--ink-3);
+  margin-bottom: 28px;
+}
+.prose h2 {
+  font-family: var(--font-newsreader);
+  font-weight: 600;
+  font-size: 24px;
+  letter-spacing: -0.02em;
+  margin: 34px 0 12px;
+}
+.prose p,
+.prose li {
+  font-size: 16.5px;
+  line-height: 1.7;
+  color: var(--ink-2);
+}
+.prose p {
+  margin-bottom: 14px;
+}
+.prose ul {
+  margin: 0 0 14px;
+  padding-left: 22px;
+}
+.prose li {
+  margin-bottom: 8px;
+}
+.prose a {
+  color: var(--red-ink);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--red-ink) 30%, transparent);
+}
+.prose a:hover {
+  border-bottom-color: var(--red-ink);
+}
+.prose strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
 /* ---------- controls ---------- */
 .controls {
   display: flex;
