@@ -528,7 +528,7 @@ import Base from '../layouts/Base.astro';
       <div class="rec${rank === 1 ? ' top' : ''}">
         <span class="rank">${rank}</span>
         <span class="town">${lead}</span>
-        <span class="ctx">${badge}${titleCase(r.address)} · storey ${r.storey.toLowerCase()} · ${Math.round(r.area)} sqm · ${fpsf(r.psf)} psf · sold ${r.month}</span>
+        <span class="ctx">${badge}${titleCase(r.address)} · storey ${r.storey.toLowerCase()} · ${Math.round(r.area).toLocaleString()} sqft · ${fpsf(r.psf)} psf · sold ${r.month}</span>
         <span class="price">${moneyShort(r.price)}<small>${titleCase(r.flat)} median ${moneyShort(r.med)}</small></span>
       </div>`;
       })
@@ -555,20 +555,20 @@ import Base from '../layouts/Base.astro';
            FROM resale WHERE town='${sql(town)}' GROUP BY town, flat_type
          )
          SELECT r.town, r.resale_price price, r.address, r.storey_range storey,
-                r.floor_area_sqm area, r.month, r.flat_type flat, r.psf, m.med
+                r.floor_area_sqft area, r.month, r.flat_type flat, r.psf, m.med
          FROM resale r JOIN med m ON r.town = m.town AND r.flat_type = m.flat_type
          WHERE r.town='${sql(town)}'
          ORDER BY price DESC
          LIMIT ${RECORDS_PAGE_SIZE} OFFSET ${recordPage * RECORDS_PAGE_SIZE}`
       : `WITH ranked AS (
-           SELECT town, resale_price, address, storey_range, floor_area_sqm, month, flat_type, psf,
+           SELECT town, resale_price, address, storey_range, floor_area_sqft, month, flat_type, psf,
                   row_number() OVER (PARTITION BY town ORDER BY resale_price DESC, month DESC) rn
            FROM resale
          ), med AS (
            SELECT town, flat_type, median(resale_price) med FROM resale GROUP BY town, flat_type
          )
          SELECT r.town, r.resale_price price, r.address, r.storey_range storey,
-                r.floor_area_sqm area, r.month, r.flat_type flat, r.psf, m.med
+                r.floor_area_sqft area, r.month, r.flat_type flat, r.psf, m.med
          FROM ranked r JOIN med m ON r.town = m.town AND r.flat_type = m.flat_type
          WHERE r.rn = 1 ORDER BY price DESC
          LIMIT ${RECORDS_PAGE_SIZE} OFFSET ${recordPage * RECORDS_PAGE_SIZE}`;
