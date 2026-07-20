@@ -408,18 +408,13 @@ import LeafletMap from '../components/LeafletMap.astro';
       no-repeat right center;
     background-size: 10px 14px;
   }
-  /* The number fields default to the browser's native up/down spinner, which
-     looks nothing like the crisp double-chevron on the selects. Drop the spinner
-     and reuse the exact same chevron so all four adjustable fields read as one
-     set (keep --ink-3 #8c8479 in sync with the select above). */
+  /* Hide the browser's native up/down spinner on the number fields. A stepper
+     chevron here would only be decorative (it can't increment), so drop it and
+     let these read as plain typed values like the postal field above. */
   .field input[type='number'] {
     -webkit-appearance: none;
     -moz-appearance: textfield;
     appearance: none;
-    padding-right: 18px;
-    background: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='14' viewBox='0 0 10 14' fill='none' stroke='%238c8479' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='M2.5 5.5 5 3l2.5 2.5'/><path d='M2.5 8.5 5 11l2.5-2.5'/></svg>")
-      no-repeat right center;
-    background-size: 10px 14px;
   }
   .field input[type='number']::-webkit-outer-spin-button,
   .field input[type='number']::-webkit-inner-spin-button {
