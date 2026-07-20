@@ -1,5 +1,6 @@
 ---
 import Base from '../layouts/Base.astro';
+import SecHead from '../components/SecHead.astro';
 ---
 
 <Base active="PSF Trends" title="PSF Trends | HDB Kaki">
@@ -67,12 +68,9 @@ import Base from '../layouts/Base.astro';
       </div>
     </div>
 
-    <div class="sec-head">
-      <span class="num">01</span><h2>PSF over time</h2>
-      <span class="hint"
-        >Each dot is a transaction (sampled); the line is the fitted trend on monthly medians.</span
-      >
-    </div>
+    <SecHead num="01" title="PSF over time">
+      Each dot is a transaction (sampled); the line is the fitted trend on monthly medians.
+    </SecHead>
     <div class="card chart-card">
       <div class="chart-head">
         <div class="chart-title" id="chart-title">Price per sqft</div><div
@@ -84,10 +82,9 @@ import Base from '../layouts/Base.astro';
       <div id="chart-psf" style="width:100%;height:420px"></div>
     </div>
 
-    <div class="sec-head">
-      <span class="num">02</span><h2>Fitted PSF by month</h2>
-      <span class="hint">Trend value read off the fit for each month.</span>
-    </div>
+    <SecHead num="02" title="Fitted PSF by month">
+      Trend value read off the fit for each month.
+    </SecHead>
     <div class="card table-card">
       <table class="comp">
         <thead

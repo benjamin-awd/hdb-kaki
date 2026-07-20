@@ -1,5 +1,6 @@
 ---
 import Base from '../layouts/Base.astro';
+import SecHead from '../components/SecHead.astro';
 ---
 
 <Base active="Town Analysis" title="Town Analysis | HDB Kaki">
@@ -18,12 +19,9 @@ import Base from '../layouts/Base.astro';
 
   <main class="wrap pagepad">
     <!-- 01 · PRICE MAP -->
-    <div class="sec-head rise">
-      <span class="num">01</span><h2>Price map</h2>
-      <span class="hint"
-        >Each pin is a sale in the last 24 months, coloured relative to the town median.</span
-      >
-    </div>
+    <SecHead num="01" title="Price map" rise>
+      Each pin is a sale in the last 24 months, coloured relative to the town median.
+    </SecHead>
 
     <div class="controls" style="margin-bottom:16px">
       <span class="field-select"><span class="lab">Town</span><select id="sel-town"></select></span>
@@ -76,14 +74,11 @@ import Base from '../layouts/Base.astro';
     </div>
 
     <!-- 02 · RECORD SALES -->
-    <div class="sec-head">
-      <span class="num">02</span><h2>Record sales</h2>
-      <span class="hint"
-        >The most expensive sales on record — a town's own peaks, or the record per town across
-        Singapore. These are outliers — big units, high floors, prime blocks — shown with context,
-        not typical prices.</span
-      >
-    </div>
+    <SecHead num="02" title="Record sales">
+      The most expensive sales on record — a town's own peaks, or the record per town across
+      Singapore. These are outliers — big units, high floors, prime blocks — shown with context, not
+      typical prices.
+    </SecHead>
     <div class="controls" style="margin-bottom:16px">
       <div class="chipset" id="record-scope">
         <button class="chip on" data-scope="town">This town</button>
@@ -108,10 +103,7 @@ import Base from '../layouts/Base.astro';
     </div>
 
     <!-- 03 · DATA TABLE -->
-    <div class="sec-head">
-      <span class="num">03</span><h2>Data behind the map</h2>
-      <span class="hint">Every point currently in view.</span>
-    </div>
+    <SecHead num="03" title="Data behind the map"> Every point currently in view. </SecHead>
     <div class="card table-card">
       <table class="comp">
         <thead
