@@ -527,6 +527,12 @@ footer {
   outline: none;
   max-width: 200px;
 }
+/* Keyboard focus ring for the filter selects (outline:none above hides it). */
+.field-select select:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
 
 /* ---------- pills ---------- */
 .pill {

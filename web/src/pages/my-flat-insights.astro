@@ -355,6 +355,14 @@ import LeafletMap from '../components/LeafletMap.astro';
     outline: none;
     padding: 0;
   }
+  /* Restore a visible focus ring for keyboard users (outline:none above removes
+     it for everyone). :focus-visible keeps it off for mouse/touch clicks. */
+  .field input:focus-visible,
+  .field select:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
   .field input.big {
     font-family: var(--font-mono);
     font-size: 26px;
@@ -729,7 +737,8 @@ import LeafletMap from '../components/LeafletMap.astro';
     border-radius: 9px;
     padding: 10px 12px;
     font-family: var(--font-mono);
-    font-size: 15px;
+    /* >=16px so iOS Safari doesn't zoom the viewport when the field is focused */
+    font-size: 16px;
     font-weight: 600;
     color: var(--ink);
     outline: none;
