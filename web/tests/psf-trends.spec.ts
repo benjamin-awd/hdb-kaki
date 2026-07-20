@@ -19,10 +19,9 @@ test('changing the Town filter boots DuckDB and re-renders', async ({ page }) =>
   await page.goto('/psf-trends/');
   await expect(page.locator('#chart-title')).toContainText('Ang Mo Kio', { timeout: 20_000 });
 
-  // A filter change is the first thing that should ever hit the data file.
-  const parquet = page.waitForRequest(/\/data\/resale\.parquet$/, { timeout: 45_000 });
+  // The engine is pre-warmed on idle and the whole parquet buffered into memory, so the
+  // town change re-queries without a network request — the chart re-render is the signal.
+  // (That the data file is fetched at all is guarded by prefetch.spec.ts.)
   await page.selectOption('#sel-town', 'BEDOK');
-  await parquet;
-
   await expect(page.locator('#chart-title')).toContainText('Bedok', { timeout: 45_000 });
 });

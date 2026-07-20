@@ -7,7 +7,7 @@ import FieldSelect from '../components/FieldSelect.astro';
 import Pager from '../components/Pager.astro';
 import DataTable from '../components/DataTable.astro';
 import { trendsSVG } from '../lib/echartsSSR';
-import { moneyShort, psf as fpsf } from '../lib/format';
+import { moneyShort, psf as fpsf, deltaPill } from '../lib/format';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -31,9 +31,6 @@ try {
 
 // Redfin-style hero KPI strip: a headline value + its year-on-year delta each.
 const int = (n: number | null) => (n == null ? '—' : n.toLocaleString('en-SG'));
-const dCls = (n: number | null) => (n == null ? 'flat' : n >= 0 ? 'up' : 'down');
-const dTxt = (n: number | null) =>
-  n == null ? 'n/a' : `${n >= 0 ? '▲' : '▼'} ${Math.abs(n).toFixed(1)}% YoY`;
 const kpis = stats
   ? [
       {
@@ -82,13 +79,16 @@ const kpis = stats
             style="animation-delay:.15s"
             aria-label="Market at a glance, last 12 months"
           >
-            {kpis.map((k) => (
-              <div class="kpi">
-                <span class="kpi-cap">{k.cap}</span>
-                <span class="kpi-val mono">{k.val}</span>
-                <span class={`pill ${dCls(k.yoy)}`}>{dTxt(k.yoy)}</span>
-              </div>
-            ))}
+            {kpis.map((k) => {
+              const d = k.yoy == null ? null : deltaPill(k.yoy);
+              return (
+                <div class="kpi">
+                  <span class="kpi-cap">{k.cap}</span>
+                  <span class="kpi-val mono">{k.val}</span>
+                  <span class={`pill ${d?.cls ?? 'flat'}`}>{d ? `${d.text} YoY` : 'n/a'}</span>
+                </div>
+              );
+            })}
           </div>
         )
       }
@@ -215,7 +215,7 @@ const kpis = stats
 </style>
 
 <script>
-  import echarts from '../lib/echarts';
+  import echarts, { initChart } from '../lib/echarts';
   import {
     baseOption,
     palette,
@@ -226,6 +226,7 @@ const kpis = stats
     mono,
   } from '../lib/echartsTheme';
   import { money, moneyShort, psf as fpsf, titleCase } from '../lib/format';
+  import { createQuery, sqlEsc, byId as q } from '../lib/duckdbClient';
 
   // Landing renders from a single precomputed aggregate (webapp/update/emit_web.py), so
   // the default view never boots DuckDB-WASM. The one exception is the recent-
@@ -245,16 +246,9 @@ const kpis = stats
   };
   let OV: Overview;
 
-  const q = (id: string) => document.getElementById(id)!;
-
   // Lazily-imported DuckDB engine, shared with the idle warm below so we never double-
   // download it. Only the recent-transactions filters/pager reach for this.
-  let _db: Promise<typeof import('../lib/db')> | null = null;
-  const query = async <T = any,>(sqlText: string): Promise<T[]> => {
-    if (!_db) _db = import('../lib/db');
-    return (await _db).query<T>(sqlText);
-  };
-  const sqlEsc = (s: string) => s.replace(/'/g, "''");
+  const { query, warmEngineWhenIdle } = createQuery();
 
   // ---- 01 price trends (with lens toggle) ----
   // Initialised in boot(), after data loads, so the SSR placeholder SVG stays
@@ -399,7 +393,7 @@ const kpis = stats
     // there's room; on narrow screens the map stays clean and a tap reveals the tooltip.
     const showLabels = level === 'town' && labelsFit();
 
-    mapChart ??= echarts.init(q('chart-map'));
+    mapChart ??= initChart(q('chart-map'));
     mapChart.setOption(
       {
         ...baseOption(),
@@ -496,7 +490,7 @@ const kpis = stats
   // ---- 03 box plot by town ----
   function renderBox() {
     const rows = OV.box;
-    const chart = echarts.init(q('chart-box'));
+    const chart = initChart(q('chart-box'));
     chart.setOption({
       ...baseOption(),
       grid: { left: 64, right: 20, top: 20, bottom: 78, containLabel: false },
@@ -539,7 +533,7 @@ const kpis = stats
       '81-99 years': palette[2],
     };
     const pts = OV.scatter;
-    const scatter = echarts.init(q('chart-scatter'));
+    const scatter = initChart(q('chart-scatter'));
     scatter.setOption({
       ...baseOption(),
       grid: { left: 62, right: 20, top: 30, bottom: 44, containLabel: false },
@@ -574,7 +568,7 @@ const kpis = stats
     });
 
     const counts = OV.buckets;
-    const buckets = echarts.init(q('chart-buckets'));
+    const buckets = initChart(q('chart-buckets'));
     buckets.setOption({
       ...baseOption(),
       grid: { left: 90, right: 40, top: 20, bottom: 30, containLabel: false },
@@ -726,7 +720,7 @@ const kpis = stats
     });
     // Replace the SSR placeholder SVG with the interactive canvas chart in one step.
     q('chart-trends').innerHTML = '';
-    trendChart = echarts.init(q('chart-trends'));
+    trendChart = initChart(q('chart-trends'));
     renderTrends('lease');
     renderMap('town').catch((e) => console.error(e));
     renderBox();
@@ -743,25 +737,6 @@ const kpis = stats
   // imported to stay out of the landing bundle and deferred to idle so it never
   // competes with the landing's own render. Skipped under Save-Data.
   warmEngineWhenIdle();
-  function warmEngineWhenIdle() {
-    if ((navigator as any).connection?.saveData) return;
-    const idle: (cb: () => void, opts?: { timeout: number }) => void =
-      (window as any).requestIdleCallback || ((cb: () => void) => setTimeout(cb, 1500));
-    const warm = () =>
-      idle(() => {
-        _db ??= import('../lib/db');
-        _db.then((m) => m.prefetch()).catch(() => {});
-      }, { timeout: 2000 });
-    // This link is a clientPrerender target: while the page is only being speculatively
-    // prerendered (from a hover), don't download the ~4.7 MB DuckDB wasm — a hover
-    // shouldn't pull the engine for a page never visited. Defer the warm until the
-    // prerender is activated into a real navigation.
-    if ((document as any).prerendering) {
-      document.addEventListener('prerenderingchange', warm, { once: true });
-    } else {
-      warm();
-    }
-  }
 
   // Re-render the map when a resize crosses the 640px breakpoint (e.g. phone rotation):
   // the legend flips to horizontal and the framing shifts, and town labels appear or
