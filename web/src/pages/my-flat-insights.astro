@@ -1,5 +1,7 @@
 ---
 import Base from '../layouts/Base.astro';
+import Info from '../components/Info.astro';
+import Term from '../components/Term.astro';
 import SecHead from '../components/SecHead.astro';
 import ChartCard from '../components/ChartCard.astro';
 import DataTable from '../components/DataTable.astro';
@@ -101,16 +103,28 @@ import LeafletMap from '../components/LeafletMap.astro';
             <span class="k">Comparable sales used</span><span class="v" id="vs-n">—</span>
           </div>
           <div class="vs-row">
-            <span class="k">Median PSF (comps)</span><span class="v" id="vs-psf">—</span>
+            <span class="k"
+              >Median PSF (<Term term="comps" end
+                ><strong>Comps</strong> are recent sales of the same flat type nearby — the basis for
+                your estimate.</Term
+              >)</span
+            ><span class="v" id="vs-psf">—</span>
           </div>
           <div class="vs-row">
-            <span class="k">Storey adjustment</span><span class="v" id="vs-storey">—</span>
+            <span class="k"
+              ><Term term="Storey adjustment" end
+                >How much your floor band shifts the estimate versus the base median.</Term
+              ></span
+            ><span class="v" id="vs-storey">—</span>
           </div>
           <div class="vs-row">
             <span class="k">Your floor area</span><span class="v" id="vs-area">—</span>
           </div>
           <div class="conf">
-            Confidence <span class="bars" id="conf-bars"></span>
+            <Term term="Confidence" end
+              >Based on how many comparable sales we found nearby — more comps, more reliable.</Term
+            >
+            <span class="bars" id="conf-bars"></span>
             <span id="conf-label">—</span>
           </div>
           <p class="disclaimer">
@@ -191,6 +205,10 @@ import LeafletMap from '../components/LeafletMap.astro';
 
       <div class="split" style="grid-template-columns:1.4fr 1fr;margin-top:18px">
         <ChartCard title="Where you sit in the market">
+          <Info slot="titleTip" label="What does percentile mean?"
+            >The share of nearby sales priced below your estimate — e.g. 70th percentile beats about
+            70% of them.</Info
+          >
           <span class="pill" id="pctile-pill" slot="head">—</span>
           <div id="dist-chart" style="width:100%;height:210px"></div>
           <div class="dist-cap" id="dist-cap">&nbsp;</div>
