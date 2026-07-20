@@ -1,5 +1,6 @@
 ---
 import Base from '../layouts/Base.astro';
+import SecHead from '../components/SecHead.astro';
 import { trendsSVG } from '../lib/echartsSSR';
 import { moneyShort, psf as fpsf } from '../lib/format';
 import fs from 'node:fs';
@@ -91,12 +92,9 @@ const kpis = stats
 
   <main class="wrap pagepad">
     <!-- 01 · PRICE TRENDS -->
-    <div class="sec-head rise">
-      <span class="num">01</span><h2>Price trends</h2>
-      <span class="hint"
-        >Median resale price over time. Switch the lens to compare by lease band, town or flat type.</span
-      >
-    </div>
+    <SecHead num="01" title="Price trends" rise>
+      Median resale price over time. Switch the lens to compare by lease band, town or flat type.
+    </SecHead>
     <div class="controls" style="margin-bottom:16px">
       <div class="chipset" id="trend-toggle">
         <button class="chip on" data-mode="lease">Lease band</button>
@@ -112,13 +110,10 @@ const kpis = stats
     </div>
 
     <!-- 02 · PRICE MAP -->
-    <div class="sec-head">
-      <span class="num">02</span><h2>Price map</h2>
-      <span class="hint"
-        >Median 4-room resale price, last 12 months — darker means pricier. Switch to subzones for a
-        finer view; areas with fewer than 10 sales are left blank.</span
-      >
-    </div>
+    <SecHead num="02" title="Price map">
+      Median 4-room resale price, last 12 months — darker means pricier. Switch to subzones for a
+      finer view; areas with fewer than 10 sales are left blank.
+    </SecHead>
     <div class="controls" style="margin-bottom:16px">
       <div class="chipset" id="map-toggle">
         <button class="chip on" data-level="town">By town</button>
@@ -133,22 +128,18 @@ const kpis = stats
     </div>
 
     <!-- 03 · DISTRIBUTION -->
-    <div class="sec-head">
-      <span class="num">03</span><h2>Price distribution by town</h2>
-      <span class="hint"
-        >Spread of 4-room resale prices, last 12 months — box shows the middle 50%.</span
-      >
-    </div>
+    <SecHead num="03" title="Price distribution by town">
+      Spread of 4-room resale prices, last 12 months — box shows the middle 50%.
+    </SecHead>
     <div class="card chart-card">
       <div class="chart-head"><div class="chart-title">Resale price spread · 4-room</div></div>
       <div id="chart-box" class="chart-box"></div>
     </div>
 
     <!-- 04 · LEASE RELATIONSHIP -->
-    <div class="sec-head">
-      <span class="num">04</span><h2>Price &amp; remaining lease</h2>
-      <span class="hint">How 4-room resale price relates to years left on the lease.</span>
-    </div>
+    <SecHead num="04" title="Price & remaining lease">
+      How 4-room resale price relates to years left on the lease.
+    </SecHead>
     <div class="split" style="grid-template-columns:1.5fr 1fr">
       <div class="card chart-card">
         <div class="chart-head"><div class="chart-title">Resale price vs remaining lease</div></div>
@@ -161,13 +152,10 @@ const kpis = stats
     </div>
 
     <!-- 05 · RECENT TRANSACTIONS -->
-    <div class="sec-head">
-      <span class="num">05</span><h2>Recent transactions</h2>
-      <span class="hint"
-        >Latest registered resale deals. Filter by town or flat type and page through the last 12
-        months.</span
-      >
-    </div>
+    <SecHead num="05" title="Recent transactions">
+      Latest registered resale deals. Filter by town or flat type and page through the last 12
+      months.
+    </SecHead>
     <div class="controls" style="margin-bottom:16px">
       <span class="field-select"><span class="lab">Town</span><select id="rec-town"></select></span>
       <span class="field-select"

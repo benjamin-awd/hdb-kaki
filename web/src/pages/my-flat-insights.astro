@@ -1,5 +1,6 @@
 ---
 import Base from '../layouts/Base.astro';
+import SecHead from '../components/SecHead.astro';
 ---
 
 <Base active="My Flat Insights" title="My Flat Insights | HDB Kaki">
@@ -68,12 +69,9 @@ import Base from '../layouts/Base.astro';
   <section class="results">
     <div class="wrap">
       <!-- 01 VALUATION -->
-      <div class="sec-head">
-        <span class="num">01</span><h2>Estimated valuation</h2>
-        <span class="hint" id="val-hint"
-          >Modelled from median PSF of comparable sales in your town.</span
-        >
-      </div>
+      <SecHead num="01" title="Estimated valuation" hintId="val-hint">
+        Modelled from median PSF of comparable sales in your town.
+      </SecHead>
 
       <div class="card val-hero">
         <div class="val-main">
@@ -121,10 +119,9 @@ import Base from '../layouts/Base.astro';
       </div>
 
       <!-- 02 PRICE TRAJECTORY -->
-      <div class="sec-head">
-        <span class="num">02</span><h2>Price trajectory</h2>
-        <span class="hint" id="traj-hint">How your flat type has moved here over the years.</span>
-      </div>
+      <SecHead num="02" title="Price trajectory" hintId="traj-hint">
+        How your flat type has moved here over the years.
+      </SecHead>
 
       <div class="split" style="grid-template-columns:1.55fr 1fr">
         <div class="card chart-card">
@@ -170,10 +167,9 @@ import Base from '../layouts/Base.astro';
       </div>
 
       <!-- 03 BENCHMARKING -->
-      <div class="sec-head">
-        <span class="num">03</span><h2>How it benchmarks</h2>
-        <span class="hint" id="bench-hint">Your flat vs the town and island-wide market.</span>
-      </div>
+      <SecHead num="03" title="How it benchmarks" hintId="bench-hint">
+        Your flat vs the town and island-wide market.
+      </SecHead>
 
       <div class="bench-grid">
         <div class="card bench">
@@ -231,12 +227,9 @@ import Base from '../layouts/Base.astro';
       </div>
 
       <!-- 04 LEASE & VALUE RUNWAY -->
-      <div class="sec-head">
-        <span class="num">04</span><h2>Lease &amp; value runway</h2>
-        <span class="hint"
-          >How prices soften as the lease runs down — and the ages that affect CPF &amp; loans.</span
-        >
-      </div>
+      <SecHead num="04" title="Lease & value runway">
+        How prices soften as the lease runs down — and the ages that affect CPF & loans.
+      </SecHead>
 
       <div class="card lease-card">
         <div class="lease-top">
@@ -268,12 +261,9 @@ import Base from '../layouts/Base.astro';
       </div>
 
       <!-- 05 COMPARABLES -->
-      <div class="sec-head">
-        <span class="num">05</span><h2>Nearby comparables</h2>
-        <span class="hint" id="comp-hint"
-          >Recent sales of the same flat type in your town, same street first.</span
-        >
-      </div>
+      <SecHead num="05" title="Nearby comparables" hintId="comp-hint">
+        Recent sales of the same flat type in your town, same street first.
+      </SecHead>
 
       <div class="split">
         <div class="card comp-wrap">
