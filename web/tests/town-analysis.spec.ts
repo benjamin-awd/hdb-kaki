@@ -16,6 +16,10 @@ test('default view renders from JSON even with DuckDB + parquet blocked', async 
   await expect(page.locator('#map-sub')).toContainText('sales');
   await expect(page.locator('#median-price')).not.toHaveText('—');
   await expect(page.locator('#tbody-town tr').first()).toBeVisible();
+
+  // URL-state must not run its restore/sync path on a bare, default URL: no params in,
+  // no params written out. (Restore is gated on url.deviates(); a default load never syncs.)
+  expect(await page.evaluate(() => location.search)).toBe('');
 });
 
 test('changing the Town filter boots DuckDB and re-renders', async ({ page }) => {

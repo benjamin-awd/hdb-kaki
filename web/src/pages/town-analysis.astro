@@ -291,6 +291,8 @@ import LeafletMap from '../components/LeafletMap.astro';
     setStreets,
     loadStreets,
   } from '../lib/duckdbClient';
+  import { createUrlState, selectBinding, chipBinding, stateBinding } from '../lib/urlState';
+  import { downloadCsv } from '../lib/csv';
 
   const { query, warmEngineWhenIdle } = createQuery();
   const DEFAULT_TOWN = 'ANG MO KIO';
@@ -541,16 +543,11 @@ import LeafletMap from '../components/LeafletMap.astro';
   // ---- CSV download ----
   $('dl-town').addEventListener('click', (e) => {
     e.preventDefault();
-    const head = 'month,address,price,psf,remaining_lease_years,band\n';
-    const body = currentRows
-      .map((r) => `${r.month},"${r.address}",${r.price},${r.psf.toFixed(0)},${r.lease},${r.band}`)
-      .join('\n');
-    const url = URL.createObjectURL(new Blob([head + body], { type: 'text/csv' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'town-analysis.csv';
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadCsv(
+      'town-analysis.csv',
+      ['month', 'address', 'price', 'psf', 'remaining_lease_years', 'band'],
+      currentRows.map((r) => [r.month, r.address, r.price, r.psf.toFixed(0), r.lease, r.band]),
+    );
   });
 
   // ---- boot: paint the default view from the precomputed snapshot, then wire filters ----
@@ -578,11 +575,47 @@ import LeafletMap from '../components/LeafletMap.astro';
       .join('');
     setStreets($('sel-street'), data.streets);
 
+    // URL-synced filter state (see web/src/lib/urlState.ts). Declared now that the selects
+    // are populated so writes land on real options. `page` is the records pager index.
+    const url = createUrlState(
+      [
+        selectBinding('sel-town', 'town', DEFAULT_TOWN),
+        selectBinding('sel-flat', 'flat', DEFAULT_FLAT),
+        selectBinding('sel-street', 'street', '__all'),
+        selectBinding('sel-thr', 'thr', '0.1'),
+        chipBinding('#record-scope', 'scope', 'scope', 'town'),
+        stateBinding(
+          'page',
+          () => String(recordPage),
+          (v) => void (recordPage = parseInt(v, 10) || 0),
+          '0',
+        ),
+      ],
+      ['town', 'flat', 'street', 'thr', 'scope', 'page'],
+    );
+
     // Paint immediately from JSON — no DuckDB needed for the default view.
     paintMap(data.rows, data.default.town, data.default.flat);
     recordPage = 0;
     recordTotal = Number(data.recordsTotal);
     paintRecords(data.records);
+
+    // Deep-link restore. Gated on url.deviates() so a bare /town-analysis/ stays JS-free
+    // (paints from the snapshot above, never boots DuckDB). Snapshot street options only
+    // cover the default town, so a non-default town must repopulate them — which boots the
+    // engine — before the street value, and the scope/page, can be applied.
+    if (url.deviates()) {
+      url.restore({ only: ['town', 'flat', 'thr', 'scope'] });
+      recordScope =
+        ((document.querySelector('#record-scope .chip.on') as HTMLElement | null)?.dataset
+          .scope as RecordScope) ?? recordScope;
+      const town = ($('sel-town') as HTMLSelectElement).value;
+      if (town !== DEFAULT_TOWN) setStreets($('sel-street'), await loadStreets(query, town));
+      url.applyKey('street');
+      url.applyKey('page');
+      loadMap();
+      loadRecords();
+    }
 
     // Filters go through DuckDB. Threshold-only changes just re-band the rows we
     // already have, so they never touch the engine. Changing town reloads its street
@@ -600,10 +633,20 @@ import LeafletMap from '../components/LeafletMap.astro';
         recordPage = 0;
         loadRecords();
       }
+      url.sync();
     });
-    $('sel-street').addEventListener('change', loadMap);
-    $('sel-thr').addEventListener('change', () => paintMap(currentRows, currentTown, currentFlat));
-    $('sel-flat').addEventListener('change', loadMap);
+    $('sel-street').addEventListener('change', () => {
+      loadMap();
+      url.sync();
+    });
+    $('sel-thr').addEventListener('change', () => {
+      paintMap(currentRows, currentTown, currentFlat);
+      url.sync();
+    });
+    $('sel-flat').addEventListener('change', () => {
+      loadMap();
+      url.sync();
+    });
     document.querySelectorAll<HTMLButtonElement>('#record-scope .chip').forEach((btn) => {
       btn.addEventListener('click', () => {
         if (btn.classList.contains('on')) return;
@@ -612,17 +655,20 @@ import LeafletMap from '../components/LeafletMap.astro';
         recordScope = btn.dataset.scope as RecordScope;
         recordPage = 0;
         loadRecords();
+        url.sync();
       });
     });
     $('rec-prev').addEventListener('click', () => {
       if (recordPage > 0) {
         recordPage--;
         loadRecords();
+        url.sync();
       }
     });
     $('rec-next').addEventListener('click', () => {
       recordPage++;
       loadRecords();
+      url.sync();
     });
 
     warmEngineWhenIdle();
