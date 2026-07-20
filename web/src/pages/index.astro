@@ -202,9 +202,10 @@ const kpis = stats
   #chart-buckets {
     height: 320px;
   }
-  /* Singapore is wide and short — give the choropleth more room than a plot box. */
+  /* Singapore is wide and short — give the choropleth more room than a plot box, but not so
+     tall that it leaves empty bands above and below the island. */
   .map-box {
-    height: 460px;
+    height: 420px;
   }
   /* On a narrow phone the map fits to width, so a 460px box leaves a huge empty band.
      Shrink to roughly the map's own aspect + a horizontal legend strip. */
@@ -225,6 +226,7 @@ const kpis = stats
     axisLine,
     ink3,
     mono,
+    sans,
   } from '../lib/echartsTheme';
   import { money, moneyShort, psf as fpsf, titleCase } from '../lib/format';
   import { createQuery, sqlEsc, byId as q } from '../lib/duckdbClient';
@@ -385,9 +387,12 @@ const kpis = stats
     const narrow = isNarrowMap();
     const layout = {
       aspectScale: 1, // Singapore sits on the equator — keep lon/lat 1:1, don't squash
-      zoom: 1.28,
-      layoutCenter: narrow ? ['50%', '40%'] : ['50%', '54%'],
-      layoutSize: '96%',
+      // The desktop card is far wider than the island is tall, so zoom in to fill the frame
+      // and cut the empty margins; phones already fit to width, so stay gentler. Nudge the
+      // desktop map right of centre so its west coast clears the left-hand legend.
+      zoom: narrow ? 1.28 : 1.32,
+      layoutCenter: narrow ? ['50%', '40%'] : ['53%', '50%'],
+      layoutSize: narrow ? '96%' : '100%',
     } as const;
 
     // 26 town names won't fit legibly on a phone-width map, so labels show only where
@@ -426,7 +431,7 @@ const kpis = stats
             ? { orient: 'horizontal', left: 'center', bottom: 10, itemWidth: 12, itemHeight: 160 }
             : { orient: 'vertical', left: 16, bottom: 24, itemHeight: 150 }),
           inRange: { color: ['#fde8ec', '#f7b8c2', '#f07087', '#e11d3e', '#a80019'] },
-          textStyle: { color: ink3, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 },
+          textStyle: { color: ink3, fontFamily: "'IBM Plex Mono', monospace", fontSize: 13 },
           formatter: (v: number) => moneyShort(v),
         },
         series: [
@@ -434,7 +439,11 @@ const kpis = stats
             type: 'map',
             map: cfg.mapName,
             nameProperty: 'name',
-            roam: false,
+            // Let users pan and wheel-zoom for a closer look. The silent coastline layer
+            // below shares this map's roam view automatically (ECharts keeps map series in
+            // the same chart in step), so the outline tracks the choropleth as it moves.
+            roam: true,
+            scaleLimit: { min: 1, max: 12 },
             ...layout,
             // No-data areas: a muted warm grey. Crisp white dividers between every region so
             // boundaries read clearly against both the red ramp and the beige no-data fills
@@ -452,8 +461,8 @@ const kpis = stats
               show: false,
               formatter: (p: any) => titleCase(p.name),
               color: '#2b261f',
-              fontFamily: mono,
-              fontSize: 9,
+              fontFamily: sans,
+              fontSize: 12,
               textBorderColor: 'rgba(255,255,255,0.85)',
               textBorderWidth: 2.5,
             },
