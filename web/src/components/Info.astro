@@ -29,26 +29,6 @@ const id = `info-${Math.random().toString(36).slice(2, 9)}`;
 </button>
 
 <script>
-  // Tap-to-toggle for touch (where hover/:focus-visible don't fire). Astro bundles
-  // this module once no matter how many <Info /> instances render, so one delegated
-  // listener drives them all. Hover/focus behaviour stays purely in CSS.
-  const closeAll = (except?: Element | null) => {
-    document.querySelectorAll('.info.open').forEach((el) => {
-      if (el === except) return;
-      el.classList.remove('open');
-      el.setAttribute('aria-expanded', 'false');
-    });
-  };
-  document.addEventListener('click', (e) => {
-    const btn = (e.target as Element)?.closest('.info');
-    closeAll(btn);
-    if (btn) {
-      e.preventDefault();
-      const open = btn.classList.toggle('open');
-      btn.setAttribute('aria-expanded', String(open));
-    }
-  });
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeAll();
-  });
+  // Tap-to-toggle on touch (shared with <Term>); hover/focus stays in CSS.
+  import '../lib/tooltip';
 </script>
