@@ -887,23 +887,20 @@ import LeafletMap from '../components/LeafletMap.astro';
     if (!_db) _db = import('../lib/db');
     return (await _db).query<T>(sql);
   };
-  // Keep the shell interactive with no blocking work on load, but don't make the user
-  // wait for the ~4.7 MB engine either. warmEngine() is the idempotent primitive (primes
-  // the same _db the query wrapper reuses; a no-op once warmed). We trigger it two ways:
-  // an idle-time warm just after load — mirroring the landing page and psf-trends, so the
-  // engine is usually ready before "Get insights" — and a focus on the postal field,
-  // which front-runs idle for a user who engages the form immediately.
+  // This page exists to run a valuation, and booting the engine (download + instantiate +
+  // CREATE VIEW) costs ~2s, which dominates a lookup — the query cascade itself is ~250ms.
+  // So warm as early as possible: kick the boot off on load so it's ready by the time the
+  // user finishes typing their postal. It's async (dynamic import + async boot) and never
+  // touches the DOM, so it doesn't block the shell. warmEngine() is idempotent — primes the
+  // same _db the query wrapper reuses, a no-op once warmed.
   const warmEngine = () => {
     if (_db) return;
     _db = import('../lib/db');
     _db.then((m) => m.prefetch()).catch(() => {});
   };
-  // requestIdleCallback keeps the warm off the critical path; skipped under Save-Data.
-  if (!(navigator as any).connection?.saveData) {
-    const idle: (cb: () => void) => void =
-      (window as any).requestIdleCallback || ((cb: () => void) => setTimeout(cb, 1500));
-    idle(warmEngine);
-  }
+  // Skip the eager warm under Save-Data (the lazy query() path still boots on first use,
+  // just cold); a focus on the postal field below then warms on explicit intent instead.
+  if (!(navigator as any).connection?.saveData) warmEngine();
   import echarts, { initChart } from '../lib/echarts';
   import {
     baseOption,
