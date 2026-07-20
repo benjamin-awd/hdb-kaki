@@ -1,5 +1,11 @@
 ---
 import Base from '../layouts/Base.astro';
+import Info from '../components/Info.astro';
+import SecHead from '../components/SecHead.astro';
+import ChartCard from '../components/ChartCard.astro';
+import FieldSelect from '../components/FieldSelect.astro';
+import Pager from '../components/Pager.astro';
+import DataTable from '../components/DataTable.astro';
 import { trendsSVG } from '../lib/echartsSSR';
 import { moneyShort, psf as fpsf, deltaPill } from '../lib/format';
 import fs from 'node:fs';
@@ -91,12 +97,9 @@ const kpis = stats
 
   <main class="wrap pagepad">
     <!-- 01 · PRICE TRENDS -->
-    <div class="sec-head rise">
-      <span class="num">01</span><h2>Price trends</h2>
-      <span class="hint"
-        >Median resale price over time. Switch the lens to compare by lease band, town or flat type.</span
-      >
-    </div>
+    <SecHead num="01" title="Price trends" rise>
+      Median resale price over time. Switch the lens to compare by lease band, town or flat type.
+    </SecHead>
     <div class="controls" style="margin-bottom:16px">
       <div class="chipset" id="trend-toggle">
         <button class="chip on" data-mode="lease">Lease band</button>
@@ -104,97 +107,80 @@ const kpis = stats
         <button class="chip" data-mode="town">Town</button>
       </div>
     </div>
-    <div class="card chart-card">
-      <div class="chart-head">
-        <div class="chart-title" id="trend-title">Median resale price by lease band</div>
-      </div>
+    <ChartCard title="Median resale price by lease band" titleId="trend-title">
       <div id="chart-trends" class="chart-box" set:html={heroSVG} />
-    </div>
+    </ChartCard>
 
     <!-- 02 · PRICE MAP -->
-    <div class="sec-head">
-      <span class="num">02</span><h2>Price map</h2>
-      <span class="hint"
-        >Median 4-room resale price, last 12 months — darker means pricier. Switch to subzones for a
-        finer view; areas with fewer than 10 sales are left blank.</span
-      >
-    </div>
+    <SecHead num="02" title="Price map">
+      Median 4-room resale price, last 12 months — darker means pricier. Switch to subzones for a
+      finer view; areas with fewer than 10 sales are left blank.
+    </SecHead>
     <div class="controls" style="margin-bottom:16px">
       <div class="chipset" id="map-toggle">
         <button class="chip on" data-level="town">By town</button>
         <button class="chip" data-level="subzone">By subzone</button>
       </div>
     </div>
-    <div class="card chart-card">
-      <div class="chart-head">
-        <div class="chart-title" id="map-title">Median resale price · 4-room · by town</div>
-      </div>
+    <ChartCard title="Median resale price · 4-room · by town" titleId="map-title">
       <div id="chart-map" class="chart-box map-box"></div>
-    </div>
+    </ChartCard>
 
     <!-- 03 · DISTRIBUTION -->
-    <div class="sec-head">
-      <span class="num">03</span><h2>Price distribution by town</h2>
-      <span class="hint"
-        >Spread of 4-room resale prices, last 12 months — box shows the middle 50%.</span
+    <SecHead num="03" title="Price distribution by town">
+      <Info slot="titleTip" label="How do I read this box plot?"
+        >The box holds the middle 50% of sales, the line is the median, and the whiskers reach the
+        typical low and high.</Info
       >
-    </div>
-    <div class="card chart-card">
-      <div class="chart-head"><div class="chart-title">Resale price spread · 4-room</div></div>
+      Spread of 4-room resale prices, last 12 months — box shows the middle 50%.
+    </SecHead>
+    <ChartCard title="Resale price spread · 4-room">
       <div id="chart-box" class="chart-box"></div>
-    </div>
+    </ChartCard>
 
     <!-- 04 · LEASE RELATIONSHIP -->
-    <div class="sec-head">
-      <span class="num">04</span><h2>Price &amp; remaining lease</h2>
-      <span class="hint">How 4-room resale price relates to years left on the lease.</span>
-    </div>
+    <SecHead num="04" title="Price & remaining lease">
+      How 4-room resale price relates to years left on the lease.
+    </SecHead>
     <div class="split" style="grid-template-columns:1.5fr 1fr">
-      <div class="card chart-card">
-        <div class="chart-head"><div class="chart-title">Resale price vs remaining lease</div></div>
+      <ChartCard title="Resale price vs remaining lease">
         <div id="chart-scatter" class="chart-box"></div>
-      </div>
-      <div class="card chart-card">
-        <div class="chart-head"><div class="chart-title">Transactions by lease band</div></div>
+      </ChartCard>
+      <ChartCard title="Transactions by lease band">
         <div id="chart-buckets" class="chart-box"></div>
-      </div>
+      </ChartCard>
     </div>
 
     <!-- 05 · RECENT TRANSACTIONS -->
-    <div class="sec-head">
-      <span class="num">05</span><h2>Recent transactions</h2>
-      <span class="hint"
-        >Latest registered resale deals. Filter by town or flat type and page through the last 12
-        months.</span
-      >
-    </div>
+    <SecHead num="05" title="Recent transactions">
+      Latest registered resale deals. Filter by town or flat type and page through the last 12
+      months.
+    </SecHead>
     <div class="controls" style="margin-bottom:16px">
-      <span class="field-select"><span class="lab">Town</span><select id="rec-town"></select></span>
-      <span class="field-select"
-        ><span class="lab">Flat type</span><select id="rec-flat"></select></span
-      >
+      <FieldSelect label="Town" id="rec-town" />
+      <FieldSelect label="Flat type" id="rec-flat" />
     </div>
     <div class="card table-card">
-      <table class="comp">
-        <thead
-          ><tr>
-            <th>Sold</th><th>Town</th><th>Address</th><th>Type</th>
-            <th class="r">Area (sqft)</th><th class="r">Price</th><th class="r">PSF</th>
-          </tr></thead
-        >
-        <tbody id="tbody-recent">
-          <tr
-            ><td colspan="7" style="padding:22px 16px;color:var(--ink-3)">Loading market data…</td
-            ></tr
-          >
-        </tbody>
-      </table>
+      <DataTable
+        headers={[
+          { label: 'Sold' },
+          { label: 'Town' },
+          { label: 'Address' },
+          { label: 'Type' },
+          { label: 'Area (sqft)', align: 'r' },
+          { label: 'Price', align: 'r' },
+          {
+            label: 'PSF',
+            align: 'r',
+            tip: '<strong>Price per square foot</strong> — sale price ÷ floor area, so different-sized flats compare fairly.',
+          },
+        ]}
+        bodyId="tbody-recent"
+        loadingText="Loading market data…"
+      />
       <div class="tbl-foot">
         <span id="recent-foot">&nbsp;</span>
-        <span class="pager">
-          <button class="ghost pg" id="rec-prev" disabled>← Prev</button>
-          <button class="ghost pg" id="rec-next" disabled>Next →</button>
-        </span>
+        <Pager />
       </div>
     </div>
   </main>
@@ -226,24 +212,10 @@ const kpis = stats
       height: 300px;
     }
   }
-  /* Recent-transactions pager: compact ghost buttons anchored to the footer's right. */
-  .pager {
-    display: inline-flex;
-    gap: 8px;
-  }
-  .pager .pg {
-    padding: 7px 13px;
-    font-size: 13px;
-  }
-  .pager .pg:disabled {
-    opacity: 0.4;
-    cursor: default;
-    border-color: var(--line);
-  }
 </style>
 
 <script>
-  import echarts from '../lib/echarts';
+  import echarts, { initChart } from '../lib/echarts';
   import {
     baseOption,
     palette,
@@ -421,7 +393,7 @@ const kpis = stats
     // there's room; on narrow screens the map stays clean and a tap reveals the tooltip.
     const showLabels = level === 'town' && labelsFit();
 
-    mapChart ??= echarts.init(q('chart-map'));
+    mapChart ??= initChart(q('chart-map'));
     mapChart.setOption(
       {
         ...baseOption(),
@@ -518,7 +490,7 @@ const kpis = stats
   // ---- 03 box plot by town ----
   function renderBox() {
     const rows = OV.box;
-    const chart = echarts.init(q('chart-box'));
+    const chart = initChart(q('chart-box'));
     chart.setOption({
       ...baseOption(),
       grid: { left: 64, right: 20, top: 20, bottom: 78, containLabel: false },
@@ -561,7 +533,7 @@ const kpis = stats
       '81-99 years': palette[2],
     };
     const pts = OV.scatter;
-    const scatter = echarts.init(q('chart-scatter'));
+    const scatter = initChart(q('chart-scatter'));
     scatter.setOption({
       ...baseOption(),
       grid: { left: 62, right: 20, top: 30, bottom: 44, containLabel: false },
@@ -596,7 +568,7 @@ const kpis = stats
     });
 
     const counts = OV.buckets;
-    const buckets = echarts.init(q('chart-buckets'));
+    const buckets = initChart(q('chart-buckets'));
     buckets.setOption({
       ...baseOption(),
       grid: { left: 90, right: 40, top: 20, bottom: 30, containLabel: false },
@@ -748,7 +720,7 @@ const kpis = stats
     });
     // Replace the SSR placeholder SVG with the interactive canvas chart in one step.
     q('chart-trends').innerHTML = '';
-    trendChart = echarts.init(q('chart-trends'));
+    trendChart = initChart(q('chart-trends'));
     renderTrends('lease');
     renderMap('town').catch((e) => console.error(e));
     renderBox();
