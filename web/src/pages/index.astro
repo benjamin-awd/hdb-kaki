@@ -107,11 +107,40 @@ const kpis = stats
         <button class="chip" data-mode="town">Town</button>
       </div>
     </div>
-    <!-- Town lens only: ~26 towns at once is unreadable, so we show a curated set
-         (busiest first) and let the reader swap towns in/out. Hidden until Town is active. -->
+    <!-- Town lens only: ~26 towns at once is unreadable, so a compact dropdown caps the
+         comparison at a handful (busiest first). Hidden until the Town lens is active. -->
     <div class="controls" id="trend-town-picker" hidden style="margin-bottom:16px">
-      <div class="town-tags" id="trend-town-tags"></div>
-      <FieldSelect label="Add town" id="trend-town-add" />
+      <div class="town-select">
+        <button
+          type="button"
+          class="town-select-btn"
+          id="trend-town-btn"
+          aria-haspopup="listbox"
+          aria-expanded="false"
+        >
+          <span class="dots" id="trend-town-dots"></span>
+          <span id="trend-town-label">Comparing towns</span>
+          <span class="chev" aria-hidden="true">▾</span>
+        </button>
+        <div class="town-menu" id="trend-town-menu" hidden>
+          <input
+            type="text"
+            class="town-menu-search"
+            id="trend-town-search"
+            placeholder="Search towns…"
+            aria-label="Search towns"
+            autocomplete="off"
+          />
+          <div
+            class="town-menu-list"
+            id="trend-town-list"
+            role="listbox"
+            aria-multiselectable="true"
+          >
+          </div>
+          <div class="town-menu-foot" id="trend-town-foot"></div>
+        </div>
+      </div>
     </div>
     <ChartCard title="Median resale price by lease band" titleId="trend-title">
       <div id="chart-trends" class="chart-box" set:html={heroSVG} />
@@ -208,58 +237,144 @@ const kpis = stats
   #trend-town-picker[hidden] {
     display: none;
   }
-  /* Removable town tags for the trends "Town" lens; they double as the chart legend
-     (colour dot matches the line), so the built-in ECharts legend is off in that lens. */
-  .town-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
+  /* Compact town picker for the trends "Town" lens: one button opening a searchable
+     checklist. The chart's own legend shows which towns are drawn (it fits now that the
+     comparison is capped), so this control is purely the selector. */
+  .town-select {
+    position: relative;
   }
-  .town-tag {
+  .town-select-btn {
     display: inline-flex;
     align-items: center;
-    gap: 7px;
-    font-size: 13px;
-    font-weight: 600;
+    gap: 9px;
+    font-family: inherit;
+    font-size: 13.5px;
+    font-weight: 500;
     color: var(--ink);
     background: var(--paper-2);
     border: 1px solid var(--line);
-    border-radius: 9px;
-    padding: 5px 5px 5px 11px;
+    border-radius: 11px;
+    padding: 9px 14px;
     box-shadow: var(--shadow);
+    cursor: pointer;
   }
-  .town-tag .dot {
-    width: 9px;
-    height: 9px;
+  .town-select-btn:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+  .town-select-btn .dots {
+    display: inline-flex;
+    gap: 3px;
+  }
+  /* The dots are injected by the page script, so style them globally (see .tm-row note). */
+  :global(.town-select-btn .dots i) {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: block;
+  }
+  .town-select-btn b {
+    font-weight: 700;
+  }
+  .town-select-btn .chev {
+    color: var(--ink-3);
+    font-size: 11px;
+    transition: transform 0.15s ease;
+  }
+  .town-select-btn[aria-expanded='true'] .chev {
+    transform: rotate(180deg);
+  }
+  .town-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    width: 300px;
+    max-width: calc(100vw - 56px);
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    box-shadow: var(--shadow-lg);
+    padding: 8px;
+    z-index: 20;
+  }
+  .town-menu-search {
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--paper);
+    padding: 8px 10px;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--ink);
+    outline: none;
+    margin-bottom: 6px;
+  }
+  .town-menu-search:focus-visible {
+    border-color: var(--ink);
+  }
+  .town-menu-list {
+    max-height: 244px;
+    overflow: auto;
+  }
+  /* Rows are injected by the page script, so they miss Astro's scope attribute — style
+     them globally (same pattern as the injected .rec rows in town-analysis.astro). */
+  :global(.tm-row) {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13.5px;
+    color: var(--ink-2);
+    padding: 7px 9px;
+    border-radius: 8px;
+    cursor: pointer;
+    width: 100%;
+    border: none;
+    background: none;
+    font-family: inherit;
+    text-align: left;
+  }
+  :global(.tm-row:hover) {
+    background: var(--paper);
+  }
+  :global(.tm-row.on) {
+    color: var(--ink);
+    font-weight: 600;
+  }
+  :global(.tm-row .dot) {
+    width: 10px;
+    height: 10px;
     border-radius: 3px;
     flex: none;
+    background: transparent;
+    border: 1.5px solid var(--line);
   }
-  .town-tag button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 19px;
-    height: 19px;
+  :global(.tm-row.on .dot) {
     border: none;
-    border-radius: 6px;
-    background: none;
-    color: var(--ink-3);
-    font-size: 16px;
-    line-height: 1;
-    cursor: pointer;
-    font-family: inherit;
   }
-  .town-tag button:hover {
-    background: var(--ink);
-    color: #fff;
+  :global(.tm-row .ck) {
+    margin-left: auto;
+    color: var(--good);
+    font-size: 13px;
   }
-  .town-tag button:disabled {
-    opacity: 0.35;
+  :global(.tm-row:disabled) {
+    opacity: 0.4;
     cursor: default;
   }
-  .town-tag button:disabled:hover {
+  :global(.tm-row:disabled:hover) {
     background: none;
+  }
+  :global(.tm-empty) {
+    font-size: 13px;
     color: var(--ink-3);
+    padding: 10px 9px;
+  }
+  .town-menu-foot {
+    font-size: 11.5px;
+    color: var(--ink-3);
+    font-family: var(--font-mono);
+    padding: 8px 9px 4px;
+    border-top: 1px solid var(--line);
+    margin-top: 4px;
   }
   #chart-scatter,
   #chart-buckets {
@@ -366,12 +481,14 @@ const kpis = stats
       {
         ...baseOption(),
         color: palette,
-        // In the town lens the removable tags double as the legend, so the built-in
-        // scrolling legend would be redundant there.
-        legend:
-          mode === 'town'
-            ? { show: false }
-            : { top: 0, right: 0, type: 'scroll', textStyle: { fontSize: 12 }, icon: 'roundRect' },
+        // The town lens is capped at MAX_TOWNS, so the legend fits like the other lenses.
+        legend: {
+          top: 0,
+          right: 0,
+          type: 'scroll',
+          textStyle: { fontSize: 12 },
+          icon: 'roundRect',
+        },
         grid: { left: 66, right: 24, top: 40, bottom: 46, containLabel: false },
         tooltip: { trigger: 'axis', valueFormatter: (v: number) => (v == null ? '—' : money(v)) },
         xAxis: {
@@ -404,45 +521,97 @@ const kpis = stats
     selectedTowns.clear();
     townsByVolume.slice(0, DEFAULT_TOWNS).forEach((t) => selectedTowns.add(t));
 
-    q('trend-town-add').addEventListener('change', (e) => {
-      const sel = e.currentTarget as HTMLSelectElement;
-      if (!sel.value || selectedTowns.size >= MAX_TOWNS) return;
-      selectedTowns.add(sel.value);
-      refreshTownPicker();
-      renderTrends('town');
+    const btn = q('trend-town-btn');
+    const menu = q('trend-town-menu');
+    const search = q('trend-town-search') as HTMLInputElement;
+
+    const open = () => {
+      menu.hidden = false;
+      btn.setAttribute('aria-expanded', 'true');
+      search.value = '';
+      renderTownList('');
+      search.focus();
+    };
+    const close = () => {
+      menu.hidden = true;
+      btn.setAttribute('aria-expanded', 'false');
+    };
+    btn.addEventListener('click', () => (menu.hidden ? open() : close()));
+    search.addEventListener('input', () => renderTownList(search.value));
+    // Dismiss on outside click or Escape.
+    document.addEventListener('click', (e) => {
+      if (!menu.hidden && !(e.target as HTMLElement).closest('.town-select')) close();
     });
-    refreshTownPicker();
+    menu.addEventListener('keydown', (e) => {
+      if ((e as KeyboardEvent).key === 'Escape') {
+        close();
+        btn.focus();
+      }
+    });
+
+    refreshTownButton();
   }
 
-  // Repaint the tags (colour dot + remove ×) and the "add town" dropdown from the
-  // current selection. Called whenever a town is added or removed.
-  function refreshTownPicker() {
+  // The dots + count on the trigger button, kept in sync with the current selection.
+  function refreshTownButton() {
     const shown = townsByVolume.filter((t) => selectedTowns.has(t));
-    const canRemove = shown.length > 1; // keep at least one line on the chart
-    q('trend-town-tags').innerHTML = shown
-      .map(
-        (t, i) =>
-          `<span class="town-tag"><span class="dot" style="background:${palette[i % palette.length]}"></span>${titleCase(t)}` +
-          `<button type="button" data-town="${t}"${canRemove ? '' : ' disabled'} aria-label="Remove ${titleCase(t)}">&times;</button></span>`,
-      )
+    q('trend-town-dots').innerHTML = shown
+      .map((_, i) => `<i style="background:${palette[i % palette.length]}"></i>`)
       .join('');
-    q('trend-town-tags')
-      .querySelectorAll<HTMLButtonElement>('button[data-town]')
-      .forEach((b) =>
-        b.addEventListener('click', () => {
-          selectedTowns.delete(b.dataset.town!);
-          refreshTownPicker();
+    q('trend-town-label').textContent =
+      `Comparing ${shown.length} town${shown.length === 1 ? '' : 's'}`;
+  }
+
+  // Build the checklist rows (filtered by the search box). A row toggles its town on/off;
+  // we keep at least one town on the chart and cap the selection at MAX_TOWNS so every
+  // line keeps a distinct palette colour.
+  function renderTownList(filter: string) {
+    const needle = filter.trim().toLowerCase();
+    const matches = townsByVolume.filter((t) => titleCase(t).toLowerCase().includes(needle));
+    const full = selectedTowns.size >= MAX_TOWNS;
+    // Colour index follows the on-chart draw order (busiest-first among the selected).
+    const colorOf = new Map(
+      townsByVolume
+        .filter((t) => selectedTowns.has(t))
+        .map((t, i) => [t, palette[i % palette.length]]),
+    );
+
+    const list = q('trend-town-list');
+    if (matches.length === 0) {
+      list.innerHTML = `<div class="tm-empty">No towns match “${filter}”.</div>`;
+    } else {
+      list.innerHTML = matches
+        .map((t) => {
+          const on = selectedTowns.has(t);
+          const locked = on && selectedTowns.size === 1; // can't remove the last town
+          const disabled = (!on && full) || locked;
+          const dot = on ? `style="background:${colorOf.get(t)}"` : '';
+          return (
+            `<button type="button" class="tm-row${on ? ' on' : ''}" role="option" aria-selected="${on}"` +
+            `${disabled ? ' disabled' : ''} data-town="${t}">` +
+            `<span class="dot" ${dot}></span>${titleCase(t)}${on ? '<span class="ck">✓</span>' : ''}</button>`
+          );
+        })
+        .join('');
+      list.querySelectorAll<HTMLButtonElement>('.tm-row[data-town]').forEach((row) =>
+        row.addEventListener('click', (e) => {
+          // Re-rendering the list below detaches this row, so without stopping the
+          // event the bubbled document handler would read it as an outside click and
+          // close the menu — but a multi-select should stay open while picking.
+          e.stopPropagation();
+          const t = row.dataset.town!;
+          if (selectedTowns.has(t)) selectedTowns.delete(t);
+          else selectedTowns.add(t);
+          refreshTownButton();
+          renderTownList(filter);
           renderTrends('town');
         }),
       );
+    }
 
-    const remaining = townsByVolume.filter((t) => !selectedTowns.has(t));
-    const full = selectedTowns.size >= MAX_TOWNS;
-    const add = q('trend-town-add') as HTMLSelectElement;
-    add.innerHTML =
-      `<option value="" selected>${full ? `Max ${MAX_TOWNS} — remove one first` : 'Add town…'}</option>` +
-      remaining.map((t) => `<option value="${t}">${titleCase(t)}</option>`).join('');
-    add.disabled = full || remaining.length === 0;
+    q('trend-town-foot').textContent = full
+      ? `${MAX_TOWNS} of ${MAX_TOWNS} max · untick one to swap`
+      : `${selectedTowns.size} of ${MAX_TOWNS} max selected`;
   }
 
   document.querySelectorAll<HTMLButtonElement>('#trend-toggle .chip').forEach((btn) => {
