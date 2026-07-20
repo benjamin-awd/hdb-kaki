@@ -892,7 +892,7 @@ import LeafletMap from '../components/LeafletMap.astro';
   // first query. (Idempotent: primes the same _db the query wrapper reuses.)
   _db = import('../lib/db');
   _db.then((m) => m.prefetch()).catch(() => {});
-  import echarts from '../lib/echarts';
+  import echarts, { initChart } from '../lib/echarts';
   import {
     baseOption,
     palette,
@@ -915,7 +915,7 @@ import LeafletMap from '../components/LeafletMap.astro';
 
   // ---- ECharts: init once per container, reuse across recomputes ----
   const charts: Record<string, echarts.ECharts> = {};
-  const ec = (id: string) => (charts[id] ??= echarts.init($(id)));
+  const ec = (id: string) => (charts[id] ??= initChart($(id)));
   // State the "returns" panel needs so it can recompute on input change without re-querying.
   let currentEstimate = 0;
   let townYearPrice: Record<string, number> = {}; // 'YYYY' -> town median price for the flat type
