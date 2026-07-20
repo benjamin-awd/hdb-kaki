@@ -355,6 +355,29 @@ import LeafletMap from '../components/LeafletMap.astro';
     outline: none;
     padding: 0;
   }
+  /* Every value occupies the same fixed-height box (tall enough for the 26px
+     postal code) so the differently-sized values don't change their own cell's
+     height. Because all six cells then have identical structure, the labels,
+     values and sub-labels line up across each row with uniform gaps, whatever
+     the font size. An explicit height (not just line-height) is needed because
+     <select> ignores line-height for its box height. The postal glyphs are
+     still larger; they just sit centred in the same box. */
+  .field .val,
+  .field input,
+  .field select {
+    box-sizing: border-box;
+    display: block;
+    height: 32px;
+    line-height: 32px;
+  }
+  /* Restore a visible focus ring for keyboard users (outline:none above removes
+     it for everyone). :focus-visible keeps it off for mouse/touch clicks. */
+  .field input:focus-visible,
+  .field select:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
   .field input.big {
     font-family: var(--font-mono);
     font-size: 26px;
@@ -363,6 +386,20 @@ import LeafletMap from '../components/LeafletMap.astro';
   }
   .field select {
     cursor: pointer;
+    /* A native <select> renders its text with a small, browser-specific left
+       inset that padding can't remove, so the value drifts right of the label.
+       appearance:none drops the native widget (and its inset) so the value sits
+       flush-left like the inputs; the chevron is re-added as a background. This
+       is the standard pattern (cf. Bootstrap's .form-select). The stroke colour
+       is hard-coded to --ink-3 (#8c8479) because a data-URI SVG can't read a CSS
+       variable — keep it in sync if that token changes. */
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    padding-right: 18px;
+    background: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='14' viewBox='0 0 10 14' fill='none' stroke='%238c8479' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'><path d='M2.5 5.5 5 3l2.5 2.5'/><path d='M2.5 8.5 5 11l2.5-2.5'/></svg>")
+      no-repeat right center;
+    background-size: 10px 14px;
   }
   .field .sub {
     font-size: 12.5px;
@@ -729,7 +766,8 @@ import LeafletMap from '../components/LeafletMap.astro';
     border-radius: 9px;
     padding: 10px 12px;
     font-family: var(--font-mono);
-    font-size: 15px;
+    /* >=16px so iOS Safari doesn't zoom the viewport when the field is focused */
+    font-size: 16px;
     font-weight: 600;
     color: var(--ink);
     outline: none;
@@ -882,25 +920,15 @@ import LeafletMap from '../components/LeafletMap.astro';
   import L from 'leaflet';
   // DuckDB-WASM is heavy; load it lazily so the page shell is interactive first and
   // the engine only downloads when the user runs a valuation.
-  let _db: Promise<typeof import('../lib/db')> | null = null;
-  const query = async <T = any,>(sql: string): Promise<T[]> => {
-    if (!_db) _db = import('../lib/db');
-    return (await _db).query<T>(sql);
-  };
-  // This page exists to run a valuation, and booting the engine (download + instantiate +
-  // CREATE VIEW) costs ~2s, which dominates a lookup — the query cascade itself is ~250ms.
-  // So warm as early as possible: kick the boot off on load so it's ready by the time the
-  // user finishes typing their postal. It's async (dynamic import + async boot) and never
-  // touches the DOM, so it doesn't block the shell. warmEngine() is idempotent — primes the
-  // same _db the query wrapper reuses, a no-op once warmed.
-  const warmEngine = () => {
-    if (_db) return;
-    _db = import('../lib/db');
-    _db.then((m) => m.prefetch()).catch(() => {});
-  };
-  // Skip the eager warm under Save-Data (the lazy query() path still boots on first use,
-  // just cold); a focus on the postal field below then warms on explicit intent instead.
-  if (!(navigator as any).connection?.saveData) warmEngine();
+  import { createQuery, sqlEsc as sql, byId as $ } from '../lib/duckdbClient';
+
+  const { query, prefetch, warmEngineWhenIdle } = createQuery();
+  // No default valuation is auto-loaded any more, so there's no query to front-run on load.
+  // Still warm the engine speculatively at idle (skipped under Save-Data, deferred while the
+  // page is only being prerendered) so it's ready by the time the user finishes typing their
+  // postal; a focus on the field below warms eagerly on explicit intent. Both are idempotent
+  // and reuse the one lazy engine import.
+  warmEngineWhenIdle();
   import echarts, { initChart } from '../lib/echarts';
   import {
     baseOption,
@@ -911,11 +939,9 @@ import LeafletMap from '../components/LeafletMap.astro';
     ink3,
     red,
   } from '../lib/echartsTheme';
-  import { money, moneyShort, psf as fpsf, titleCase } from '../lib/format';
+  import { money, moneyShort, psf as fpsf, titleCase, deltaPill } from '../lib/format';
   import { reformatWithCaret, parsePrice, computeReturns } from '../lib/returns';
 
-  const $ = (id: string) => document.getElementById(id)!;
-  const sql = (s: string) => String(s).replace(/'/g, "''");
   const NOW_YEAR = new Date().getFullYear();
 
   let block = { town: '', street: '', address: '', model: '', lc: 0 };
@@ -943,9 +969,6 @@ import LeafletMap from '../components/LeafletMap.astro';
       hi = Math.ceil(i);
     return sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo);
   };
-  const pillClass = (d: number) => (d >= 1 ? 'up' : d <= -1 ? 'down' : 'flat');
-  const arrow = (d: number) => (d >= 0 ? '▲' : '▼');
-
   // ---- Leaflet map ----
   const map = L.map('ins-map', { scrollWheelZoom: false }).setView([1.3521, 103.8198], 12);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
@@ -1045,8 +1068,9 @@ import LeafletMap from '../components/LeafletMap.astro';
     $('traj-hint').textContent =
       `Median PSF for ${flat.toLowerCase()} flats in ${titleCase(town)}, ${first.yr}–${last.yr}.`;
     const pill = $('traj-pill');
-    pill.className = `pill ${growth >= 0 ? 'up' : 'down'}`;
-    pill.textContent = `${growth >= 0 ? '▲' : '▼'} ${Math.abs(growth).toFixed(0)}% since ${first.yr}`;
+    const g = deltaPill(growth, { digits: 0 });
+    pill.className = `pill ${g.cls}`;
+    pill.textContent = `${g.text} since ${first.yr}`;
     el.setOption({
       ...baseOption(),
       grid: { left: 52, right: 18, top: 18, bottom: 30, containLabel: false },
@@ -1374,18 +1398,20 @@ import LeafletMap from '../components/LeafletMap.astro';
         .join('');
     };
     const dPsf = islandPsf ? (medPsf / islandPsf - 1) * 100 : 0;
+    const psfPill = deltaPill(dPsf, { threshold: 1 });
     $('b1-v').textContent = fpsf(medPsf);
-    $('b1-pill').className = `pill ${pillClass(dPsf)}`;
-    $('b1-pill').textContent = `${arrow(dPsf)} ${Math.abs(dPsf).toFixed(1)}% vs island`;
+    $('b1-pill').className = `pill ${psfPill.cls}`;
+    $('b1-pill').textContent = `${psfPill.text} vs island`;
     $('b1-bars').innerHTML = bar([
       { lab: 'This flat', val: medPsf, you: true, fmt: fpsf },
       { lab: 'Island', val: islandPsf, fmt: fpsf },
     ]);
 
     const dPrice = townPrice ? (estimate / townPrice - 1) * 100 : 0;
+    const pricePill = deltaPill(dPrice, { threshold: 1 });
     $('b2-v').textContent = moneyShort(estimate);
-    $('b2-pill').className = `pill ${pillClass(dPrice)}`;
-    $('b2-pill').textContent = `${arrow(dPrice)} ${Math.abs(dPrice).toFixed(1)}% vs town`;
+    $('b2-pill').className = `pill ${pricePill.cls}`;
+    $('b2-pill').textContent = `${pricePill.text} vs town`;
     $('b2-bars').innerHTML = bar([
       { lab: 'This flat', val: estimate, you: true, fmt: moneyShort },
       { lab: `${titleCase(block.town)}`, val: townPrice, fmt: moneyShort },
@@ -1393,12 +1419,11 @@ import LeafletMap from '../components/LeafletMap.astro';
     ]);
 
     const dArea = townArea ? (area / townArea - 1) * 100 : 0;
+    const areaPill = deltaPill(dArea, { threshold: 1, digits: 0 });
     $('b3-v').textContent = `${area.toLocaleString()} sqft`;
-    $('b3-pill').className = `pill ${Math.abs(dArea) < 3 ? 'flat' : pillClass(dArea)}`;
+    $('b3-pill').className = `pill ${Math.abs(dArea) < 3 ? 'flat' : areaPill.cls}`;
     $('b3-pill').textContent =
-      Math.abs(dArea) < 3
-        ? '≈ typical for type'
-        : `${arrow(dArea)} ${Math.abs(dArea).toFixed(0)}% vs town`;
+      Math.abs(dArea) < 3 ? '≈ typical for type' : `${areaPill.text} vs town`;
     $('b3-bars').innerHTML = bar([
       { lab: 'This flat', val: area, you: true, fmt: (v) => v.toLocaleString() },
       {
@@ -1540,8 +1565,9 @@ import LeafletMap from '../components/LeafletMap.astro';
   }
 
   // ---- wiring ----
-  // Front-run the engine download the moment the user engages the form.
-  ($('f-postal') as HTMLInputElement).addEventListener('focus', warmEngine, { once: true });
+  // Front-run the engine download the moment the user engages the form (explicit intent,
+  // so boot immediately rather than waiting for idle).
+  ($('f-postal') as HTMLInputElement).addEventListener('focus', prefetch, { once: true });
   ($('f-postal') as HTMLInputElement).addEventListener('change', async () => {
     if (await resolveBlock()) compute();
   });

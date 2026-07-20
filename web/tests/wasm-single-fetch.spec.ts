@@ -13,10 +13,12 @@ test('the engine wasm is downloaded exactly once on a page that boots on load', 
   });
 
   await page.goto('/psf-trends/');
-  // The data file is fetched only after a successful instantiate, so by now every
-  // wasm request that will happen has happened.
-  await page.waitForRequest(/\/data\/resale\.parquet$/, { timeout: 45_000 });
-  await page.waitForTimeout(300); // settle any late duplicate
+  // Wait for the engine wasm itself. (The buffered warm now fetches resale.parquet in
+  // parallel with boot, so the parquet request can precede the wasm request and is no
+  // longer a reliable "wasm already requested" signal.) A stray second download would
+  // fire from the same boot, so settle briefly afterwards to catch it before asserting.
+  await page.waitForRequest(/\/duckdb\/.*\/duckdb-eh\.wasm$/, { timeout: 45_000 });
+  await page.waitForTimeout(1000); // settle any late duplicate
 
   expect(wasmReqs.length, `wasm fetched ${wasmReqs.length}x: ${JSON.stringify(wasmReqs)}`).toBe(1);
 });

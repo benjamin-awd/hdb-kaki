@@ -22,10 +22,11 @@ test('changing the Town filter boots DuckDB and re-renders', async ({ page }) =>
   await page.goto('/town-analysis/');
   await expect(page.locator('#map-sub')).toContainText('Ang Mo Kio', { timeout: 20_000 });
 
-  // A filter change is the first thing that should ever hit the data file.
-  const parquet = page.waitForRequest(/\/data\/resale\.parquet$/, { timeout: 45_000 });
+  // Changing the town re-queries via DuckDB. The engine is pre-warmed on idle and the
+  // whole parquet is buffered into memory, so the query resolves without a network
+  // request — the re-render is the signal. 'Bedok' only appears if the query ran, since
+  // the default snapshot covers Ang Mo Kio. (That the data file is fetched at all is
+  // guarded by prefetch.spec.ts / wasm-single-fetch.spec.ts.)
   await page.selectOption('#sel-town', 'BEDOK');
-  await parquet;
-
   await expect(page.locator('#map-sub')).toContainText('Bedok', { timeout: 45_000 });
 });
