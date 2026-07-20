@@ -384,16 +384,18 @@ footer {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   margin-left: 6px;
   padding: 0;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: 999px;
-  background: var(--paper);
-  color: var(--ink-3);
+  /* Filled chip rather than a thin outline: reads at this size and stays visible
+     on any surface (paper, tinted washes, the dark stat panel). */
+  background: color-mix(in srgb, var(--ink) 11%, var(--paper));
+  color: var(--ink-2);
   font-family: inherit;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   font-style: normal;
   line-height: 1;
@@ -403,10 +405,23 @@ footer {
   vertical-align: middle;
   flex: none;
 }
+/* Invisible 44px tap target centred on the 18px chip — comfortable on touch
+   without enlarging the inline footprint. Its neighbours (headings, table
+   header cells) are non-interactive, so the overlap steals no real clicks. */
+.info::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
 .info:hover,
-.info:focus-visible {
-  border-color: var(--ink-3);
-  color: var(--ink);
+.info:focus-visible,
+.info.open {
+  background: var(--ink);
+  color: var(--paper);
   outline: none;
 }
 /* inline term with a dotted underline that reveals the same tooltip on hover/focus */
@@ -464,6 +479,7 @@ footer {
 }
 .info:hover .info-pop,
 .info:focus-visible .info-pop,
+.info.open .info-pop,
 .term:hover .info-pop,
 .term:focus-visible .info-pop {
   opacity: 1;
@@ -482,7 +498,8 @@ footer {
   transform: none;
 }
 .info-end:hover .info-pop,
-.info-end:focus-visible .info-pop {
+.info-end:focus-visible .info-pop,
+.info-end.open .info-pop {
   transform: translateY(0);
 }
 /* open downward — used inside tables, whose card clips anything above the header row */
@@ -495,6 +512,26 @@ footer {
   bottom: 100%;
   border-top-color: transparent;
   border-bottom-color: var(--ink);
+}
+/* On phones the centred popover overflows the left edge next to left-aligned
+   triggers. Anchor it to the trigger's left instead and cap its width to the
+   viewport so it never clips. `.info-end` already right-anchors, so leave it. */
+@media (max-width: 560px) {
+  .info:not(.info-end) .info-pop {
+    left: 0;
+    right: auto;
+    transform: translateY(4px);
+    max-width: min(250px, calc(100vw - 32px));
+  }
+  .info:not(.info-end):hover .info-pop,
+  .info:not(.info-end):focus-visible .info-pop,
+  .info:not(.info-end).open .info-pop {
+    transform: translateY(0);
+  }
+  .info:not(.info-end) .info-pop::after {
+    left: 4px;
+    transform: none;
+  }
 }
 
 /* ---------- native select (filter bar) ---------- */
