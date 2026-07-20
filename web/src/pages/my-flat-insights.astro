@@ -65,7 +65,23 @@ import LeafletMap from '../components/LeafletMap.astro';
         </div>
         <div class="form-foot">
           <div class="resolved" id="resolved"></div>
-          <button class="cta" id="get-insights">Get insights <span class="arrow">→</span></button>
+          <button class="cta" id="get-insights">
+            Get insights
+            <span class="arrow" aria-hidden="true">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M5 12h14M13 6l6 6-6 6"></path>
+              </svg>
+            </span>
+          </button>
         </div>
       </div>
     </div>
@@ -323,6 +339,8 @@ import LeafletMap from '../components/LeafletMap.astro';
     gap: 0;
   }
   .field {
+    display: flex;
+    flex-direction: column;
     padding: 18px 22px;
     border-right: 1px solid var(--line);
     border-bottom: 1px solid var(--line);
@@ -404,7 +422,8 @@ import LeafletMap from '../components/LeafletMap.astro';
   .field .sub {
     font-size: 12.5px;
     color: var(--ink-3);
-    margin-top: 5px;
+    margin-top: auto;
+    padding-top: 5px;
   }
   .form-foot {
     display: flex;
@@ -979,7 +998,8 @@ import LeafletMap from '../components/LeafletMap.astro';
   // The resolved line carries validation errors only — the matched block/town is shown
   // inline under the postal code, so a success message there would just be redundant.
   const resolveError = (msg: string) => {
-    $('resolved').innerHTML = `<span class="pin">📍</span><span>${msg}</span>`;
+    $('resolved').innerHTML =
+      `<span class="pin"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg></span><span>${msg}</span>`;
   };
 
   // ---- resolve a postal code → block metadata + populate dependent fields ----
