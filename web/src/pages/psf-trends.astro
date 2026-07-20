@@ -114,11 +114,6 @@ import DataTable from '../components/DataTable.astro';
   // DuckDB-WASM is heavy and NOT needed for first paint: the default view renders from
   // a precomputed snapshot (psf-trends.json). The engine is imported lazily and only
   // booted when the visitor changes a filter or zooms (warmed on idle so that's snappy).
-  let _db: Promise<typeof import('../lib/db')> | null = null;
-  const query = async <T = any,>(sql: string): Promise<T[]> => {
-    if (!_db) _db = import('../lib/db');
-    return (await _db).query<T>(sql);
-  };
   import {
     baseOption,
     axisLabel,
@@ -128,10 +123,16 @@ import DataTable from '../components/DataTable.astro';
     line as lineCol,
     red,
   } from '../lib/echartsTheme';
-  import { money, psf as fpsf, titleCase } from '../lib/format';
+  import { money, psf as fpsf, titleCase, deltaPill } from '../lib/format';
+  import {
+    createQuery,
+    sqlEsc as sql,
+    byId as $,
+    setStreets,
+    loadStreets,
+  } from '../lib/duckdbClient';
 
-  const $ = (id: string) => document.getElementById(id)!;
-  const sql = (s: string) => s.replace(/'/g, "''");
+  const { query, warmEngineWhenIdle } = createQuery();
   const START = '2020-01';
 
   const SCATTER_CAP = 6000; // reservoir-sample the dots above this; stats/trend use the full set
@@ -364,11 +365,8 @@ import DataTable from '../components/DataTable.astro';
       $('stat-psf').textContent = fpsf(lastF);
       if (prev) {
         const prevF = fitted.get(prev.idx) ?? prev.med;
-        const d = ((lastF - prevF) / prevF) * 100;
-        const cls = d >= 0.5 ? 'up' : d <= -0.5 ? 'down' : 'flat';
-        const arrow = d >= 0 ? '▲' : '▼';
-        $('stat-delta').innerHTML =
-          `<span class="pill ${cls}">${arrow} ${Math.abs(d).toFixed(1)}%</span> vs last month`;
+        const { cls, text } = deltaPill(((lastF - prevF) / prevF) * 100, { threshold: 0.5 });
+        $('stat-delta').innerHTML = `<span class="pill ${cls}">${text}</span> vs last month`;
       }
       $('stat-r2').textContent = isNaN(r2) ? '—' : r2.toFixed(2);
       $('stat-fit').textContent = isNaN(r2)
@@ -390,9 +388,8 @@ import DataTable from '../components/DataTable.astro';
         let mom = '';
         if (nxt) {
           const fn = fitted.get(nxt.idx) ?? nxt.med;
-          const d = ((f - fn) / fn) * 100;
-          const cls = d >= 0.5 ? 'up' : d <= -0.5 ? 'down' : 'flat';
-          mom = `<span class="pill ${cls}">${d >= 0 ? '▲' : '▼'} ${Math.abs(d).toFixed(1)}%</span>`;
+          const { cls, text } = deltaPill(((f - fn) / fn) * 100, { threshold: 0.5 });
+          mom = `<span class="pill ${cls}">${text}</span>`;
         }
         return `<tr><td class="num-cell">${p.month}</td><td class="r price">${fpsf(f)}</td><td class="r">${mom}</td></tr>`;
       })
@@ -409,19 +406,6 @@ import DataTable from '../components/DataTable.astro';
       paintChart(curSample, curMonthly);
     });
   });
-
-  function setStreets(streets: string[]) {
-    ($('sel-street') as HTMLSelectElement).innerHTML =
-      `<option value="__all" selected>All streets</option>` +
-      streets.map((s) => `<option value="${s}">${titleCase(s)}</option>`).join('');
-  }
-  async function loadStreets() {
-    const town = ($('sel-town') as HTMLSelectElement).value;
-    const streets = await query<{ street_name: string }>(
-      `SELECT DISTINCT street_name FROM resale WHERE town='${sql(town)}' ORDER BY street_name`,
-    );
-    setStreets(streets.map((s) => s.street_name));
-  }
 
   // ---- boot: paint the default view from the precomputed snapshot, then wire filters ----
   type Snapshot = {
@@ -441,14 +425,17 @@ import DataTable from '../components/DataTable.astro';
     ($('sel-town') as HTMLSelectElement).innerHTML = data.towns
       .map((t) => `<option${t === data.default.town ? ' selected' : ''}>${t}</option>`)
       .join('');
-    setStreets(data.streets);
+    setStreets($('sel-street'), data.streets);
 
     // Paint immediately from JSON — no DuckDB needed for the default view.
     paintChart(data.sample, data.monthly);
 
     // Filters (and the semantic-zoom resample) go through DuckDB.
     $('sel-town').addEventListener('change', async () => {
-      await loadStreets();
+      setStreets(
+        $('sel-street'),
+        await loadStreets(query, ($('sel-town') as HTMLSelectElement).value),
+      );
       loadRender();
     });
     $('sel-street').addEventListener('change', loadRender);
@@ -456,28 +443,6 @@ import DataTable from '../components/DataTable.astro';
 
     warmEngineWhenIdle();
   })();
-
-  // Boot DuckDB in the background once the default view is up, so the first filter change
-  // or zoom is snappy — without competing with first paint. Skipped under Save-Data.
-  function warmEngineWhenIdle() {
-    if ((navigator as any).connection?.saveData) return;
-    const idle: (cb: () => void) => void =
-      (window as any).requestIdleCallback || ((cb: () => void) => setTimeout(cb, 1500));
-    const warm = () =>
-      idle(() => {
-        _db = import('../lib/db');
-        _db.then((m) => m.prefetch()).catch(() => {});
-      });
-    // This link is a clientPrerender target: while the page is only being speculatively
-    // prerendered (from a hover), don't download the ~4.7 MB DuckDB wasm — a hover
-    // shouldn't pull the engine for a page never visited. Defer the warm until the
-    // prerender is activated into a real navigation.
-    if ((document as any).prerendering) {
-      document.addEventListener('prerenderingchange', warm, { once: true });
-    } else {
-      warm();
-    }
-  }
 
   // semantic zoom: re-sample the scatter to the visible date window so zooming in reveals more detail
   async function resampleForZoom() {
