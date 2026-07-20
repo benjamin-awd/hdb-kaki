@@ -1,0 +1,17 @@
+---
+// Inline term with a dotted underline that reveals an explanation on hover/focus.
+// Use for jargon woven into a label (e.g. "Confidence") where a separate i-button
+// would be heavier than warranted. `term` is the visible text; the slot is the
+// explanation, wired via aria-describedby. Set `end` near the right edge so the
+// popover anchors right instead of centred.
+interface Props {
+  term: string;
+  end?: boolean;
+}
+const { term, end = false } = Astro.props;
+const id = `term-${Math.random().toString(36).slice(2, 9)}`;
+---
+
+<span class:list={['term', { 'info-end': end }]} tabindex="0" aria-describedby={id}
+  >{term}<span class="info-pop" role="tooltip" id={id}><slot /></span></span
+>

@@ -1,6 +1,7 @@
 ---
 import Base from '../layouts/Base.astro';
 import Info from '../components/Info.astro';
+import Term from '../components/Term.astro';
 ---
 
 <Base active="My Flat Insights" title="My Flat Insights | HDB Kaki">
@@ -81,12 +82,7 @@ import Info from '../components/Info.astro';
           <div class="val-label">Estimated market value</div>
           <div class="val-big" id="val-big">—</div>
           <div class="val-range-txt">
-            Likely range <b id="val-low">—</b> – <b id="val-high">—</b><Info
-              label="What is the likely range?"
-              >The likely range is the middle spread of comparable sales (25th–75th percentile)
-              applied to your floor area — where most similar flats sold, not a guaranteed minimum
-              or maximum.</Info
-            >
+            Likely range <b id="val-low">—</b> – <b id="val-high">—</b>
           </div>
           <div class="rangebar">
             <div class="track">
@@ -108,16 +104,15 @@ import Info from '../components/Info.astro';
           <div class="vs-row">
             <span class="k"
               >Median PSF (comps)<Info label="What are comps?" end
-                ><strong>Comps</strong> are comparable sales — recent transactions of the same flat type
-                nearby. This is their median price per square foot, the basis for your estimate.</Info
+                ><strong>Comps</strong> are recent sales of the same flat type nearby — the basis for
+                your estimate.</Info
               ></span
             ><span class="v" id="vs-psf">—</span>
           </div>
           <div class="vs-row">
             <span class="k"
-              >Storey adjustment<Info label="What is the storey adjustment?" end
-                >Higher floors usually sell for more. This is how much your storey band shifts the
-                estimate versus the base median.</Info
+              ><Term term="Storey adjustment" end
+                >How much your floor band shifts the estimate versus the base median.</Term
               ></span
             ><span class="v" id="vs-storey">—</span>
           </div>
@@ -125,9 +120,8 @@ import Info from '../components/Info.astro';
             <span class="k">Your floor area</span><span class="v" id="vs-area">—</span>
           </div>
           <div class="conf">
-            Confidence<Info label="What does confidence mean?" end
-              >Confidence reflects how many comparable sales we found nearby — more comps means a
-              more reliable estimate.</Info
+            <Term term="Confidence" end
+              >Based on how many comparable sales we found nearby — more comps, more reliable.</Term
             >
             <span class="bars" id="conf-bars"></span>
             <span id="conf-label">—</span>
@@ -155,13 +149,7 @@ import Info from '../components/Info.astro';
           <div id="traj-chart" style="width:100%;height:300px"></div>
         </div>
         <div class="card returns">
-          <div class="ret-head">
-            Your return so far<Info label="How is the annual return calculated?"
-              >Annual return (CAGR) is the average yearly growth that compounds from your purchase
-              price to today's estimate — it smooths out the year-to-year swings into one steady
-              rate.</Info
-            >
-          </div>
+          <div class="ret-head">Your return so far</div>
           <p class="ret-lede">
             Already bought this flat? Enter what you paid to see your gain and annual return against
             the town.
@@ -224,8 +212,8 @@ import Info from '../components/Info.astro';
           <div class="chart-head">
             <div class="chart-title">
               Where you sit in the market<Info label="What does percentile mean?"
-                >Your percentile is the share of recent comparable sales priced below your estimate
-                — e.g. the 70th percentile means it's higher than about 70% of them.</Info
+                >The share of nearby sales priced below your estimate — e.g. 70th percentile beats
+                about 70% of them.</Info
               >
             </div>
             <span class="pill" id="pctile-pill">—</span>
