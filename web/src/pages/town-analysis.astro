@@ -50,11 +50,18 @@ import Base from '../layouts/Base.astro';
 
     <!-- 02 · RECORD SALES -->
     <div class="sec-head"><span class="num">02</span><h2>Record sales</h2>
-      <span class="hint">The single highest price on record per town for the selected flat type. These are outliers — big units, high floors, prime blocks — shown with context, not typical prices.</span></div>
+      <span class="hint">The single highest price on record per town, across every flat type. These are outliers — big units, high floors, prime blocks — shown with context, not typical prices.</span></div>
     <div class="card chart-card">
       <div class="chart-head"><div class="chart-title" id="record-title">Most expensive on record</div>
-        <div class="chart-sub">Ranked by peak transaction · town median shown for scale</div></div>
+        <div class="chart-sub">Ranked by peak transaction · median for that flat type shown for scale</div></div>
       <div class="lead" id="record-list"></div>
+      <div class="rec-foot">
+        <span id="record-foot">&nbsp;</span>
+        <span class="pager">
+          <button class="ghost pg" id="rec-prev" disabled>← Prev</button>
+          <button class="ghost pg" id="rec-next" disabled>Next →</button>
+        </span>
+      </div>
     </div>
 
     <!-- 03 · DATA TABLE -->
@@ -87,13 +94,26 @@ import Base from '../layouts/Base.astro';
   :global(.rec .rank){font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--red-ink)}
   :global(.rec .town){font-weight:600;font-size:14.5px}
   :global(.rec .ctx){font-size:12.5px;color:var(--ink-3);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  :global(.rec .ctx .ftype){display:inline-block;font-family:var(--font-mono);font-size:10.5px;font-weight:600;
+    letter-spacing:.04em;text-transform:uppercase;color:var(--red-ink);background:var(--red-wash);
+    padding:2px 7px;border-radius:999px;margin-right:9px;vertical-align:1px}
   :global(.rec .price){font-family:var(--font-mono);font-weight:600;font-size:16px;letter-spacing:-.01em;text-align:right;white-space:nowrap}
   :global(.rec .price small){display:block;font-family:var(--font-sans);font-weight:400;font-size:11px;color:var(--ink-3);letter-spacing:0}
-  :global(.rec.hero){background:linear-gradient(180deg,var(--paper-2),var(--red-wash))}
+  /* Rank-1 headline row. Named .top (not .hero) so it doesn't inherit the page
+     hero section's padding (.hero{padding:52px…}) and balloon in height. */
+  :global(.rec.top){background:linear-gradient(180deg,var(--paper-2),var(--red-wash))}
   @media (max-width:640px){
     :global(.rec){grid-template-columns:22px 1fr auto;row-gap:4px}
     :global(.rec .ctx){grid-column:2 / -1;white-space:normal}
   }
+  /* Pager footer — mirrors the Recent-transactions pager on the landing page. The
+     negative side margins bleed the divider to the card edges past .chart-card's padding. */
+  .rec-foot{display:flex;justify-content:space-between;align-items:center;gap:16px;
+    margin:18px -24px 0;padding:16px 24px 0;border-top:1px solid var(--line);
+    font-size:13px;color:var(--ink-3)}
+  .pager{display:inline-flex;gap:8px}
+  .pager .pg{padding:7px 13px;font-size:13px}
+  .pager .pg:disabled{opacity:.4;cursor:default;border-color:var(--line)}
   /* Leaflet hover tooltip on-brand */
   :global(.leaflet-container){font-family:var(--font-sans);background:#f3ede1}
   :global(.leaflet-tooltip.hdb-tip){
@@ -129,7 +149,7 @@ import Base from '../layouts/Base.astro';
   const sql = (s: string) => s.replace(/'/g, "''");
 
   type Row = { lat: number; lng: number; price: number; address: string; month: string; storey: string; psf: number; lease: number; band?: string };
-  type Rec = { town: string; price: number; address: string; storey: string; area: number; month: string; med: number };
+  type Rec = { town: string; price: number; address: string; storey: string; area: number; month: string; med: number; flat: string; psf: number };
   let currentRows: Row[] = [];
   let currentTown = DEFAULT_TOWN;
   let currentFlat = DEFAULT_FLAT;
@@ -235,42 +255,67 @@ import Base from '../layouts/Base.astro';
     setStreets(streets.map((s) => s.street_name));
   }
 
-  // ---- record sale per town ----
-  // Each town's single highest sale on record for the selected flat, with the flat's
-  // context (address, storey, area, month) and the town median beside it so the
-  // outlier reads as a headline rather than a typical price.
+  // ---- record sale per town (all flat types, paged) ----
+  // Each town's single highest sale on record across every flat type, with the flat's
+  // context (type, address, storey, area, psf, month) and the median for that same flat
+  // type beside it, so the outlier reads as a headline against a like-for-like typical.
+  // Paged like the landing page's Recent-transactions table.
+  const RECORDS_PAGE_SIZE = 8; // keep in sync with RECORDS_PAGE_SIZE in webapp/update/emit_web.py
+  let recordPage = 0;
+  let recordTotal = 0;
+  let recordReq = 0; // guards against out-of-order responses when paging quickly
+
   function paintRecords(input: Rec[]) {
-    const flat = titleCase(($('sel-flat') as HTMLSelectElement).value);
-    $('record-title').textContent = `Most expensive ${flat} on record`;
-    $('record-list').innerHTML = input.map((r, i) => `
-      <div class="rec${i === 0 ? ' hero' : ''}">
-        <span class="rank">${i + 1}</span>
+    $('record-list').innerHTML = input.map((r, i) => {
+      const rank = recordPage * RECORDS_PAGE_SIZE + i + 1;
+      return `
+      <div class="rec${rank === 1 ? ' top' : ''}">
+        <span class="rank">${rank}</span>
         <span class="town">${titleCase(r.town)}</span>
-        <span class="ctx">${titleCase(r.address)} · storey ${r.storey.toLowerCase()} · ${Math.round(r.area)} sqm · sold ${r.month}</span>
-        <span class="price">${moneyShort(r.price)}<small>town median ${moneyShort(r.med)}</small></span>
-      </div>`).join('');
+        <span class="ctx"><span class="ftype">${r.flat}</span>${titleCase(r.address)} · storey ${r.storey.toLowerCase()} · ${Math.round(r.area)} sqm · ${fpsf(r.psf)} psf · sold ${r.month}</span>
+        <span class="price">${moneyShort(r.price)}<small>${titleCase(r.flat)} median ${moneyShort(r.med)}</small></span>
+      </div>`;
+    }).join('');
+    const start = input.length ? recordPage * RECORDS_PAGE_SIZE + 1 : 0;
+    const end = recordPage * RECORDS_PAGE_SIZE + input.length;
+    $('record-foot').textContent = recordTotal
+      ? `Showing ${start}–${end} of ${recordTotal} towns`
+      : 'No records';
+    ($('rec-prev') as HTMLButtonElement).disabled = recordPage === 0;
+    ($('rec-next') as HTMLButtonElement).disabled = end >= recordTotal;
   }
+
   async function loadRecords() {
-    const flat = ($('sel-flat') as HTMLSelectElement).value;
-    const rows = await query<Rec>(
-      `WITH scoped AS (
-         SELECT town, resale_price, address, storey_range, floor_area_sqm, month
-         FROM resale WHERE flat_type='${sql(flat)}'
-       ), med AS (
-         SELECT town, median(resale_price) med FROM scoped GROUP BY town
-       ), ranked AS (
-         SELECT *, row_number() OVER (PARTITION BY town ORDER BY resale_price DESC, month DESC) rn
-         FROM scoped
-       )
-       SELECT r.town, r.resale_price price, r.address, r.storey_range storey,
-              r.floor_area_sqm area, r.month, m.med
-       FROM ranked r JOIN med m USING (town)
-       WHERE r.rn = 1 ORDER BY price DESC LIMIT 12`,
-    ).then((rs) => rs.map((r) => ({
-      town: r.town, price: Number(r.price), address: r.address,
-      storey: r.storey, area: Number(r.area), month: r.month, med: Number(r.med),
-    })));
-    paintRecords(rows);
+    const token = ++recordReq;
+    try {
+      const [rows, cnt] = await Promise.all([
+        query<Rec>(
+          `WITH ranked AS (
+             SELECT town, resale_price, address, storey_range, floor_area_sqm, month, flat_type, psf,
+                    row_number() OVER (PARTITION BY town ORDER BY resale_price DESC, month DESC) rn
+             FROM resale
+           ), med AS (
+             SELECT town, flat_type, median(resale_price) med FROM resale GROUP BY town, flat_type
+           )
+           SELECT r.town, r.resale_price price, r.address, r.storey_range storey,
+                  r.floor_area_sqm area, r.month, r.flat_type flat, r.psf, m.med
+           FROM ranked r JOIN med m ON r.town = m.town AND r.flat_type = m.flat_type
+           WHERE r.rn = 1 ORDER BY price DESC
+           LIMIT ${RECORDS_PAGE_SIZE} OFFSET ${recordPage * RECORDS_PAGE_SIZE}`,
+        ),
+        query<{ n: number }>(`SELECT count(DISTINCT town) n FROM resale`),
+      ]);
+      if (token !== recordReq) return; // a newer request superseded this one
+      recordTotal = Number(cnt[0].n);
+      paintRecords(rows.map((r) => ({
+        town: r.town, price: Number(r.price), address: r.address,
+        storey: r.storey, area: Number(r.area), month: r.month,
+        med: Number(r.med), flat: r.flat, psf: Number(r.psf),
+      })));
+    } catch (e) {
+      console.error(e);
+      if (token === recordReq) $('record-foot').textContent = 'Could not load records.';
+    }
   }
 
   // ---- CSV download ----
@@ -285,7 +330,7 @@ import Base from '../layouts/Base.astro';
   });
 
   // ---- boot: paint the default view from the precomputed snapshot, then wire filters ----
-  type Snapshot = { default: { town: string; flat: string }; towns: string[]; flatTypes: string[]; streets: string[]; rows: Row[]; records: Rec[] };
+  type Snapshot = { default: { town: string; flat: string }; towns: string[]; flatTypes: string[]; streets: string[]; rows: Row[]; records: Rec[]; recordsTotal: number };
   (async () => {
     const data: Snapshot = await fetch(`${import.meta.env.BASE_URL}data/town-analysis.json`).then((r) => {
       if (!r.ok) throw new Error(`town-analysis.json ${r.status}`);
@@ -297,15 +342,21 @@ import Base from '../layouts/Base.astro';
 
     // Paint immediately from JSON — no DuckDB needed for the default view.
     paintMap(data.rows, data.default.town, data.default.flat);
+    recordPage = 0;
+    recordTotal = Number(data.recordsTotal);
     paintRecords(data.records);
 
     // Filters go through DuckDB. Threshold-only changes just re-band the rows we
     // already have, so they never touch the engine. Changing town reloads its street
-    // list (resetting the street filter to "all") before re-querying the map.
+    // list (resetting the street filter to "all") before re-querying the map. The
+    // record-sales leaderboard spans all flat types, so it is not tied to sel-flat —
+    // only its own Prev/Next pager reloads it.
     $('sel-town').addEventListener('change', async () => { await loadStreets(); loadMap(); });
     $('sel-street').addEventListener('change', loadMap);
     $('sel-thr').addEventListener('change', () => paintMap(currentRows, currentTown, currentFlat));
-    $('sel-flat').addEventListener('change', () => { loadMap(); loadRecords(); });
+    $('sel-flat').addEventListener('change', loadMap);
+    $('rec-prev').addEventListener('click', () => { if (recordPage > 0) { recordPage--; loadRecords(); } });
+    $('rec-next').addEventListener('click', () => { recordPage++; loadRecords(); });
 
     warmEngineWhenIdle();
   })();
