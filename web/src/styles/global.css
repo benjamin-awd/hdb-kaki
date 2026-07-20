@@ -704,3 +704,78 @@ table.comp tbody tr:hover {
     gap: 12px;
   }
 }
+
+/* ---------- mobile table reflow ---------- */
+/* The wide data tables scroll horizontally on phones, which pushed Price/PSF — the
+   columns people opened the table for — off the right edge at rest. Tables that opt in
+   with DataTable's `stack` flag instead reflow to stacked cards under 560px: the
+   address rides the first line with the price to its right, and every other cell drops
+   to a muted meta strip below. Cells declare their slot via data-role (title/primary/
+   meta) where the rows are built, so this one rule set serves every stacked table.
+   .tbreak is an empty cell that forces the meta strip onto its own line (hidden on
+   desktop, so it adds no column). */
+.tbreak {
+  display: none;
+}
+@media (max-width: 560px) {
+  table.comp.stack,
+  table.comp.stack tbody {
+    display: block;
+  }
+  table.comp.stack thead {
+    display: none;
+  }
+  table.comp.stack tbody tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 6px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  table.comp.stack tbody tr:last-child {
+    border-bottom: none;
+  }
+  table.comp.stack tbody td {
+    display: block;
+    padding: 0;
+    border: none;
+    white-space: normal;
+  }
+  table.comp.stack td[data-role='title'] {
+    order: 1;
+    flex: 1 1 auto;
+    font-weight: 600;
+    font-size: 14.5px;
+  }
+  table.comp.stack td[data-role='primary'] {
+    order: 2;
+    flex: 0 0 auto;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  /* full-width, zero-height break → the meta cells wrap together onto the next line */
+  table.comp.stack td.tbreak {
+    display: block;
+    order: 3;
+    flex-basis: 100%;
+    height: 0;
+    padding: 0;
+  }
+  table.comp.stack td[data-role='meta'] {
+    order: 4;
+    flex: 0 0 auto;
+    margin-top: 5px;
+    font-size: 12.5px;
+    color: var(--ink-3);
+  }
+  /* dotted separator between meta items (every one after the first) */
+  table.comp.stack td[data-role='meta'] ~ td[data-role='meta']::before {
+    content: '· ';
+    color: var(--line);
+  }
+  /* mobile-only unit labels (e.g. sqft, psf) that the desktop column header carried */
+  table.comp.stack td[data-suffix]::after {
+    content: ' ' attr(data-suffix);
+  }
+}
