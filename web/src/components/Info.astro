@@ -1,5 +1,7 @@
 ---
-// Small "i" info button with a hover/focus tooltip that explains a term or metric.
+// Small "i" info button that explains a term or metric. Desktop reveals the
+// popover on hover/focus; touch (no hover, and no reliable :focus-visible on tap)
+// toggles it on click via the script below, with outside-click / Escape to close.
 // The tooltip text is passed as the default slot (may contain <strong>, etc.).
 // `label` is the button's accessible name; the slot is wired to the button via
 // aria-describedby so screen readers read the explanation on focus. Set `end`
@@ -20,7 +22,13 @@ const id = `info-${Math.random().toString(36).slice(2, 9)}`;
   class:list={['info', { 'info-end': end, 'info-down': down }]}
   aria-label={label}
   aria-describedby={id}
+  aria-expanded="false"
 >
   i
   <span class="info-pop" role="tooltip" id={id}><slot /></span>
 </button>
+
+<script>
+  // Tap-to-toggle on touch (shared with <Term>); hover/focus stays in CSS.
+  import '../lib/tooltip';
+</script>
