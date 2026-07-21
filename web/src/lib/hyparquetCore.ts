@@ -143,29 +143,21 @@ export interface ResaleRow {
   postal: number;
 }
 
-const numOrNull = (v: unknown): number | null => (v == null ? null : Number(v));
-
-/** Coerce a raw hyparquet row (int64 decodes as BigInt) into a typed ResaleRow. Runs inside
- * the worker, so only plain numbers/strings cross the Comlink boundary. */
-export function mapResaleRow(r: Record<string, unknown>): ResaleRow {
-  return {
-    month: String(r.month),
-    town: String(r.town),
-    address: String(r.address),
-    street_name: String(r.street_name),
-    flat_type: String(r.flat_type),
-    flat_model: r.flat_model == null ? '' : String(r.flat_model),
-    storey_range: String(r.storey_range),
-    storey_lower_bound: Number(r.storey_lower_bound),
-    floor_area_sqft: Number(r.floor_area_sqft),
-    resale_price: Number(r.resale_price),
-    psf: numOrNull(r.psf),
-    remaining_lease_years: Number(r.remaining_lease_years),
-    lease_commence_date: Number(r.lease_commence_date),
-    latitude: numOrNull(r.latitude),
-    longitude: numOrNull(r.longitude),
-    postal: Number(r.postal),
-  };
+/** Coerce a raw hyparquet row IN PLACE into a ResaleRow. int64 columns decode as BigInt, so
+ * cast the numeric fields to plain numbers (keeping nulls); string columns already arrive as
+ * strings. Mutating the objects hyparquet already built avoids a second full materialization
+ * pass, and keeps only plain numbers/strings crossing the Comlink boundary. */
+function coerceRowInPlace(r: Record<string, unknown>): void {
+  r.storey_lower_bound = Number(r.storey_lower_bound);
+  r.floor_area_sqft = Number(r.floor_area_sqft);
+  r.resale_price = Number(r.resale_price);
+  r.remaining_lease_years = Number(r.remaining_lease_years);
+  r.lease_commence_date = Number(r.lease_commence_date);
+  r.postal = Number(r.postal);
+  r.psf = r.psf == null ? null : Number(r.psf);
+  r.latitude = r.latitude == null ? null : Number(r.latitude);
+  r.longitude = r.longitude == null ? null : Number(r.longitude);
+  if (r.flat_model == null) r.flat_model = '';
 }
 
 // ============================ query result shapes ============================
@@ -580,7 +572,11 @@ let allRowsPromise: Promise<ResaleRow[]> | null = null;
  * cached (next call retries), mirroring db.ts. Used by createEngine and by the main-thread
  * pages that still aggregate locally (my-flat-insights, until Phase 2). */
 export function loadResaleRows(): Promise<ResaleRow[]> {
-  return (allRowsPromise ??= (async () => (await fetchParquet()).map(mapResaleRow))().catch((e) => {
+  return (allRowsPromise ??= (async () => {
+    const rows = await fetchParquet();
+    for (let i = 0; i < rows.length; i++) coerceRowInPlace(rows[i]);
+    return rows as unknown as ResaleRow[];
+  })().catch((e) => {
     allRowsPromise = null;
     throw e;
   }));
