@@ -1,13 +1,12 @@
 import { test, expect } from '@playwright/test';
 
-// The landing recent-transactions table: default page paints from overview.json (no
-// DuckDB), and block letters in addresses are uppercased (311c -> 311C). Filtering or
-// paging past page 1 boots DuckDB and re-queries.
+// The landing recent-transactions table: default page paints from overview.json (no data
+// worker), and block letters in addresses are uppercased (311c -> 311C). Filtering or paging
+// past page 1 queries the worker and re-renders.
 
-test('default page renders from JSON with block letters uppercased, DuckDB blocked', async ({
+test('default page renders from JSON with block letters uppercased, data file blocked', async ({
   page,
 }) => {
-  await page.route(/\/duckdb\//, (r) => r.abort());
   await page.route(/\/data\/resale\.parquet$/, (r) => r.abort());
 
   await page.goto('/');
@@ -25,14 +24,13 @@ test('default page renders from JSON with block letters uppercased, DuckDB block
   await expect(page.locator('#rec-next')).toBeEnabled();
 });
 
-test('paging Next boots DuckDB and advances the window', async ({ page }) => {
+test('paging Next queries the worker and advances the window', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#recent-foot')).toContainText('Showing 1–20 of', { timeout: 20_000 });
 
-  const parquet = page.waitForRequest(/\/data\/resale\.parquet$/, { timeout: 45_000 });
+  // The worker is warmed on idle and holds the decoded columns in memory, so paging resolves
+  // from memory — the advanced window is the signal, not a resale.parquet fetch.
   await page.click('#rec-next');
-  await parquet;
-
   await expect(page.locator('#recent-foot')).toContainText('Showing 21–40 of', { timeout: 45_000 });
   await expect(page.locator('#rec-prev')).toBeEnabled();
 });
