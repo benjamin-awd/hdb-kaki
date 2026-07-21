@@ -54,6 +54,12 @@ RECENT_PAGE_SIZE = 20
 #   block           — redundant; address already begins with the block
 DROP_COLS = ["_id", "_ts", "remaining_lease", "block"]
 
+# Columns kept for the precompute snapshots but NOT shipped in resale.parquet: the web
+# client never reads them, so dropping them from the shipped file cuts download + decode.
+# cat_remaining_lease_years still feeds the landing scatter/lease charts, so it stays in the
+# frame passed to the emit_* precomputes; only the written parquet drops these.
+WEB_DROP_COLS = ["floor_area_sqm", "cat_remaining_lease_years", "storey_upper_bound"]
+
 
 def _subzone_medians(df: pl.DataFrame, cutoff: str) -> list[dict]:
     """Median 4-room price per URA subzone, for the finer choropleth level.
@@ -421,7 +427,10 @@ def emit() -> None:
         old.unlink()
 
     out = OUT_DIR / "resale.parquet"
-    df.write_parquet(
+    # Ship only the columns the web client reads; the dropped ones stay in `df` for the
+    # precompute snapshots below (which still use cat_remaining_lease_years).
+    web = df.drop([c for c in WEB_DROP_COLS if c in df.columns])
+    web.write_parquet(
         out,
         compression="zstd",
         compression_level=19,
@@ -436,10 +445,10 @@ def emit() -> None:
             if epoch
             else None
         ),
-        "rows": df.height,
+        "rows": web.height,
         "file": out.name,
         "bytes": out.stat().st_size,
-        "columns": df.columns,
+        "columns": web.columns,
     }
     (OUT_DIR / "manifest.json").write_text(json.dumps(manifest, indent=2))
 
@@ -448,7 +457,7 @@ def emit() -> None:
     emit_psf_trends(df)
 
     size = out.stat().st_size
-    print(f"Wrote {out.name}, {df.height:,} rows, {size/1e6:.2f} MB")
+    print(f"Wrote {out.name}, {web.height:,} rows, {size/1e6:.2f} MB")
     # resale.parquet ships as a plain Cloudflare static asset, which caps individual
     # files at 25 MiB. Warn well before that so growth doesn't silently break deploys;
     # if we ever cross it, route the file through src/worker.ts (like the wasm) or R2.
