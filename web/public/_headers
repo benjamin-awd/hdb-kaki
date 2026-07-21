@@ -1,26 +1,17 @@
 # Cloudflare Pages headers. https://developers.cloudflare.com/pages/configuration/headers/
 #
 # NOTE: deliberately NO Cross-Origin-Embedder-Policy / COOP here. Leaflet pulls OSM
-# tiles cross-origin, so COEP: require-corp would break them. The single-threaded WASM
-# bundle we use does not need cross-origin isolation.
-#
-# The DuckDB .wasm at /duckdb/*.wasm is served by src/worker.ts (brotli-compressed
-# asset re-served with Content-Encoding: br), which sets its own immutable caching —
-# _headers do not apply to Worker responses. The sibling .worker.js files ARE served
-# directly by the asset store, so the /duckdb/* rule below pins their caching.
+# tiles cross-origin, so COEP: require-corp would break them. The hyparquet data worker
+# talks to the page via Comlink message-passing (no SharedArrayBuffer), so it needs no
+# cross-origin isolation either.
 
-# Astro emits content-hashed filenames under /_astro/ — safe to cache forever.
+# Astro emits content-hashed filenames under /_astro/ — safe to cache forever. This
+# also covers the hyparquet Web Worker chunk (hyparquetWorker-<hash>.js).
 /_astro/*
   Cache-Control: public, max-age=31536000, immutable
 
-# DuckDB engine files (version-pinned path, see scripts/compress-duckdb.mjs). Only
-# the directly-served ones (.worker.js) pick this up; the Worker-served .wasm sets
-# its own equivalent header.
-/duckdb/*
-  Cache-Control: public, max-age=31536000, immutable
-
 # The data file's name is stable but its contents change on each daily ETL run, so
-# revalidate rather than pin. DuckDB fetches it via HTTP range requests.
+# revalidate rather than pin. The hyparquet worker fetches it once and decodes it.
 /data/resale.parquet
   Cache-Control: public, max-age=3600, must-revalidate
 

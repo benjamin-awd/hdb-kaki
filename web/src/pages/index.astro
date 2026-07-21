@@ -476,12 +476,12 @@ const kpis = stats
     sans,
   } from '../lib/echartsTheme';
   import { money, moneyShort, psf as fpsf, titleCase } from '../lib/format';
-  import { createQuery, sqlEsc, byId as q } from '../lib/duckdbClient';
+  import { byId as q } from '../lib/dom';
+  import { createHyparquet } from '../lib/hyparquetClient';
 
-  // Landing renders from a single precomputed aggregate (webapp/update/emit_web.py), so
-  // the default view never boots DuckDB-WASM. The one exception is the recent-
-  // transactions table: filtering or paging past page 1 boots the engine lazily (the
-  // same warm the interactive pages use) and queries `resale` directly.
+  // Landing renders from a single precomputed aggregate (webapp/update/emit_web.py), so the
+  // default view needs no data engine. The one exception is the recent-transactions table:
+  // filtering or paging past page 1 queries the data worker lazily.
   type Overview = {
     trends: Record<string, { quarter: string; series: string; v: number }[]>;
     box: any[];
@@ -496,9 +496,10 @@ const kpis = stats
   };
   let OV: Overview;
 
-  // Lazily-imported DuckDB engine, shared with the idle warm below so we never double-
-  // download it. Only the recent-transactions filters/pager reach for this.
-  const { query, warmEngineWhenIdle } = createQuery();
+  // Recent-transactions table, backed by the hyparquet data worker (resale.parquet, decoded
+  // off the main thread). Only the recent filters/pager touch data; everything else renders
+  // from overview.json.
+  const { recent, warmWhenIdle } = createHyparquet();
 
   // ---- 01 price trends (with lens toggle) ----
   // Initialised in boot(), after data loads, so the SSR placeholder SVG stays
@@ -1036,43 +1037,31 @@ const kpis = stats
     (q('rec-next') as HTMLButtonElement).disabled = end >= recentTotal;
   }
 
-  // Initial render: page 1, no filters, straight from the snapshot — no DuckDB.
+  // Initial render: page 1, no filters, straight from the snapshot — no data fetch.
   function renderRecent() {
     recentPage = 0;
     recentTotal = Number(OV.recentTotal);
     paintRecent(OV.recent as RecentRow[]);
   }
 
-  // Any filter change or page turn goes through DuckDB, mirroring the snapshot's SQL
-  // (same 12-month window + ORDER BY) with LIMIT/OFFSET.
+  // Any filter change or page turn goes through hyparquet, mirroring the snapshot's SQL
+  // (same 12-month window + ORDER BY month DESC, resale_price DESC) with page slicing.
   async function loadRecent() {
     const token = ++recentReq;
     const town = (q('rec-town') as HTMLSelectElement).value;
     const flat = (q('rec-flat') as HTMLSelectElement).value;
-    const conds = [`month >= strftime(current_date - INTERVAL 12 MONTH, '%Y-%m')`];
-    if (town !== '__all') conds.push(`town='${sqlEsc(town)}'`);
-    if (flat !== '__all') conds.push(`flat_type='${sqlEsc(flat)}'`);
-    const where = conds.join(' AND ');
     try {
-      const [rows, cnt] = await Promise.all([
-        query<RecentRow>(
-          `SELECT month, town, address, flat_type, floor_area_sqft, resale_price, psf
-           FROM resale WHERE ${where}
-           ORDER BY month DESC, resale_price DESC
-           LIMIT ${PAGE_SIZE} OFFSET ${recentPage * PAGE_SIZE}`,
-        ),
-        query<{ n: number }>(`SELECT count(*) n FROM resale WHERE ${where}`),
-      ]);
+      const { rows, total } = await recent({ town, flat, page: recentPage, pageSize: PAGE_SIZE });
       if (token !== recentReq) return; // a newer request superseded this one
-      recentTotal = Number(cnt[0].n);
-      paintRecent(rows);
+      recentTotal = total;
+      paintRecent(rows as RecentRow[]);
     } catch (e) {
       console.error(e);
       if (token === recentReq) q('recent-foot').textContent = 'Could not load transactions.';
     }
   }
 
-  // Populate the filter dropdowns from the snapshot (no DuckDB needed just to list them).
+  // Populate the filter dropdowns from the snapshot (no data fetch needed to list them).
   function fillRecentFilters() {
     (q('rec-town') as HTMLSelectElement).innerHTML =
       `<option value="__all" selected>All towns</option>` +
@@ -1100,7 +1089,7 @@ const kpis = stats
     });
   }
 
-  // boot — one small fetch, no DuckDB-WASM
+  // boot — one small fetch (overview.json), no data engine
   async function boot() {
     OV = await fetch(`${import.meta.env.BASE_URL}data/overview.json`).then((r) => {
       if (!r.ok) throw new Error(`overview.json ${r.status}`);
@@ -1119,13 +1108,10 @@ const kpis = stats
   }
   boot();
 
-  // Pre-warm the DuckDB engine while the visitor reads the landing, so the first
-  // click into an interactive page skips the cold start. Full warm (not just a byte
-  // fetch): it downloads + instantiates, populating both the HTTP cache and the
-  // browser's compiled-wasm code cache, which carries across the navigation. Dynamic-
-  // imported to stay out of the landing bundle and deferred to idle so it never
-  // competes with the landing's own render. Skipped under Save-Data.
-  warmEngineWhenIdle();
+  // Warm the recent-transactions worker at idle so the first filter/page turn is instant.
+  // The landing renders from overview.json; filters/pages go through the hyparquet worker
+  // (Save-Data / idle gated).
+  warmWhenIdle();
 
   // Re-render the map when a resize crosses the 640px breakpoint (e.g. phone rotation):
   // the legend flips to horizontal and the framing shifts, and town labels appear or
