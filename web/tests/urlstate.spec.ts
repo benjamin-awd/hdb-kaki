@@ -3,18 +3,18 @@ import { test, expect } from '@playwright/test';
 // Shareable deep-links (#1) on Town Analysis: the URL both restores a view on load and
 // tracks it live as filters change. See web/src/lib/urlState.ts.
 
-test('a deep link restores the filtered view and boots DuckDB', async ({ page }) => {
-  const duckdb = page.waitForRequest(/\/duckdb\//, { timeout: 45_000 });
+test('a deep link restores the filtered view and re-queries the worker', async ({ page }) => {
   await page.goto('/town-analysis/?town=BEDOK&flat=5+ROOM&thr=0.15');
 
   // Restored controls reflect the query string...
   await expect(page.locator('#sel-town')).toHaveValue('BEDOK');
   await expect(page.locator('#sel-flat')).toHaveValue('5 ROOM');
   await expect(page.locator('#sel-thr')).toHaveValue('0.15');
-  // ...and the map re-renders for the restored town (only possible via a DuckDB query,
-  // since the snapshot only covers the default Ang Mo Kio).
+  // ...and the map re-renders for the restored town. The worker holds the decoded columns
+  // in memory, so the query resolves without a network request — the re-render is the
+  // signal, and 'Bedok' only appears if the deviating deep-link triggered a worker query
+  // (the snapshot covers only the default Ang Mo Kio).
   await expect(page.locator('#map-sub')).toContainText('Bedok', { timeout: 45_000 });
-  await duckdb; // deviating params must boot the engine
 });
 
 test('changing a filter writes it to the URL live', async ({ page }) => {
