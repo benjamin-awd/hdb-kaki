@@ -13,9 +13,9 @@ import LeafletMap from '../components/LeafletMap.astro';
        hints are needed for it here. -->
   <section class="hero">
     <div class="wrap">
-      <span class="eyebrow rise"><span class="dot"></span> New · Personalised</span>
+      <span class="eyebrow rise"><span class="dot"></span> My Flat Insights</span>
       <h1 class="title rise" style="animation-delay:.05s">
-        What's your flat<br /><em>really</em> worth?
+        What's your flat <em>really</em> worth?
       </h1>
       <p class="lede solo rise" style="animation-delay:.1s">
         Start with your postal code, and we'll value your flat against nearby transactions.
@@ -24,7 +24,7 @@ import LeafletMap from '../components/LeafletMap.astro';
       <div class="form-card rise" style="animation-delay:.16s">
         <div class="form-grid">
           <div class="field">
-            <label for="f-postal"><span class="step">1</span>Postal code</label>
+            <label for="f-postal">Postal code</label>
             <input
               id="f-postal"
               class="big"
@@ -118,6 +118,14 @@ import LeafletMap from '../components/LeafletMap.astro';
             ><span class="v" id="vs-storey">—</span>
           </div>
           <div class="vs-row">
+            <span class="k"
+              ><Term term="Lease adjustment" end
+                >How much your remaining lease shifts the estimate versus the comps' typical lease,
+                using the SLA Leasehold Table.</Term
+              ></span
+            ><span class="v" id="vs-lease">—</span>
+          </div>
+          <div class="vs-row">
             <span class="k">Your floor area</span><span class="v" id="vs-area">—</span>
           </div>
           <div class="conf">
@@ -129,8 +137,8 @@ import LeafletMap from '../components/LeafletMap.astro';
           </div>
           <p class="disclaimer">
             Indicative estimate for guidance only — not a valuation for HDB, bank or CPF purposes.
-            Adjusted for storey band; not for exact lease or unit condition. Based on registered
-            resale transactions from data.gov.sg.
+            Adjusted for storey band and remaining lease (SLA Leasehold Table); not for unit
+            condition. Based on registered resale transactions from data.gov.sg.
           </p>
         </div>
       </div>
@@ -340,13 +348,6 @@ import LeafletMap from '../components/LeafletMap.astro';
     color: var(--ink-3);
     margin-bottom: 9px;
   }
-  /* The step chip is out of flow (absolute), so the postal label keeps the same height
-     as its neighbours; the form-alignment test asserts every cell in a row shares one
-     value baseline. padding-left just reserves the space the chip overlays. */
-  .field label[for='f-postal'] {
-    position: relative;
-    padding-left: 25px;
-  }
   .field .val {
     font-size: 17px;
     font-weight: 500;
@@ -386,6 +387,11 @@ import LeafletMap from '../components/LeafletMap.astro';
     outline-offset: 2px;
     border-radius: 2px;
   }
+  /* The postal code is the field people actively type into; a heavy ring around
+     the big mono value looks jarring, so keep it unhighlighted. */
+  .field input.big:focus-visible {
+    outline: none;
+  }
   .field input.big {
     font-family: var(--font-mono);
     font-size: 26px;
@@ -409,31 +415,28 @@ import LeafletMap from '../components/LeafletMap.astro';
       no-repeat right center;
     background-size: 10px 14px;
   }
+  /* Hide the browser's native up/down spinner on the number fields. A stepper
+     chevron here would only be decorative (it can't increment), so drop it and
+     let these read as plain typed values like the postal field above. */
+  .field input[type='number'] {
+    -webkit-appearance: none;
+    -moz-appearance: textfield;
+    appearance: none;
+  }
+  .field input[type='number']::-webkit-outer-spin-button,
+  .field input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
   .field .sub {
     font-size: 12.5px;
     color: var(--ink-3);
     margin-top: 5px;
   }
+  /* A gentle nudge toward the first action — kept subtle (muted, not red) so it
+     guides without shouting. It self-clears once a postal resolves (see JS). */
   .field .sub.cue {
-    color: var(--red-ink);
-    font-weight: 600;
-  }
-  .field label .step {
-    position: absolute;
-    left: 0;
-    top: 50%;
-    transform: translateY(-50%);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 17px;
-    height: 17px;
-    border-radius: 50%;
-    background: var(--red);
-    color: #fff;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    letter-spacing: 0;
+    color: var(--ink-2);
   }
   .form-foot {
     display: flex;
@@ -979,6 +982,7 @@ import LeafletMap from '../components/LeafletMap.astro';
   } from '../lib/echartsTheme';
   import { money, moneyShort, psf as fpsf, titleCase, deltaPill } from '../lib/format';
   import { reformatWithCaret, parsePrice, computeReturns } from '../lib/returns';
+  import { leaseAdjustment } from '../lib/lease';
 
   const NOW_YEAR = new Date().getFullYear();
 
@@ -1354,10 +1358,19 @@ import LeafletMap from '../components/LeafletMap.astro';
     const useStorey = nearStorey.length >= 5; // only adjust when the band has enough sales
     const basis = useStorey ? nearStorey : comps;
     const psfs = basis.map((c) => c.psf).sort((a, b) => a - b);
-    const medPsf = med(psfs),
-      q25 = quantile(psfs, 0.25),
-      q75 = quantile(psfs, 0.75);
-    const storeyAdjPct = baseMedPsf ? (medPsf / baseMedPsf - 1) * 100 : 0;
+    const rawMedPsf = med(psfs);
+    const storeyAdjPct = baseMedPsf ? (rawMedPsf / baseMedPsf - 1) * 100 : 0;
+    // lease adjustment — normalise the comps' typical remaining lease to this
+    // flat's via the SLA Leasehold Table, so a longer/shorter lease moves the estimate.
+    const compLease = med(basis.map((c) => c.lease).filter((l) => l > 0));
+    const {
+      factor: leaseAdj,
+      pct: leaseAdjPct,
+      known: leaseKnown,
+    } = leaseAdjustment(rem, compLease);
+    const medPsf = rawMedPsf * leaseAdj,
+      q25 = quantile(psfs, 0.25) * leaseAdj,
+      q75 = quantile(psfs, 0.75) * leaseAdj;
     const estimate = medPsf * area,
       low = q25 * area,
       high = q75 * area;
@@ -1384,6 +1397,9 @@ import LeafletMap from '../components/LeafletMap.astro';
     $('vs-storey').textContent = useStorey
       ? `${storeyAdjPct >= 0 ? '+' : ''}${storeyAdjPct.toFixed(1)}% · ${storey}`
       : 'n/a — too few';
+    $('vs-lease').textContent = leaseKnown
+      ? `${leaseAdjPct >= 0 ? '+' : ''}${leaseAdjPct.toFixed(1)}% · ${rem} yr vs ${Math.round(compLease)} yr`
+      : 'n/a';
     $('conf-label').textContent = confLabel;
     $('conf-bars').innerHTML = [0, 1, 2, 3]
       .map((i) => `<i class="${i < confBars ? 'on' : ''}"></i>`)

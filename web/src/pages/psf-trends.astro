@@ -19,7 +19,7 @@ import DataTable from '../components/DataTable.astro';
         The PSF story,<br /><em>street by street</em>.
       </h1>
       <p class="lede solo rise" style="animation-delay:.1s">
-        Fit a trend to price-per-square-foot over time for any town, street or storey band.
+        Fit a trend to price-per-square-foot over time for any town, street, storey or lease band.
       </p>
     </div>
   </section>
@@ -33,6 +33,12 @@ import DataTable from '../components/DataTable.astro';
         <option value="1-6">01–06</option>
         <option value="7-12">07–12</option>
         <option value="13-99">13+</option>
+      </FieldSelect>
+      <FieldSelect label="Lease" id="sel-lease">
+        <option value="all" selected>All</option>
+        <option value="81-99">81–99 yrs</option>
+        <option value="61-80">61–80 yrs</option>
+        <option value="0-60">≤60 yrs</option>
       </FieldSelect>
       <div class="chipset" id="reg-toggle">
         <button class="chip on" data-reg="ols">OLS</button>
@@ -131,7 +137,7 @@ import DataTable from '../components/DataTable.astro';
 
   const START = '2020-01';
 
-  const SCATTER_CAP = 6000; // reservoir-sample the dots above this; stats/trend use the full set
+  const SCATTER_CAP = 1500; // reservoir-sample the dots above this; stats/trend use the full set
   const idxOf = (m: string) => (+m.slice(0, 4) - 2017) * 12 + (+m.slice(5, 7) - 1);
   const dateOf = (idx: number) => new Date(2017 + Math.floor(idx / 12), idx % 12, 1).getTime();
   const monthLabel = (idx: number) =>
@@ -170,7 +176,7 @@ import DataTable from '../components/DataTable.astro';
   // closures). Mirrors the old SQL WHERE: this town, since START, psf present, plus optional
   // street + storey band. The zoom resample just overrides monthFrom/monthTo.
   function specFromUI(): PsfSpec {
-    const storey = ($('sel-storey') as HTMLSelectElement).value;
+    const lease = ($('sel-lease') as HTMLSelectElement).value;
     let storeyLo: number | null = null,
       storeyHi: number | null = null;
     if (storey !== 'all') {
@@ -178,11 +184,20 @@ import DataTable from '../components/DataTable.astro';
       storeyLo = a;
       storeyHi = b;
     }
+    let leaseLo: number | null = null,
+      leaseHi: number | null = null;
+    if (lease !== 'all') {
+      const [lo, hi] = lease.split('-').map(Number);
+      leaseLo = lo;
+      leaseHi = hi;
+    }
     return {
       town: ($('sel-town') as HTMLSelectElement).value,
       street: ($('sel-street') as HTMLSelectElement).value,
       storeyLo,
       storeyHi,
+      leaseLo,
+      leaseHi,
       monthFrom: START,
       cap: SCATTER_CAP,
     };
@@ -417,6 +432,7 @@ import DataTable from '../components/DataTable.astro';
     });
     $('sel-street').addEventListener('change', loadRender);
     $('sel-storey').addEventListener('change', loadRender);
+    $('sel-lease').addEventListener('change', loadRender);
 
     // Warm the worker at idle so the first filter/zoom is instant.
     // Save-Data / idle / prerender gated inside warmWhenIdle().
