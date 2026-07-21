@@ -891,3 +891,15 @@ table.comp tbody tr:hover {
     content: ' ' attr(data-suffix);
   }
 }
+
+/* Print: hide the site chrome so a page's own @media print block (e.g. My Flat
+   Insights' one-page valuation summary) can own the printed sheet. */
+@media print {
+  header.nav,
+  footer {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+  }
+}
