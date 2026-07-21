@@ -17,20 +17,25 @@ import { compressors } from 'hyparquet-compressors';
 
 interface Manifest {
   file: string;
+  lastUpdatedEpoch?: number | null; // cache key: bumps on each ETL run
 }
 
-// One request for the whole (small) file. Uses bare `location` (present in both window and
-// worker scopes — a Worker has no `window`). Vite still inlines import.meta.env.BASE_URL in
-// worker chunks.
-async function fetchFile(): Promise<AsyncBuffer> {
+// Uses bare `location` (present in both window and worker scopes — a Worker has no `window`).
+// Vite still inlines import.meta.env.BASE_URL in worker chunks.
+async function readManifest(): Promise<Manifest> {
   const base = import.meta.env.BASE_URL;
-  const manifest: Manifest = await fetch(`${base}data/manifest.json`).then((r) => {
+  return fetch(`${base}data/manifest.json`).then((r) => {
     if (!r.ok) throw new Error(`manifest.json ${r.status}`);
     return r.json();
   });
-  const url = new URL(`${base}data/${manifest.file}`, location.href).href;
+}
+
+// One request for the whole (small) file.
+async function fetchDataFile(fileName: string): Promise<AsyncBuffer> {
+  const base = import.meta.env.BASE_URL;
+  const url = new URL(`${base}data/${fileName}`, location.href).href;
   const abuf = await fetch(url).then((r) => {
-    if (!r.ok) throw new Error(`${manifest.file} ${r.status}`);
+    if (!r.ok) throw new Error(`${fileName} ${r.status}`);
     return r.arrayBuffer();
   });
   return { byteLength: abuf.byteLength, slice: (s, e) => abuf.slice(s, e) };
@@ -631,16 +636,76 @@ export function valuationQuery(
 
 // ============================ resident engine ============================
 
+// ---- cross-session cache (IndexedDB) ----
+// Persist the decoded columns keyed by the data's lastUpdatedEpoch (+ a schema tag). A repeat
+// visit after the worker is gone restores the typed arrays and skips the parquet fetch +
+// decode entirely; a new ETL run (new epoch) or a Columns-shape change (new tag) misses and
+// re-decodes. Best-effort: any IDB error falls back to decoding. IndexedDB is available in
+// both window and worker scopes; structured clone stores the typed arrays as-is.
+const IDB_DB = 'hyparquet';
+const IDB_STORE = 'columns';
+const IDB_TAG = 'v1'; // bump if the Columns shape changes
+
+function idbOpen(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_DB, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbGet(key: string): Promise<Columns | undefined> {
+  if (typeof indexedDB === 'undefined') return undefined;
+  const db = await idbOpen();
+  try {
+    return await new Promise<Columns | undefined>((resolve, reject) => {
+      const req = db.transaction(IDB_STORE, 'readonly').objectStore(IDB_STORE).get(key);
+      req.onsuccess = () => resolve(req.result as Columns | undefined);
+      req.onerror = () => reject(req.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+
+async function idbPut(key: string, cols: Columns): Promise<void> {
+  if (typeof indexedDB === 'undefined') return;
+  const db = await idbOpen();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(IDB_STORE, 'readwrite');
+      const store = tx.objectStore(IDB_STORE);
+      store.clear(); // keep only the current epoch/tag
+      store.put(cols, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+
 let columnsPromise: Promise<Columns> | null = null;
 
-/** Lazily fetch + decode resale.parquet into columnar form, cached. A failed load isn't
- * cached (next call retries). Decode goes through parquetReadObjects, then toColumns
- * transposes into the typed column arrays and the row objects are dropped. */
+/** Lazily produce the columnar dataset, cached for the session. Tries the IndexedDB cache
+ * first (keyed by lastUpdatedEpoch); on a miss, fetches resale.parquet, decodes via
+ * parquetReadObjects, transposes to columns (row objects dropped), and writes the cache in
+ * the background. A failed load isn't cached in-memory (next call retries). */
 export function loadColumns(): Promise<Columns> {
   return (columnsPromise ??= (async () => {
-    const file = await fetchFile();
+    const manifest = await readManifest();
+    const key =
+      manifest.lastUpdatedEpoch != null ? `${IDB_TAG}:${manifest.lastUpdatedEpoch}` : null;
+    if (key) {
+      const cached = await idbGet(key).catch(() => undefined);
+      if (cached) return cached;
+    }
+    const file = await fetchDataFile(manifest.file);
     const rows = await parquetReadObjects({ file, compressors });
-    return toColumns(rows as unknown as ResaleRow[]);
+    const cols = toColumns(rows as unknown as ResaleRow[]);
+    if (key) void idbPut(key, cols).catch(() => {});
+    return cols;
   })().catch((e) => {
     columnsPromise = null;
     throw e;
