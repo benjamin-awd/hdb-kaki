@@ -9,11 +9,9 @@ import DataTable from '../components/DataTable.astro';
 ---
 
 <Base active="PSF Trends" title="PSF Trends | HDB Kaki">
-  <!-- The default view paints from a precomputed JSON snapshot (psf-trends.json), so
-       DuckDB is NOT on the load path — the engine is warmed on idle and only booted when
-       the visitor changes a filter or zooms. No <link rel="prefetch"> for the wasm: the
-       idle warm downloads + instantiates it once (a prefetch link isn't reused by the
-       worker's instantiate fetch, so it only double-downloaded the ~4.7 MB engine). -->
+  <!-- The default view paints from a precomputed JSON snapshot (psf-trends.json), so no
+       data engine is on the load path — the worker is warmed on idle and only queried when
+       the visitor changes a filter or zooms. -->
   <section class="hero">
     <div class="wrap">
       <span class="eyebrow rise"><span class="dot"></span> Price per Square Foot</span>
@@ -111,9 +109,10 @@ import DataTable from '../components/DataTable.astro';
 <script>
   import { initChart } from '../lib/echarts';
   import { regressionLinear, regressionLoess } from 'd3-regression';
-  // DuckDB-WASM is heavy and NOT needed for first paint: the default view renders from
-  // a precomputed snapshot (psf-trends.json). The engine is imported lazily and only
-  // booted when the visitor changes a filter or zooms (warmed on idle so that's snappy).
+  // The default view renders from a precomputed snapshot (psf-trends.json); filter changes
+  // and zoom resamples run against resale.parquet held in a Web Worker (hyparquet). The
+  // scatter sample + monthly medians are computed in the worker and only those summaries
+  // cross back. The worker is warmed at idle so the first change is snappy.
   import {
     baseOption,
     axisLabel,
@@ -124,15 +123,12 @@ import DataTable from '../components/DataTable.astro';
     red,
   } from '../lib/echartsTheme';
   import { money, psf as fpsf, titleCase, deltaPill } from '../lib/format';
-  import {
-    createQuery,
-    sqlEsc as sql,
-    byId as $,
-    setStreets,
-    loadStreets,
-  } from '../lib/duckdbClient';
+  import { byId as $, setStreets } from '../lib/dom';
+  import { createHyparquet } from '../lib/hyparquetClient';
+  import type { PsfSpec, ScatterRow, Monthly } from '../lib/hyparquetClient';
 
-  const { query, warmEngineWhenIdle } = createQuery();
+  const { psfScatter, streets, warmWhenIdle } = createHyparquet();
+
   const START = '2020-01';
 
   const SCATTER_CAP = 6000; // reservoir-sample the dots above this; stats/trend use the full set
@@ -147,14 +143,6 @@ import DataTable from '../components/DataTable.astro';
     fullMaxIdx = 0; // full x-extent, for mapping zoom % → months
   let zoomTimer: ReturnType<typeof setTimeout>;
 
-  type ScatterRow = {
-    month: string;
-    psf: number;
-    address: string;
-    storey: string;
-    price: number;
-    lease: number;
-  };
   const toScatter = (rows: ScatterRow[]) =>
     rows.map((r) => ({
       value: [dateOf(idxOf(r.month)), Number(r.psf)],
@@ -165,16 +153,6 @@ import DataTable from '../components/DataTable.astro';
       psf: Number(r.psf),
       lease: Number(r.lease),
     }));
-  // `USING SAMPLE n ROWS` binds to the table scan and runs BEFORE the WHERE filter,
-  // so sampling `resale` directly would draw n rows from the whole table and only
-  // then filter — leaving a handful of matches for a narrow filter (e.g. one street +
-  // storey band). Wrap the filtered query in a subquery so the sample applies to the
-  // already-filtered rows (returns all of them when the set is under the cap).
-  const sampleSql = (where: string) =>
-    `SELECT * FROM (
-       SELECT month, psf, address, storey_range storey, resale_price price, remaining_lease_years lease
-       FROM resale WHERE ${where}
-     ) USING SAMPLE ${SCATTER_CAP} ROWS`;
   const noteText = (total: number, suffix = '') =>
     (total > SCATTER_CAP
       ? `random sample of ${SCATTER_CAP.toLocaleString()} of ${total.toLocaleString()}`
@@ -188,37 +166,39 @@ import DataTable from '../components/DataTable.astro';
       chart.dispatchAction({ type: 'dataZoom', start: s, end: e });
   }
 
-  function whereClause(): string {
-    const town = ($('sel-town') as HTMLSelectElement).value;
-    const street = ($('sel-street') as HTMLSelectElement).value;
+  // A serializable slice spec built from the current filters — crosses to the worker (no
+  // closures). Mirrors the old SQL WHERE: this town, since START, psf present, plus optional
+  // street + storey band. The zoom resample just overrides monthFrom/monthTo.
+  function specFromUI(): PsfSpec {
     const storey = ($('sel-storey') as HTMLSelectElement).value;
-    let w = `town='${sql(town)}' AND month >= '${START}' AND psf IS NOT NULL`;
-    if (street && street !== '__all') w += ` AND street_name='${sql(street)}'`;
+    let storeyLo: number | null = null,
+      storeyHi: number | null = null;
     if (storey !== 'all') {
-      const [lo, hi] = storey.split('-').map(Number);
-      w += ` AND storey_lower_bound >= ${lo} AND storey_lower_bound <= ${hi}`;
+      const [a, b] = storey.split('-').map(Number);
+      storeyLo = a;
+      storeyHi = b;
     }
-    return w;
+    return {
+      town: ($('sel-town') as HTMLSelectElement).value,
+      street: ($('sel-street') as HTMLSelectElement).value,
+      storeyLo,
+      storeyHi,
+      monthFrom: START,
+      cap: SCATTER_CAP,
+    };
   }
 
-  type Monthly = { month: string; med: number; n: number };
   let curSample: ScatterRow[] = [];
   let curMonthly: Monthly[] = [];
 
-  // Fetch the scatter sample + monthly medians for the current filter, then paint.
+  // Ask the worker for the current filter's scatter sample + per-month medians, then paint.
   async function loadRender() {
-    const where = whereClause();
-    const [sample, monthly] = await Promise.all([
-      query<ScatterRow>(sampleSql(where)),
-      query<Monthly>(
-        `SELECT month, median(psf) med, count(*) n FROM resale WHERE ${where} GROUP BY month ORDER BY month`,
-      ),
-    ]);
+    const { sample, monthly } = await psfScatter(specFromUI());
     paintChart(sample, monthly);
   }
 
   // Render the chart, stats and table from already-fetched data. Pure client-side, so
-  // toggling the regression type re-fits the same data without touching DuckDB.
+  // toggling the regression type re-fits the same data without a new query.
   function paintChart(sample: ScatterRow[], monthly: Monthly[]) {
     curSample = sample;
     curMonthly = monthly;
@@ -427,21 +407,20 @@ import DataTable from '../components/DataTable.astro';
       .join('');
     setStreets($('sel-street'), data.streets);
 
-    // Paint immediately from JSON — no DuckDB needed for the default view.
+    // Paint immediately from JSON — no parquet needed for the default view.
     paintChart(data.sample, data.monthly);
 
-    // Filters (and the semantic-zoom resample) go through DuckDB.
+    // Filters (and the semantic-zoom resample) read the in-memory parquet rows.
     $('sel-town').addEventListener('change', async () => {
-      setStreets(
-        $('sel-street'),
-        await loadStreets(query, ($('sel-town') as HTMLSelectElement).value),
-      );
+      setStreets($('sel-street'), await streets(($('sel-town') as HTMLSelectElement).value));
       loadRender();
     });
     $('sel-street').addEventListener('change', loadRender);
     $('sel-storey').addEventListener('change', loadRender);
 
-    warmEngineWhenIdle();
+    // Warm the worker at idle so the first filter/zoom is instant.
+    // Save-Data / idle / prerender gated inside warmWhenIdle().
+    warmWhenIdle();
   })();
 
   // semantic zoom: re-sample the scatter to the visible date window so zooming in reveals more detail
@@ -458,13 +437,9 @@ import DataTable from '../components/DataTable.astro';
     const span = fullMaxIdx - fullMinIdx;
     const a = monthLabel(Math.floor(fullMinIdx + (span * startPct) / 100));
     const b = monthLabel(Math.ceil(fullMinIdx + (span * endPct) / 100));
-    const where = `${whereClause()} AND month >= '${a}' AND month <= '${b}'`;
-    const [rows, cnt] = await Promise.all([
-      query<ScatterRow>(sampleSql(where)),
-      query<{ n: number }>(`SELECT count(*) n FROM resale WHERE ${where}`),
-    ]);
-    chart.setOption({ series: [{ data: toScatter(rows) }] });
-    $('scatter-note').textContent = noteText(Number(cnt[0].n), ' in view');
+    const { sample, total } = await psfScatter({ ...specFromUI(), monthFrom: a, monthTo: b });
+    chart.setOption({ series: [{ data: toScatter(sample) }] });
+    $('scatter-note').textContent = noteText(total, ' in view');
   }
   chart.on('datazoom', () => {
     clearTimeout(zoomTimer);
