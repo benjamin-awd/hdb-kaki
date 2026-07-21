@@ -341,8 +341,64 @@ footer {
   gap: 18px;
   align-items: stretch;
 }
+/* Grid items default to min-width:auto, so a child that can't shrink below its own
+   size (an ECharts <canvas> has a fixed pixel width) holds its column open. Once a
+   chart has been sized wide (in landscape, or a wider layout before rotation) the
+   column then refuses to shrink back and the card overflows the viewport. Letting the
+   tracks shrink lets resize() shrink the canvas to fit. */
+.split > * {
+  min-width: 0;
+}
 .pagepad {
   padding-bottom: 80px;
+}
+
+/* ---------- long-form prose (privacy / terms / about) ---------- */
+/* Sits inside a .wrap so it aligns to the hero's left edge, but caps the
+   measure for readable line length rather than filling the 1160px shell. */
+.prose {
+  max-width: 68ch;
+}
+.prose .updated {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--ink-3);
+  margin-bottom: 28px;
+}
+.prose h2 {
+  font-family: var(--font-newsreader);
+  font-weight: 600;
+  font-size: 24px;
+  letter-spacing: -0.02em;
+  margin: 34px 0 12px;
+}
+.prose p,
+.prose li {
+  font-size: 16.5px;
+  line-height: 1.7;
+  color: var(--ink-2);
+}
+.prose p {
+  margin-bottom: 14px;
+}
+.prose ul {
+  margin: 0 0 14px;
+  padding-left: 22px;
+}
+.prose li {
+  margin-bottom: 8px;
+}
+.prose a {
+  color: var(--red-ink);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--red-ink) 30%, transparent);
+}
+.prose a:hover {
+  border-bottom-color: var(--red-ink);
+}
+.prose strong {
+  color: var(--ink);
+  font-weight: 600;
 }
 
 /* ---------- controls ---------- */
@@ -384,16 +440,18 @@ footer {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   margin-left: 6px;
   padding: 0;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: 999px;
-  background: var(--paper);
-  color: var(--ink-3);
+  /* Filled chip rather than a thin outline: reads at this size and stays visible
+     on any surface (paper, tinted washes, the dark stat panel). */
+  background: color-mix(in srgb, var(--ink) 11%, var(--paper));
+  color: var(--ink-2);
   font-family: inherit;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 700;
   font-style: normal;
   line-height: 1;
@@ -403,10 +461,23 @@ footer {
   vertical-align: middle;
   flex: none;
 }
+/* Invisible 44px tap target centred on the 18px chip — comfortable on touch
+   without enlarging the inline footprint. Its neighbours (headings, table
+   header cells) are non-interactive, so the overlap steals no real clicks. */
+.info::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
 .info:hover,
-.info:focus-visible {
-  border-color: var(--ink-3);
-  color: var(--ink);
+.info:focus-visible,
+.info.open {
+  background: var(--ink);
+  color: var(--paper);
   outline: none;
 }
 /* inline term with a dotted underline that reveals the same tooltip on hover/focus */
@@ -462,13 +533,28 @@ footer {
 .info-pop strong {
   font-weight: 700;
 }
-.info:hover .info-pop,
 .info:focus-visible .info-pop,
-.term:hover .info-pop,
-.term:focus-visible .info-pop {
+.info.open .info-pop,
+.term:focus-visible .info-pop,
+.term.open .info-pop {
   opacity: 1;
   visibility: visible;
   transform: translateX(-50%) translateY(0);
+}
+/* Reveal on hover only on real pointer devices, and only above the phone breakpoint.
+   On touch iOS leaves :hover "stuck" after a tap, so a hover reveal would show the
+   popover with no way to dismiss it; touch instead drives everything through the
+   tap-toggle (.open) in lib/tooltip. The min-width guard also covers hybrid devices
+   (a mouse on a narrow viewport / DevTools responsive mode): below 560px the popover
+   is only ever positioned by place() on tap, so revealing it on an un-clamped hover
+   would let a right/left-anchored popover overflow the viewport edge. */
+@media (hover: hover) and (min-width: 561px) {
+  .info:hover .info-pop,
+  .term:hover .info-pop {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0);
+  }
 }
 /* keep right-edge popovers (e.g. the R² card, table columns) from overflowing */
 .info-end .info-pop {
@@ -482,7 +568,8 @@ footer {
   transform: none;
 }
 .info-end:hover .info-pop,
-.info-end:focus-visible .info-pop {
+.info-end:focus-visible .info-pop,
+.info-end.open .info-pop {
   transform: translateY(0);
 }
 /* open downward — used inside tables, whose card clips anything above the header row */
@@ -495,6 +582,24 @@ footer {
   bottom: 100%;
   border-top-color: transparent;
   border-bottom-color: var(--ink);
+}
+/* On phones the centred (or `end`-anchored) popover would clip against the viewport
+   edge next to a trigger near it. lib/tooltip re-anchors an opening popover to a
+   clamped offset and sets --tip-arrow so the arrow still points at the trigger; here
+   we only cap the width and let that variable drive the arrow. The closed popover
+   keeps its transform-based centring (excluded from scroll width) so it never widens
+   the page. */
+@media (max-width: 560px) {
+  .info .info-pop,
+  .term .info-pop {
+    max-width: min(250px, calc(100vw - 16px));
+  }
+  .info.open .info-pop::after,
+  .term.open .info-pop::after {
+    left: var(--tip-arrow, 50%);
+    right: auto;
+    transform: translateX(-50%);
+  }
 }
 
 /* ---------- native select (filter bar) ---------- */
@@ -702,6 +807,13 @@ table.comp tbody tr:hover {
   .kpi-strip {
     grid-template-columns: 1fr 1fr;
     gap: 12px;
+  }
+  /* Two per row: captions wrap to a second line unevenly (e.g. "Million $ flats · 12
+     mo" vs "Median PSF"). Keep the caption and value tight together and pin the YoY
+     pill to the bottom of the (equal-height) card so the pills line up across a row
+     regardless of how many lines the caption takes. */
+  .kpi .pill {
+    margin-top: auto;
   }
 }
 

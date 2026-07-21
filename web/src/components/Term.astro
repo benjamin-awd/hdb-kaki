@@ -1,10 +1,11 @@
 ---
-// Inline term with a dotted underline that reveals an explanation on hover/focus.
-// Use for jargon woven into a label (e.g. "Confidence") where a separate i-button
-// would be heavier than warranted. `term` is the visible text; the slot is the
-// explanation, wired via aria-describedby. Set `end` near the right edge so the
-// popover anchors right instead of centred, and `down` inside tables (whose card
-// clips anything above the header row) so the popover opens below the term.
+// Inline term with a dotted underline that reveals an explanation. Desktop shows it on
+// hover/focus; touch toggles it on tap (see lib/tooltip). Use for jargon woven into a
+// label (e.g. "Confidence") where a separate i-button would be heavier than warranted.
+// `term` is the visible text; the slot is the explanation, wired via aria-describedby.
+// Set `end` near the right edge so the popover anchors right instead of centred, and
+// `down` inside tables (whose card clips anything above the header row) so the popover
+// opens below the term.
 interface Props {
   term: string;
   end?: boolean;
@@ -19,3 +20,8 @@ const id = `term-${Math.random().toString(36).slice(2, 9)}`;
   tabindex="0"
   aria-describedby={id}>{term}<span class="info-pop" role="tooltip" id={id}><slot /></span></span
 >
+
+<script>
+  // Tap-to-toggle on touch (shared with <Info>); hover/focus stays in CSS.
+  import '../lib/tooltip';
+</script>

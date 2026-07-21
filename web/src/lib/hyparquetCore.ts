@@ -279,6 +279,8 @@ export interface PsfSpec {
   street: string; // '__all' or a street name
   storeyLo: number | null; // null → no storey band filter
   storeyHi: number | null;
+  leaseLo: number | null; // null → no remaining-lease band filter
+  leaseHi: number | null;
   monthFrom: string; // START, or the zoom window lower bound
   monthTo?: string; // zoom window upper bound
   cap: number; // scatter sample cap (SCATTER_CAP)
@@ -402,7 +404,10 @@ export function psfScatterQuery(
       (spec.street === '__all' || c.street_name[i] === spec.street) &&
       (spec.storeyLo === null ||
         (c.storey_lower_bound[i] >= spec.storeyLo &&
-          c.storey_lower_bound[i] <= (spec.storeyHi ?? spec.storeyLo)))
+          c.storey_lower_bound[i] <= (spec.storeyHi ?? spec.storeyLo))) &&
+      (spec.leaseLo === null ||
+        (c.remaining_lease_years[i] >= spec.leaseLo &&
+          c.remaining_lease_years[i] <= (spec.leaseHi ?? spec.leaseLo)))
     )
       idx.push(i);
   }

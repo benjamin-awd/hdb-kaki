@@ -167,6 +167,8 @@ describe('psfScatterQuery', () => {
     street: '__all',
     storeyLo: null,
     storeyHi: null,
+    leaseLo: null,
+    leaseHi: null,
     monthFrom: '2025-01',
     cap: 6000,
   };
@@ -188,6 +190,20 @@ describe('psfScatterQuery', () => {
       monthTo: '2025-01',
     });
     expect(total).toBe(1); // only 2025-01 storey 4
+  });
+
+  test('remaining-lease band', () => {
+    const leaseRows = [
+      row({ month: '2025-01', psf: 100, remaining_lease_years: 55 }),
+      row({ month: '2025-01', psf: 200, remaining_lease_years: 70 }),
+      row({ month: '2025-01', psf: 300, remaining_lease_years: 90 }),
+    ];
+    const { total } = psfScatterQuery(cols(leaseRows), {
+      ...spec,
+      leaseLo: 60,
+      leaseHi: 80,
+    });
+    expect(total).toBe(1); // only the 70-year lease falls in [60, 80]
   });
 });
 
