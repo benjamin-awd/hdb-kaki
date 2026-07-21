@@ -79,7 +79,9 @@ export function selectBinding(id: string, key: string, def: string): ControlBind
     key,
     default: def,
     read: () => sel(id)?.value ?? def,
-    write: (v) => void (sel(id).value = v),
+    write: (v) => {
+      sel(id).value = v;
+    },
   };
 }
 
@@ -89,7 +91,9 @@ export function inputBinding(id: string, key: string, def: string): ControlBindi
     key,
     default: def,
     read: () => sel(id)?.value ?? def,
-    write: (v) => void (sel(id).value = v),
+    write: (v) => {
+      sel(id).value = v;
+    },
   };
 }
 
