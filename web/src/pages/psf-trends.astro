@@ -270,7 +270,11 @@ import DataTable from '../components/DataTable.astro';
   const PROJ_MONTHS = 9; // how far forward to continue the line
   const PROJ_MIN_MONTHS = 8; // don't project a series thinner than this
   const PROJ_MIN_R2 = 0.5; // don't project a fit weaker than this
-  const PROJ_T = 1.96; // ~95% prediction interval multiplier
+  // Nested prediction-interval bands (≈50% / 80% / 95%), drawn as a fan: each is filled at
+  // the same low opacity, so where they overlap the colour compounds — darker down the
+  // middle, fading at the outer edge. PROJ_T (the 95% multiplier) also sizes the hover range.
+  const PROJ_LEVELS = [0.674, 1.282, 1.96];
+  const PROJ_T = PROJ_LEVELS[PROJ_LEVELS.length - 1];
   let showProjection = true;
 
   // Reflect the projection state into the module flag + checkbox without repainting; the
@@ -305,6 +309,7 @@ import DataTable from '../components/DataTable.astro';
       chart.dispatchAction({ type: 'showTip', seriesIndex: 2, dataIndex: i });
     (window as any).__psfZoom = (s: number, e: number) =>
       chart.dispatchAction({ type: 'dataZoom', start: s, end: e });
+    (window as any).__psfChart = chart;
   }
 
   // A serializable slice spec built from the current filters — crosses to the worker (no
@@ -440,8 +445,12 @@ import DataTable from '../components/DataTable.astro';
     }
 
     const projLine: [number, number][] = [];
-    const projBandLower: [number, number][] = [];
-    const projBandSpan: [number, number][] = [];
+    // one {lower, span} pair per confidence level, drawn as a stacked (transparent+filled) band
+    const projBands: { lower: [number, number][]; span: [number, number][] }[] = PROJ_LEVELS.map(
+      () => ({ lower: [], span: [] }),
+    );
+    // hover points carry the widest (95%) interval so the tooltip shows a range, not a point
+    const projHover: { value: [number, number]; month: string; lo: number; hi: number }[] = [];
     let projEnd = NaN;
     if (drawProj) {
       const n = pts.length;
@@ -449,18 +458,30 @@ import DataTable from '../components/DataTable.astro';
       const sxx = pts.reduce((s, p) => s + (p.idx - xbar) ** 2, 0);
       const rse = Math.sqrt(ssRes / (n - 2)); // residual standard error of the fit
       const lastIdx = pts[n - 1].idx;
-      // half-width of the prediction interval at a future month index
-      const halfAt = (idx: number) =>
-        sxx > 0 ? PROJ_T * rse * Math.sqrt(1 + 1 / n + (idx - xbar) ** 2 / sxx) : 0;
+      // half-width of a prediction interval at a future month index, for a given multiplier
+      const halfAt = (idx: number, t: number) =>
+        sxx > 0 ? t * rse * Math.sqrt(1 + 1 / n + (idx - xbar) ** 2 / sxx) : 0;
       // start at the last month so the dashed line + cone join the solid fit at "today"
       for (let k = 0; k <= PROJ_MONTHS; k++) {
         const idx = lastIdx + k;
         const t = dateOf(idx);
         const yhat = olsPredict!(idx);
-        const half = halfAt(idx);
         projLine.push([t, Math.round(yhat)]);
-        projBandLower.push([t, Math.round(yhat - half)]);
-        projBandSpan.push([t, Math.round(2 * half)]);
+        PROJ_LEVELS.forEach((mult, li) => {
+          const half = halfAt(idx, mult);
+          projBands[li].lower.push([t, Math.round(yhat - half)]);
+          projBands[li].span.push([t, Math.round(2 * half)]);
+        });
+        // skip k=0: it sits on "today" and duplicates the fitted line's last point
+        if (k > 0) {
+          const half95 = halfAt(idx, PROJ_T);
+          projHover.push({
+            value: [t, Math.round(yhat)],
+            month: monthLabel(idx),
+            lo: Math.round(yhat - half95),
+            hi: Math.round(yhat + half95),
+          });
+        }
       }
       projEnd = olsPredict!(lastIdx + PROJ_MONTHS);
     }
@@ -478,7 +499,9 @@ import DataTable from '../components/DataTable.astro';
             ...(drawProj ? ['Projected (9 mo)'] : []),
           ],
         },
-        grid: { left: 60, right: 24, top: 40, bottom: 70, containLabel: false },
+        // extra right margin when projecting so the dashed line's end value label clears
+        // the plot edge instead of being clipped.
+        grid: { left: 60, right: drawProj ? 72 : 24, top: 40, bottom: 70, containLabel: false },
         dataZoom: [
           { type: 'inside' },
           {
@@ -505,11 +528,15 @@ import DataTable from '../components/DataTable.astro';
               const d = p.data;
               return `<b>${titleCase(d.address)}</b><br/>${d.month} · ${d.storey}<br/><b>${money(d.price)}</b> · ${fpsf(d.psf)} psf · ${d.lease} yrs left`;
             }
+            // Projected points hover through the invisible _projhover layer, which carries
+            // the prediction interval as `lo`/`hi` — surface the range, not just the centre.
+            if (p.seriesName === '_projhover') {
+              const d = p.data;
+              return `${d.month} · <span style="color:#8c8479">projected if trend holds</span><br/><b>${fpsf(d.value[1])}</b> · range ${fpsf(d.lo)}–${fpsf(d.hi)}`;
+            }
             const dt = new Date(p.value[0]);
             const ml = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
-            const kind =
-              p.seriesName === 'Projected (9 mo)' ? 'projected · if trend holds' : 'fitted trend';
-            return `${ml}<br/><b>${fpsf(p.value[1])}</b> ${kind}`;
+            return `${ml}<br/><b>${fpsf(p.value[1])}</b> fitted trend`;
           },
         },
         xAxis: { type: 'time', axisLabel, axisLine, splitLine: { show: false } },
@@ -550,47 +577,57 @@ import DataTable from '../components/DataTable.astro';
             emphasis: { disabled: true },
             z: 4,
           },
-          // Uncertainty cone, drawn as a stacked pair: a transparent lower-bound line sets
-          // the baseline, and the span (2×half-width) stacked on top is filled. Both hidden
-          // from the legend and silent so they never steal a tooltip from the trend line.
+          // Uncertainty fan: one band per confidence level, each a stacked pair — a
+          // transparent lower-bound line sets the baseline, the span (2×half-width) stacked
+          // on top carries a low-opacity fill. Overlapping fills compound, so the centre
+          // reads darkest and the outer edge softest. All silent + hidden from the legend.
           ...(drawProj
             ? [
-                {
-                  name: '_projLower',
-                  type: 'line' as const,
-                  data: projBandLower,
-                  stack: 'proj-band',
-                  symbol: 'none' as const,
-                  lineStyle: { opacity: 0 },
-                  silent: true,
-                  emphasis: { disabled: true },
-                  z: 0,
-                },
-                {
-                  name: '_projBand',
-                  type: 'line' as const,
-                  data: projBandSpan,
-                  stack: 'proj-band',
-                  symbol: 'none' as const,
-                  lineStyle: { opacity: 0 },
-                  areaStyle: { color: 'rgba(254,1,43,.13)' },
-                  silent: true,
-                  emphasis: { disabled: true },
-                  z: 0,
-                },
+                ...projBands.flatMap((band, li) => [
+                  {
+                    name: `_projLower${li}`,
+                    type: 'line' as const,
+                    data: band.lower,
+                    stack: `proj-band-${li}`,
+                    symbol: 'none' as const,
+                    lineStyle: { opacity: 0 },
+                    silent: true,
+                    emphasis: { disabled: true },
+                    z: 0,
+                  },
+                  {
+                    name: `_projBand${li}`,
+                    type: 'line' as const,
+                    data: band.span,
+                    stack: `proj-band-${li}`,
+                    symbol: 'none' as const,
+                    lineStyle: { opacity: 0 },
+                    areaStyle: { color: 'rgba(254,1,43,.09)' },
+                    silent: true,
+                    emphasis: { disabled: true },
+                    z: 0,
+                  },
+                ]),
                 {
                   name: 'Projected (9 mo)',
                   type: 'line' as const,
                   data: projLine,
-                  showSymbol: false,
+                  // draw a single dot at the far end only (dataIndex === last), like the
+                  // wireframe's projection marker; the rest of the line stays symbol-free.
+                  showSymbol: true,
+                  symbol: 'circle' as const,
+                  symbolSize: (_v: unknown, p: any) =>
+                    p.dataIndex === projLine.length - 1 ? 7 : 0,
                   lineStyle: { color: red, width: 2.5, type: 'dashed' as const },
                   itemStyle: { color: red },
                   emphasis: { disabled: true },
+                  silent: true,
                   endLabel: {
                     show: true,
                     color: red,
                     fontFamily: mono,
                     fontSize: 11,
+                    offset: [8, 0],
                     formatter: () => `~${fpsf(projEnd)}`,
                   },
                   markLine: {
@@ -613,6 +650,17 @@ import DataTable from '../components/DataTable.astro';
                     data: [{ xAxis: projLine[0][0] }],
                   },
                   z: 3,
+                },
+                {
+                  // invisible hover layer over the projected points — mirrors _trendhover
+                  // so future dates get a tooltip (with the interval range). Not in legend.
+                  name: '_projhover',
+                  type: 'scatter' as const,
+                  data: projHover,
+                  symbolSize: 22,
+                  itemStyle: { color: red, opacity: 0 },
+                  emphasis: { disabled: true },
+                  z: 4,
                 },
               ]
             : []),
