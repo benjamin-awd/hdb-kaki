@@ -5,16 +5,16 @@ writes a single ZSTD-compressed, column-trimmed ``resale.parquet`` into
 ``web/public/data/`` along with a ``manifest.json``. Standalone (polars only) so it
 does not depend on the Streamlit-Cloud path baked into ``webapp.utils.get_project_root``.
 
-The data is emitted as ONE file rather than year-shards: DuckDB-WASM reads it over HTTP
-range requests, and every query spans all years, so sharding only multiplied the
-sequential round-trips (footer + column reads per file) with no pruning benefit. A
-single file is read in one pass — far fewer requests, much faster first query.
+The data is emitted as ONE file rather than year-shards: the client fetches it once and
+decodes it in a Web Worker, and every query spans all years, so sharding only multiplied
+the round-trips (one fetch + decode per file) with no pruning benefit. A single file is
+one request and one decode — far cheaper first query.
 
 Also precomputes ``overview.json`` (landing page) and ``town-analysis.json`` (the
 town-analysis default view) so those pages paint from a single small fetch instead of
-booting DuckDB-WASM in the browser on load. The queries here mirror the SQL in the
-corresponding page one-for-one so the numbers stay identical; DuckDB is only booted
-in the browser when the visitor changes a filter.
+loading the data worker in the browser on load. The queries here mirror each page's
+client-side query one-for-one so the numbers stay identical; the worker only loads when
+the visitor changes a filter.
 """
 
 from __future__ import annotations
@@ -191,8 +191,8 @@ def emit_overview(df: pl.DataFrame) -> None:
     )
 
     # First page of the recent-transactions table. The landing paints this straight from
-    # the snapshot; changing a filter or paging past page 1 boots DuckDB in the browser
-    # and re-queries with the same ORDER BY + LIMIT/OFFSET.
+    # the snapshot; changing a filter or paging past page 1 queries the data worker in the
+    # browser with the same ordering + page slice.
     recent_window = df.filter(pl.col("month") >= cutoff)
     recent = (
         recent_window.sort(["month", "resale_price"], descending=[True, True])
@@ -248,7 +248,7 @@ def emit_overview(df: pl.DataFrame) -> None:
         "buckets": buckets,
         "recent": recent,
         "recentTotal": recent_window.height,
-        # Option lists for the recent-transactions filters (populated without DuckDB).
+        # Option lists for the recent-transactions filters (populated without the worker).
         "towns": sorted(df["town"].unique().to_list()),
         "flatTypes": sorted(df["flat_type"].unique().to_list()),
         "stats": stats,
@@ -264,7 +264,7 @@ def emit_town_analysis(df: pl.DataFrame) -> None:
     Mirrors the on-load queries in web/src/pages/town-analysis.astro: the town/flat
     option lists, the default town/flat map rows (last 24 months), and the highest
     recorded sale per town for the default flat. Rendering this lets the page paint
-    without DuckDB; the engine only boots when the visitor changes a filter.
+    without the data worker; it only loads when the visitor changes a filter.
     """
     today = date.today()
     cutoff = f"{today.year - 2}-{today.month:02d}"  # 'YYYY-MM', 24 months back
@@ -296,7 +296,7 @@ def emit_town_analysis(df: pl.DataFrame) -> None:
     # context (type, address, storey, area, psf, month) and the median for that same flat
     # type in the town, so the outlier reads against a like-for-like typical. Only the
     # first page is precomputed; paging, changing town, or switching to the "All Singapore"
-    # cross-town scope boots DuckDB (see town-analysis.astro).
+    # cross-town scope queries the data worker (see town-analysis.astro).
     RECORDS_PAGE_SIZE = (
         8  # keep in sync with RECORDS_PAGE_SIZE in web/src/pages/town-analysis.astro
     )
