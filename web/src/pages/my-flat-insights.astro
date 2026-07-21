@@ -171,6 +171,132 @@ import LeafletMap from '../components/LeafletMap.astro';
         <div class="ps-foot" id="ps-foot"></div>
       </div>
 
+      <!-- 01.5 AFFORDABILITY & MORTGAGE -->
+      <SecHead num="01.5" title="What it takes to buy this flat" hintId="afford-hint">
+        Turns the estimate into the numbers you actually decide on — the monthly instalment, the
+        cash-plus-CPF downpayment, and the household income needed under Singapore's MSR and TDSR
+        limits.
+      </SecHead>
+
+      <div class="card chart-card afford-card">
+        <div class="calc">
+          <!-- controls -->
+          <div class="afford-controls">
+            <div class="chart-title afford-controls-title">Your numbers</div>
+
+            <div class="ctl">
+              <label for="m-price">Purchase price</label>
+              <span class="val mono" id="m-price-val">—</span>
+              <input
+                id="m-price"
+                type="range"
+                min="300000"
+                max="1200000"
+                value="650000"
+                step="10000"
+              />
+              <div class="field-note">
+                Pre-filled from the valuation above; drag to test other prices.
+              </div>
+            </div>
+
+            <div class="ctl">
+              <label for="m-tenure">Loan tenure</label>
+              <span class="val mono" id="m-tenure-val">—</span>
+              <input id="m-tenure" type="range" min="5" max="25" value="25" step="1" />
+              <div class="field-note" id="m-tenure-note">
+                Capped by the loan type and the flat's remaining lease.
+              </div>
+            </div>
+
+            <div class="ctl">
+              <label>Loan type / rate</label>
+              <div class="seg" id="m-loantype" role="group" aria-label="Loan type">
+                <button type="button" class="on" data-loan="hdb">HDB · 2.6%</button>
+                <button type="button" data-loan="bank">Bank · 3.5%</button>
+              </div>
+              <div class="field-note">
+                HDB concessionary rate vs an illustrative bank rate. Rates are indicative.
+              </div>
+            </div>
+
+            <div class="ctl">
+              <label for="m-lease">Remaining lease</label>
+              <span class="val mono" id="m-lease-val">—</span>
+              <input id="m-lease" type="range" min="30" max="99" value="78" step="1" />
+              <div class="field-note">
+                Resolved from the flat's lease start; short leases restrict tenure and CPF usage.
+              </div>
+            </div>
+          </div>
+
+          <!-- results -->
+          <div class="afford-results">
+            <div class="headline">
+              <div class="cap">Estimated monthly instalment</div>
+              <div class="big mono" id="m-instalment">—<span class="per">/mo</span></div>
+              <div class="sub" id="m-instalment-sub">&nbsp;</div>
+            </div>
+
+            <div class="kpis afford-kpis">
+              <div class="kpi">
+                <div class="cap">Downpayment</div>
+                <div class="num mono" id="m-downpayment">
+                  —<small id="m-downpayment-sub">&nbsp;</small>
+                </div>
+              </div>
+              <div class="kpi">
+                <div class="cap">Min household income</div>
+                <div class="num mono" id="m-income">—<small>per month, MSR-bound</small></div>
+              </div>
+              <div class="kpi">
+                <div class="cap">Total interest</div>
+                <div class="num mono" id="m-interest">
+                  —<small id="m-interest-sub">&nbsp;</small>
+                </div>
+              </div>
+            </div>
+
+            <div class="afford-split">
+              <div class="chart-title afford-split-title">Downpayment: cash vs CPF</div>
+              <div class="chart-sub" id="m-split-sub">&nbsp;</div>
+              <div class="bar">
+                <i id="m-split-cash" style="width:0;background:var(--red)"></i>
+                <i id="m-split-cpf" style="width:100%;background:var(--good)"></i>
+              </div>
+              <div class="lg" id="m-split-legend"></div>
+            </div>
+
+            <div class="afford-split">
+              <div class="chart-title afford-split-title afford-income-head">
+                Income check <span class="pill up" id="m-income-pill">within limits</span>
+              </div>
+              <div class="chart-sub" id="m-income-sub">&nbsp;</div>
+              <div class="lg">
+                <span
+                  ><span class="pill up afford-ratio-pill">MSR 30%</span> mortgage servicing ratio met</span
+                >
+                <span
+                  ><span class="pill up afford-ratio-pill">TDSR 55%</span> total debt servicing ratio
+                  met</span
+                >
+              </div>
+            </div>
+
+            <div>
+              <div class="chart-title afford-split-title">Sensitivity: monthly instalment</div>
+              <table class="sens">
+                <thead>
+                  <tr><th>Tenure</th><th>2.6% (HDB)</th><th>3.5% (bank)</th><th>4.0%</th></tr>
+                </thead>
+                <tbody id="m-sens-body"></tbody>
+              </table>
+              <div class="afford-disclaimer" id="m-disclaimer">&nbsp;</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- 02 PRICE TRAJECTORY -->
       <SecHead num="02" title="Price trajectory" hintId="traj-hint">
         How your flat type has moved here over the years.
@@ -956,6 +1082,246 @@ import LeafletMap from '../components/LeafletMap.astro';
     border-color: var(--red);
     background: var(--red-wash);
   }
+  /* ---- 01.5 affordability & mortgage calculator ---- */
+  .afford-card {
+    margin-top: 18px;
+    padding: 20px 22px;
+  }
+  .calc {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    gap: 22px;
+  }
+  .afford-controls {
+    display: grid;
+    gap: 18px;
+    align-content: start;
+  }
+  .afford-controls-title {
+    margin-bottom: 2px;
+  }
+  .ctl label {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-bottom: 7px;
+  }
+  .ctl .val {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 17px;
+    color: var(--ink);
+  }
+  .ctl input[type='range'] {
+    width: 100%;
+    accent-color: var(--red);
+    margin-top: 8px;
+  }
+  .field-note {
+    font-size: 11.5px;
+    color: var(--ink-3);
+    margin-top: 6px;
+  }
+  .field-note :global(code) {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    background: #efe8da;
+    padding: 1px 5px;
+    border-radius: 5px;
+  }
+  .seg {
+    display: inline-flex;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--paper-2);
+  }
+  .seg button {
+    font: inherit;
+    font-size: 13px;
+    padding: 7px 13px;
+    border: 0;
+    background: transparent;
+    color: var(--ink-2);
+    cursor: pointer;
+  }
+  .seg button.on {
+    background: var(--red);
+    color: #fff;
+    font-weight: 600;
+  }
+  .afford-results {
+    display: grid;
+    gap: 16px;
+    align-content: start;
+  }
+  .headline {
+    background: linear-gradient(180deg, var(--paper-2), var(--red-wash));
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 20px 22px;
+  }
+  .headline .cap {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .headline .big {
+    font-weight: 600;
+    font-size: 40px;
+    letter-spacing: -0.02em;
+    color: var(--red-ink);
+    line-height: 1.05;
+    margin-top: 4px;
+  }
+  /* .per is injected into #m-instalment via innerHTML, so it needs :global to be styled */
+  .headline .big :global(.per) {
+    font-size: 18px;
+  }
+  .headline .sub {
+    font-size: 13.5px;
+    color: var(--ink-2);
+    margin-top: 6px;
+  }
+  .headline .sub :global(b) {
+    color: var(--ink);
+  }
+  .afford-kpis {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+  .afford-kpis .kpi {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--paper-2);
+    padding: 13px 14px;
+  }
+  .afford-kpis .kpi .cap {
+    font-size: 11.5px;
+    color: var(--ink-3);
+  }
+  .afford-kpis .kpi .num {
+    font-weight: 600;
+    font-size: 20px;
+    margin-top: 3px;
+  }
+  /* the <small> caption is injected via innerHTML — :global so the scope attr isn't required */
+  .afford-kpis .kpi .num :global(small) {
+    display: block;
+    font-family: var(--font-sans);
+    font-weight: 400;
+    font-size: 11.5px;
+    color: var(--ink-3);
+  }
+  .afford-split {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--paper-2);
+    padding: 15px 16px;
+  }
+  .afford-split-title {
+    font-size: 14px;
+    margin-bottom: 2px;
+  }
+  .afford-income-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+  }
+  .afford-split .chart-sub {
+    margin: 2px 0 4px;
+  }
+  .afford-split .bar {
+    display: flex;
+    height: 18px;
+    border-radius: 6px;
+    overflow: hidden;
+    margin: 10px 0 8px;
+  }
+  .afford-split .bar i {
+    display: block;
+    height: 100%;
+    transition: width 0.18s ease;
+  }
+  .afford-split .lg {
+    display: flex;
+    gap: 16px;
+    font-size: 12px;
+    color: var(--ink-2);
+    flex-wrap: wrap;
+  }
+  /* legend spans are injected via innerHTML for the cash/CPF split, so :global them */
+  .afford-split .lg :global(span) {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .afford-split .lg :global(em) {
+    width: 11px;
+    height: 11px;
+    border-radius: 3px;
+    font-style: normal;
+    display: inline-block;
+  }
+  .afford-ratio-pill {
+    font-size: 11px;
+  }
+  table.sens {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin-top: 4px;
+  }
+  table.sens th,
+  table.sens td {
+    padding: 8px 10px;
+    text-align: right;
+    border-bottom: 1px solid var(--line);
+  }
+  table.sens th:first-child,
+  table.sens td:first-child {
+    text-align: left;
+    color: var(--ink-2);
+  }
+  table.sens thead th {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    font-weight: 600;
+  }
+  /* :global — sensitivity rows are injected via innerHTML */
+  :global(table.sens td.mono) {
+    font-family: var(--font-mono);
+    font-feature-settings: 'tnum' 1;
+  }
+  :global(table.sens tr.hi td) {
+    background: var(--red-wash);
+  }
+  .afford-disclaimer {
+    font-size: 12px;
+    color: var(--ink-3);
+    margin-top: 8px;
+  }
+  @media (max-width: 820px) {
+    .calc {
+      grid-template-columns: 1fr;
+    }
+  }
+  @media (max-width: 560px) {
+    .afford-kpis {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+
   @media (max-width: 900px) {
     .form-grid {
       grid-template-columns: 1fr 1fr;
@@ -1139,6 +1505,17 @@ import LeafletMap from '../components/LeafletMap.astro';
   import { money, moneyShort, psf as fpsf, titleCase, deltaPill } from '../lib/format';
   import { reformatWithCaret, parsePrice, computeReturns } from '../lib/returns';
   import { leaseAdjustment } from '../lib/lease';
+  import {
+    LOAN_RULES,
+    MSR,
+    RULES_AS_OF,
+    SENSITIVITY_RATES,
+    SENSITIVITY_TENURES,
+    computeMortgage,
+    maxTenure,
+    sensitivityTable,
+    type LoanType,
+  } from '../lib/mortgage';
 
   const NOW_YEAR = new Date().getFullYear();
 
@@ -1504,6 +1881,108 @@ import LeafletMap from '../components/LeafletMap.astro';
       .join('');
   }
 
+  // ===== 01.5 · affordability & mortgage (pure client-side; see lib/mortgage.ts) =====
+  let loanType: LoanType = 'hdb';
+  // "2.6%" / "4%" — drop a trailing ".0" so whole rates read cleanly.
+  const rateLabel = (r: number) => (r * 100).toFixed(1).replace(/\.0$/, '') + '%';
+
+  // Re-read the four controls and repaint the whole panel. No worker round-trip: this is
+  // the standard amortisation formula plus the SG rule constants applied to local inputs.
+  function updateMortgage() {
+    const price = Number(($('m-price') as HTMLInputElement).value) || 0;
+    const rem = Number(($('m-lease') as HTMLInputElement).value) || 0;
+
+    // Tenure is capped by the loan type and the flat's remaining lease; clamp the slider's
+    // max (and current value) before reading it, so the range can never exceed the rules.
+    const tenureEl = $('m-tenure') as HTMLInputElement;
+    const cap = maxTenure(loanType, rem);
+    tenureEl.max = String(cap);
+    let tenure = Number(tenureEl.value) || cap;
+    if (tenure > cap) {
+      tenure = cap;
+      tenureEl.value = String(cap);
+    }
+
+    $('m-price-val').textContent = money(price);
+    $('m-tenure-val').textContent = `${tenure} year${tenure === 1 ? '' : 's'}`;
+    $('m-lease-val').textContent = `${rem} years`;
+
+    const rule = LOAN_RULES[loanType];
+    const m = computeMortgage({ price, loanType, tenureYears: tenure });
+
+    // headline instalment
+    $('m-instalment').innerHTML = `${money(m.instalment)}<span class="per">/mo</span>`;
+    $('m-instalment-sub').innerHTML =
+      `On a ${money(m.loan)} loan (${Math.round(m.ltv * 100)}% LTV) over ${tenure} years at ${rateLabel(m.rate)}. ` +
+      `That is roughly <b>${money(m.annualRepayment)} a year</b> in repayments.`;
+
+    // KPIs
+    $('m-downpayment').innerHTML =
+      `${money(m.downpayment)}<small>${Math.round(m.downpaymentPct * 100)}% of price</small>`;
+    $('m-income').innerHTML = `${money(m.minIncome)}<small>per month, MSR-bound</small>`;
+    $('m-interest').innerHTML = `${money(m.totalInterest)}<small>over ${tenure} years</small>`;
+
+    // downpayment split — cash vs CPF
+    const dp = m.downpayment || 1;
+    const cashW = Math.round((m.cash / dp) * 100);
+    ($('m-split-cash') as HTMLElement).style.width = cashW + '%';
+    ($('m-split-cpf') as HTMLElement).style.width = 100 - cashW + '%';
+    const cashFloor = Math.round(rule.minCashPct * 100);
+    $('m-split-sub').textContent =
+      rule.minCashPct > 0
+        ? `${rule.label} loan needs at least ${cashFloor}% of the price in cash; the rest can come from your CPF Ordinary Account.`
+        : `An ${rule.label} loan downpayment can be paid entirely from your CPF Ordinary Account — cash is optional.`;
+    $('m-split-legend').innerHTML =
+      `<span><em style="background:var(--red)"></em> Cash · ${money(m.cash)}${rule.minCashPct > 0 ? ` (min ${cashFloor}%)` : ''}</span>` +
+      `<span><em style="background:var(--good)"></em> CPF OA · ${money(m.cpf)}</span>`;
+
+    // income check
+    $('m-income-sub').textContent =
+      `At ${money(m.minIncome)} household income, the instalment is ${Math.round(MSR * 100)}% of gross income — right at the MSR cap for HDB flats — and well within the 55% TDSR.`;
+
+    // sensitivity: highlight the row nearest the chosen tenure, and the current rate's cell
+    const rateCol = SENSITIVITY_RATES.findIndex((r) => Math.abs(r - m.rate) < 1e-9);
+    const nearestTenure = SENSITIVITY_TENURES.reduce((a, b) =>
+      Math.abs(b - tenure) < Math.abs(a - tenure) ? b : a,
+    );
+    $('m-sens-body').innerHTML = sensitivityTable(price, loanType)
+      .map((row) => {
+        const hi = row.tenure === nearestTenure;
+        const cells = row.instalments
+          .map(
+            (v, i) =>
+              `<td class="mono"${i === rateCol && hi ? ' style="color:var(--red-ink)"' : ''}>${money(v)}</td>`,
+          )
+          .join('');
+        const overCap = row.tenure > cap;
+        return `<tr class="${hi ? 'hi' : ''}"><td>${row.tenure} years${overCap ? '*' : ''}</td>${cells}</tr>`;
+      })
+      .join('');
+    const capped = SENSITIVITY_TENURES.some((t) => t > cap);
+    $('m-disclaimer').textContent =
+      (capped
+        ? `* Longer tenures shown for comparison; your ${rule.label} loan caps at ${cap} years given the loan type and remaining lease. `
+        : '') +
+      `Illustrative only, not financial advice. MSR (30%), TDSR (55%), LTV and CPF rules are current as of ${RULES_AS_OF} and change over time.`;
+  }
+
+  // Pre-fill the calculator from a finished valuation: snap the price to the slider step,
+  // point the lease slider at the flat's remaining lease, then repaint.
+  function seedMortgage(estimate: number, rem: number) {
+    const priceEl = $('m-price') as HTMLInputElement;
+    const min = Number(priceEl.min),
+      max = Number(priceEl.max),
+      step = Number(priceEl.step) || 1;
+    priceEl.value = String(Math.round(Math.min(max, Math.max(min, estimate)) / step) * step);
+    if (rem > 0) {
+      const leaseEl = $('m-lease') as HTMLInputElement;
+      const lmin = Number(leaseEl.min),
+        lmax = Number(leaseEl.max);
+      leaseEl.value = String(Math.min(lmax, Math.max(lmin, Math.round(rem))));
+    }
+    updateMortgage();
+  }
+
   // ---- compute valuation + benchmarks + comparables ----
   async function compute() {
     const flat = ($('f-flat') as HTMLSelectElement).value;
@@ -1684,6 +2163,9 @@ import LeafletMap from '../components/LeafletMap.astro';
     // 04 · lease thresholds (client-side, from remaining lease)
     renderLeaseFlags(rem);
 
+    // 01.5 · affordability — pre-fill the calculator from this valuation + remaining lease
+    seedMortgage(estimate, rem);
+
     // 02/04 · trajectory + lease-decay curves came from the same worker round-trip above
     // (they need wider history than the comps window).
     const traj = trajectory;
@@ -1801,6 +2283,23 @@ import LeafletMap from '../components/LeafletMap.astro';
     renderReturns();
   });
   $('r-year').addEventListener('input', renderReturns);
+
+  // Affordability calculator recomputes locally on every control change (no worker).
+  ['m-price', 'm-tenure', 'm-lease'].forEach((id) =>
+    $(id).addEventListener('input', updateMortgage),
+  );
+  document.querySelectorAll<HTMLButtonElement>('#m-loantype button').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      loanType = btn.dataset.loan as LoanType;
+      document
+        .querySelectorAll('#m-loantype button')
+        .forEach((b) => b.classList.toggle('on', b === btn));
+      updateMortgage();
+    });
+  });
+  // Render once with the default inputs so the panel reads sensibly before any valuation.
+  updateMortgage();
+
   $('get-insights').addEventListener('click', async () => {
     const cur = parseInt(($('f-postal') as HTMLInputElement).value, 10);
     // re-resolve only if the postal changed (avoid clobbering the user's edited fields)
