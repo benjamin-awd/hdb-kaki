@@ -21,7 +21,7 @@ import DataTable from '../components/DataTable.astro';
         The PSF story,<br /><em>street by street</em>.
       </h1>
       <p class="lede solo rise" style="animation-delay:.1s">
-        Fit a trend to price-per-square-foot over time for any town, street or storey band.
+        Fit a trend to price-per-square-foot over time for any town, street, storey or lease band.
       </p>
     </div>
   </section>
@@ -35,6 +35,12 @@ import DataTable from '../components/DataTable.astro';
         <option value="1-6">01–06</option>
         <option value="7-12">07–12</option>
         <option value="13-99">13+</option>
+      </FieldSelect>
+      <FieldSelect label="Lease" id="sel-lease">
+        <option value="all" selected>All</option>
+        <option value="81-99">81–99 yrs</option>
+        <option value="61-80">61–80 yrs</option>
+        <option value="0-60">≤60 yrs</option>
       </FieldSelect>
       <div class="chipset" id="reg-toggle">
         <button class="chip on" data-reg="ols">OLS</button>
@@ -135,7 +141,7 @@ import DataTable from '../components/DataTable.astro';
   const { query, warmEngineWhenIdle } = createQuery();
   const START = '2020-01';
 
-  const SCATTER_CAP = 6000; // reservoir-sample the dots above this; stats/trend use the full set
+  const SCATTER_CAP = 1500; // reservoir-sample the dots above this; stats/trend use the full set
   const idxOf = (m: string) => (+m.slice(0, 4) - 2017) * 12 + (+m.slice(5, 7) - 1);
   const dateOf = (idx: number) => new Date(2017 + Math.floor(idx / 12), idx % 12, 1).getTime();
   const monthLabel = (idx: number) =>
@@ -192,11 +198,16 @@ import DataTable from '../components/DataTable.astro';
     const town = ($('sel-town') as HTMLSelectElement).value;
     const street = ($('sel-street') as HTMLSelectElement).value;
     const storey = ($('sel-storey') as HTMLSelectElement).value;
+    const lease = ($('sel-lease') as HTMLSelectElement).value;
     let w = `town='${sql(town)}' AND month >= '${START}' AND psf IS NOT NULL`;
     if (street && street !== '__all') w += ` AND street_name='${sql(street)}'`;
     if (storey !== 'all') {
       const [lo, hi] = storey.split('-').map(Number);
       w += ` AND storey_lower_bound >= ${lo} AND storey_lower_bound <= ${hi}`;
+    }
+    if (lease !== 'all') {
+      const [lo, hi] = lease.split('-').map(Number);
+      w += ` AND remaining_lease_years >= ${lo} AND remaining_lease_years <= ${hi}`;
     }
     return w;
   }
@@ -440,6 +451,7 @@ import DataTable from '../components/DataTable.astro';
     });
     $('sel-street').addEventListener('change', loadRender);
     $('sel-storey').addEventListener('change', loadRender);
+    $('sel-lease').addEventListener('change', loadRender);
 
     warmEngineWhenIdle();
   })();
