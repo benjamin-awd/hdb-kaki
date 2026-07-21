@@ -42,7 +42,7 @@ test('flat-insights form card: values and sub-labels align within each row', asy
   // Populate every field exactly the way the page's resolve()/onFlatChange() do
   // (select via <option>, subs via textContent, inputs via value). Injecting keeps
   // this a hermetic LAYOUT test that asserts the CSS contract without depending on
-  // the DuckDB dataset or which postal happens to be most common.
+  // the dataset or which postal happens to be most common.
   await page.evaluate(() => {
     const $ = (id: string) => document.getElementById(id) as HTMLElement;
     ($('f-postal') as HTMLInputElement).value = '821308';
