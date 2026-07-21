@@ -7,6 +7,7 @@ import {
   sampleN,
   monthsAgo,
   yearOf,
+  toColumns,
   recentQuery,
   streetsQuery,
   psfScatterQuery,
@@ -42,6 +43,9 @@ function row(o: Partial<ResaleRow>): ResaleRow {
     ...o,
   };
 }
+
+/** Build the columnar dataset the query fns take, from row fixtures. */
+const cols = (rows: ResaleRow[]) => toColumns(rows);
 
 describe('toolkit', () => {
   test('median: midpoint interpolation (polars parity)', () => {
@@ -95,6 +99,19 @@ describe('toolkit', () => {
   });
 });
 
+describe('toColumns', () => {
+  test('transposes rows into typed columns; null → NaN', () => {
+    const c = toColumns([row({ psf: 500, latitude: 1.3 }), row({ psf: null, latitude: null })]);
+    expect(c.n).toBe(2);
+    expect(c.resale_price).toBeInstanceOf(Float64Array);
+    expect(c.postal).toBeInstanceOf(Int32Array);
+    expect(c.psf[0]).toBe(500);
+    expect(Number.isNaN(c.psf[1])).toBe(true);
+    expect(Number.isNaN(c.latitude[1])).toBe(true);
+    expect(c.town[0]).toBe('BEDOK');
+  });
+});
+
 describe('recentQuery', () => {
   const rows = [
     row({ month: '2026-06', resale_price: 700000 }),
@@ -106,7 +123,7 @@ describe('recentQuery', () => {
 
   test('12-month window + ORDER BY month DESC, price DESC', () => {
     const { rows: out, total } = recentQuery(
-      rows,
+      cols(rows),
       { town: '__all', flat: '__all', page: 0, pageSize: 10 },
       NOW,
     );
@@ -115,10 +132,11 @@ describe('recentQuery', () => {
   });
 
   test('town filter + paging', () => {
-    const p0 = recentQuery(rows, { town: 'BEDOK', flat: '__all', page: 0, pageSize: 2 }, NOW);
+    const c = cols(rows);
+    const p0 = recentQuery(c, { town: 'BEDOK', flat: '__all', page: 0, pageSize: 2 }, NOW);
     expect(p0.total).toBe(3);
     expect(p0.rows).toHaveLength(2);
-    const p1 = recentQuery(rows, { town: 'BEDOK', flat: '__all', page: 1, pageSize: 2 }, NOW);
+    const p1 = recentQuery(c, { town: 'BEDOK', flat: '__all', page: 1, pageSize: 2 }, NOW);
     expect(p1.rows).toHaveLength(1);
   });
 });
@@ -131,7 +149,7 @@ describe('streetsQuery', () => {
       row({ town: 'BEDOK', street_name: 'A' }),
       row({ town: 'CLEMENTI', street_name: 'Z' }),
     ];
-    expect(streetsQuery(rows, 'BEDOK')).toEqual(['A', 'B']);
+    expect(streetsQuery(cols(rows), 'BEDOK')).toEqual(['A', 'B']);
   });
 });
 
@@ -154,7 +172,7 @@ describe('psfScatterQuery', () => {
   };
 
   test('filters, monthly medians ascending, total', () => {
-    const { sample, monthly, total } = psfScatterQuery(rows, spec);
+    const { sample, monthly, total } = psfScatterQuery(cols(rows), spec);
     expect(total).toBe(3); // null psf + old + other-town excluded
     expect(sample).toHaveLength(3);
     expect(monthly.map((m) => m.month)).toEqual(['2025-01', '2025-02']);
@@ -163,7 +181,7 @@ describe('psfScatterQuery', () => {
   });
 
   test('storey band + month window', () => {
-    const { total } = psfScatterQuery(rows, {
+    const { total } = psfScatterQuery(cols(rows), {
       ...spec,
       storeyLo: 3,
       storeyHi: 6,
@@ -182,7 +200,7 @@ describe('townMapQuery', () => {
     row({ flat_type: '3 ROOM', month: '2026-04' }), // other flat
   ];
   test('24-month window, lat present, flat filter, ordering', () => {
-    const out = townMapQuery(rows, { town: 'BEDOK', flat: '4 ROOM', street: '__all' }, NOW);
+    const out = townMapQuery(cols(rows), { town: 'BEDOK', flat: '4 ROOM', street: '__all' }, NOW);
     expect(out).toHaveLength(2);
     expect(out.map((r) => r.price)).toEqual([900000, 700000]);
   });
@@ -198,7 +216,7 @@ describe('townRecordsQuery', () => {
   ];
 
   test('town mode: all sales in town, price DESC, per-flat median join', () => {
-    const { rows: out, total } = townRecordsQuery(rows, {
+    const { rows: out, total } = townRecordsQuery(cols(rows), {
       town: 'BEDOK',
       scope: 'town',
       page: 0,
@@ -212,7 +230,7 @@ describe('townRecordsQuery', () => {
   });
 
   test('global mode: peak per town across towns, distinct-town total', () => {
-    const { rows: out, total } = townRecordsQuery(rows, {
+    const { rows: out, total } = townRecordsQuery(cols(rows), {
       town: 'x',
       scope: 'global',
       page: 0,
@@ -246,7 +264,7 @@ describe('resolveBlockQuery', () => {
   ];
 
   test('block identity (arg_max latest / mode) + flats by count DESC', () => {
-    const m = resolveBlockQuery(rows, 460001)!;
+    const m = resolveBlockQuery(cols(rows), 460001)!;
     expect(m.town).toBe('BEDOK');
     expect(m.address).toBe('A1'); // latest month 2025-06
     expect(m.model).toBe('Model A'); // 2 of 3
@@ -258,7 +276,7 @@ describe('resolveBlockQuery', () => {
   });
 
   test('unknown postal → null', () => {
-    expect(resolveBlockQuery(rows, 999999)).toBeNull();
+    expect(resolveBlockQuery(cols(rows), 999999)).toBeNull();
   });
 });
 
@@ -288,7 +306,7 @@ describe('storeysAreaQuery', () => {
       }),
       row({ postal: 1, flat_type: '3 ROOM', storey_range: '20 TO 22', storey_lower_bound: 20 }), // other flat
     ];
-    const { storeys, areaMedian } = storeysAreaQuery(rows, 1, '4 ROOM');
+    const { storeys, areaMedian } = storeysAreaQuery(cols(rows), 1, '4 ROOM');
     expect(storeys.map((s) => s.storey_range)).toEqual(['01 TO 03', '10 TO 12']);
     expect(areaMedian).toBe(1000); // median(1000, 900, 1100)
   });
@@ -306,7 +324,7 @@ describe('valuationQuery', () => {
         remaining_lease_years: 70,
       }),
     );
-    const v = valuationQuery(rows, { town: 'BEDOK', flat: '4 ROOM' }, NOW);
+    const v = valuationQuery(cols(rows), { town: 'BEDOK', flat: '4 ROOM' }, NOW);
     expect(v.months).toBe(12);
     expect(v.comps).toHaveLength(12);
     expect(v.island).toEqual({ psf: 500, price: 500000, area: 1000 });
@@ -322,7 +340,7 @@ describe('valuationQuery', () => {
     const older = Array.from({ length: 6 }, () =>
       row({ town: 'BEDOK', flat_type: '4 ROOM', month: '2025-01' }),
     ); // in 24mo, not 12
-    const v = valuationQuery([...recent, ...older], { town: 'BEDOK', flat: '4 ROOM' }, NOW);
+    const v = valuationQuery(cols([...recent, ...older]), { town: 'BEDOK', flat: '4 ROOM' }, NOW);
     expect(v.months).toBe(24);
     expect(v.comps).toHaveLength(11);
   });

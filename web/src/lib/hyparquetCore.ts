@@ -1,9 +1,14 @@
 // Pure hyparquet data engine — NO DOM, NO Comlink, NO Worker imports. It runs inside the
-// browser Web Worker (hyparquetWorker.ts) that owns the decoded rows, and doubles as the
+// browser Web Worker (hyparquetWorker.ts) that owns the decoded data, and doubles as the
 // main-thread fallback when module workers are unavailable. Every query function is pure
-// (rows + params [+ now] → a small, structured-cloneable summary) so it is directly
-// unit-testable and so only summaries — never the ~236k-row array — cross the Comlink
+// (columns + params [+ now] → a small, structured-cloneable summary) so it is directly
+// unit-testable and so only summaries — never the ~236k-row dataset — cross the Comlink
 // boundary.
+//
+// The resident dataset is columnar (Structure-of-Arrays): typed arrays for the numeric
+// columns and string[] for the rest, instead of ~236k row objects. That packs the numerics
+// (no per-object headers / boxed numbers), cuts memory, and gives scans cache locality.
+// Queries scan by building an index list, then read columns at those indices.
 //
 // resale.parquet is ZSTD-compressed (webapp/update/emit_web.py); hyparquet doesn't decode
 // ZSTD natively, so we pass the decompressor from hyparquet-compressors (pure JS).
@@ -14,10 +19,10 @@ interface Manifest {
   file: string;
 }
 
-// One request for the whole (small) file, decoded to row objects. Uses bare `location`
-// (present in both window and worker scopes — a Worker has no `window`). Vite still inlines
-// import.meta.env.BASE_URL in worker chunks.
-async function fetchParquet(): Promise<Record<string, unknown>[]> {
+// One request for the whole (small) file. Uses bare `location` (present in both window and
+// worker scopes — a Worker has no `window`). Vite still inlines import.meta.env.BASE_URL in
+// worker chunks.
+async function fetchFile(): Promise<AsyncBuffer> {
   const base = import.meta.env.BASE_URL;
   const manifest: Manifest = await fetch(`${base}data/manifest.json`).then((r) => {
     if (!r.ok) throw new Error(`manifest.json ${r.status}`);
@@ -28,13 +33,13 @@ async function fetchParquet(): Promise<Record<string, unknown>[]> {
     if (!r.ok) throw new Error(`${manifest.file} ${r.status}`);
     return r.arrayBuffer();
   });
-  const file: AsyncBuffer = { byteLength: abuf.byteLength, slice: (s, e) => abuf.slice(s, e) };
-  return parquetReadObjects({ file, compressors });
+  return { byteLength: abuf.byteLength, slice: (s, e) => abuf.slice(s, e) };
 }
 
 // ============================ JS aggregation toolkit ============================
-// Pure aggregation helpers. Parity target is polars (webapp/update/emit_web.py), which
-// the default snapshots are emitted from.
+// Pure aggregation helpers, kept generic (arrays + accessor fns) so the query functions can
+// call them with index arrays + column-reading accessors. Parity target is polars
+// (webapp/update/emit_web.py), which the default snapshots are emitted from.
 
 /** Median: quantile 0.5 with midpoint interpolation for even counts. */
 export function median(nums: number[]): number {
@@ -53,7 +58,7 @@ export function quantileSorted(sorted: number[], p: number): number {
   return sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo);
 }
 
-/** Bucket rows by a key, preserving first-seen key order. */
+/** Bucket items by a key, preserving first-seen key order. */
 export function groupBy<T, K>(rows: readonly T[], key: (r: T) => K): Map<K, T[]> {
   const m = new Map<K, T[]>();
   for (const r of rows) {
@@ -65,7 +70,7 @@ export function groupBy<T, K>(rows: readonly T[], key: (r: T) => K): Map<K, T[]>
   return m;
 }
 
-/** arg_max(pick, by): the `pick` value of the row with the greatest `by`. */
+/** arg_max(pick, by): the `pick` value of the item with the greatest `by`. */
 export function argMax<T, V>(
   rows: readonly T[],
   by: (r: T) => number | string,
@@ -100,7 +105,7 @@ export function mode<T, V>(rows: readonly T[], pick: (r: T) => V): V | undefined
   return best;
 }
 
-/** A random subset of size n (all rows if fewer than n). */
+/** A random subset of size n (all items if fewer than n). */
 export function sampleN<T>(rows: readonly T[], n: number): T[] {
   if (rows.length <= n) return rows.slice();
   const a = rows.slice();
@@ -121,9 +126,9 @@ export function monthsAgo(n: number, now: Date = new Date()): string {
 /** Year part of a 'YYYY-MM' month. */
 export const yearOf = (month: string): string => month.slice(0, 4);
 
-// ============================== row types ==============================
+// ============================== columnar dataset ==============================
 
-/** A resale transaction row with every column the pages read, numerics coerced. */
+/** A resale transaction row — the shape query results and test fixtures are built from. */
 export interface ResaleRow {
   month: string;
   town: string;
@@ -143,21 +148,77 @@ export interface ResaleRow {
   postal: number;
 }
 
-/** Coerce a raw hyparquet row IN PLACE into a ResaleRow. int64 columns decode as BigInt, so
- * cast the numeric fields to plain numbers (keeping nulls); string columns already arrive as
- * strings. Mutating the objects hyparquet already built avoids a second full materialization
- * pass, and keeps only plain numbers/strings crossing the Comlink boundary. */
-function coerceRowInPlace(r: Record<string, unknown>): void {
-  r.storey_lower_bound = Number(r.storey_lower_bound);
-  r.floor_area_sqft = Number(r.floor_area_sqft);
-  r.resale_price = Number(r.resale_price);
-  r.remaining_lease_years = Number(r.remaining_lease_years);
-  r.lease_commence_date = Number(r.lease_commence_date);
-  r.postal = Number(r.postal);
-  r.psf = r.psf == null ? null : Number(r.psf);
-  r.latitude = r.latitude == null ? null : Number(r.latitude);
-  r.longitude = r.longitude == null ? null : Number(r.longitude);
-  if (r.flat_model == null) r.flat_model = '';
+/** The resident dataset in Structure-of-Arrays form. Nullable numeric columns (psf,
+ * latitude, longitude) store NaN for null — scans test `Number.isNaN`, result-builders map
+ * NaN back to 0/null to match the old row-object behaviour. */
+export interface Columns {
+  n: number;
+  month: string[];
+  town: string[];
+  address: string[];
+  street_name: string[];
+  flat_type: string[];
+  flat_model: string[];
+  storey_range: string[];
+  storey_lower_bound: Int32Array;
+  lease_commence_date: Int32Array;
+  postal: Int32Array;
+  floor_area_sqft: Float64Array;
+  resale_price: Float64Array;
+  remaining_lease_years: Float64Array;
+  psf: Float64Array; // NaN = null
+  latitude: Float64Array; // NaN = null
+  longitude: Float64Array; // NaN = null
+}
+
+const str = (v: unknown): string => (v == null ? '' : String(v));
+const f64 = (v: unknown): number => (v == null ? NaN : Number(v)); // null → NaN
+
+/** Transpose decoded rows into columnar typed arrays, coercing as it goes. Accepts the raw
+ * objects hyparquet produces (int64 columns are BigInt, nullable cells are null) as well as
+ * already-typed ResaleRow fixtures — a single pass builds the columns, no ResaleRow[] middle
+ * step. int64 → number happens here, so only plain numbers/strings live in the columns. */
+export function toColumns(rows: readonly ResaleRow[]): Columns {
+  const n = rows.length;
+  const c: Columns = {
+    n,
+    month: new Array(n),
+    town: new Array(n),
+    address: new Array(n),
+    street_name: new Array(n),
+    flat_type: new Array(n),
+    flat_model: new Array(n),
+    storey_range: new Array(n),
+    storey_lower_bound: new Int32Array(n),
+    lease_commence_date: new Int32Array(n),
+    postal: new Int32Array(n),
+    floor_area_sqft: new Float64Array(n),
+    resale_price: new Float64Array(n),
+    remaining_lease_years: new Float64Array(n),
+    psf: new Float64Array(n),
+    latitude: new Float64Array(n),
+    longitude: new Float64Array(n),
+  };
+  for (let i = 0; i < n; i++) {
+    const r = rows[i] as unknown as Record<string, unknown>;
+    c.month[i] = str(r.month);
+    c.town[i] = str(r.town);
+    c.address[i] = str(r.address);
+    c.street_name[i] = str(r.street_name);
+    c.flat_type[i] = str(r.flat_type);
+    c.flat_model[i] = str(r.flat_model);
+    c.storey_range[i] = str(r.storey_range);
+    c.storey_lower_bound[i] = Number(r.storey_lower_bound);
+    c.lease_commence_date[i] = Number(r.lease_commence_date);
+    c.postal[i] = Number(r.postal);
+    c.floor_area_sqft[i] = Number(r.floor_area_sqft);
+    c.resale_price[i] = Number(r.resale_price);
+    c.remaining_lease_years[i] = Number(r.remaining_lease_years);
+    c.psf[i] = f64(r.psf);
+    c.latitude[i] = f64(r.latitude);
+    c.longitude[i] = f64(r.longitude);
+  }
+  return c;
 }
 
 // ============================ query result shapes ============================
@@ -265,112 +326,137 @@ export interface ValuationData {
 }
 
 // ============================ pure query functions ============================
-// Each takes the resident rows + params and returns a small summary. `now` is injectable
-// for deterministic tests of the rolling-window queries.
+// Each scans the columns to build an index list, aggregates over indices, and reads columns
+// to build the small result. `now` is injectable for deterministic rolling-window tests.
+
+/** Non-NaN psf values at the given row indices (excludes null-psf rows, like the old
+ * `r.psf != null` filter before a median). */
+const psfAt = (c: Columns, idx: number[]): number[] => {
+  const out: number[] = [];
+  for (const i of idx) if (!Number.isNaN(c.psf[i])) out.push(c.psf[i]);
+  return out;
+};
+const gather = (col: Float64Array, idx: number[]): number[] => idx.map((i) => col[i]);
 
 /** Landing page recent-transactions: 12-month window, optional town/flat, ORDER BY month
  * DESC, resale_price DESC, one page. Only the page (~20 rows) is returned. */
 export function recentQuery(
-  rows: readonly ResaleRow[],
+  c: Columns,
   { town, flat, page, pageSize }: { town: string; flat: string; page: number; pageSize: number },
   now?: Date,
 ): { rows: RecentRow[]; total: number } {
   const cutoff = monthsAgo(12, now);
-  const filtered = rows.filter(
-    (r) =>
-      r.month >= cutoff &&
-      (town === '__all' || r.town === town) &&
-      (flat === '__all' || r.flat_type === flat),
-  );
-  filtered.sort((a, b) =>
-    a.month < b.month ? 1 : a.month > b.month ? -1 : b.resale_price - a.resale_price,
+  const idx: number[] = [];
+  for (let i = 0; i < c.n; i++) {
+    if (
+      c.month[i] >= cutoff &&
+      (town === '__all' || c.town[i] === town) &&
+      (flat === '__all' || c.flat_type[i] === flat)
+    )
+      idx.push(i);
+  }
+  idx.sort((a, b) =>
+    c.month[a] < c.month[b]
+      ? 1
+      : c.month[a] > c.month[b]
+        ? -1
+        : c.resale_price[b] - c.resale_price[a],
   );
   const start = page * pageSize;
-  const pageRows = filtered.slice(start, start + pageSize).map((r) => ({
-    month: r.month,
-    town: r.town,
-    address: r.address,
-    flat_type: r.flat_type,
-    floor_area_sqft: r.floor_area_sqft,
-    resale_price: r.resale_price,
-    psf: r.psf ?? 0,
+  const rows = idx.slice(start, start + pageSize).map((i) => ({
+    month: c.month[i],
+    town: c.town[i],
+    address: c.address[i],
+    flat_type: c.flat_type[i],
+    floor_area_sqft: c.floor_area_sqft[i],
+    resale_price: c.resale_price[i],
+    psf: Number.isNaN(c.psf[i]) ? 0 : c.psf[i],
   }));
-  return { rows: pageRows, total: filtered.length };
+  return { rows, total: idx.length };
 }
 
 /** Distinct street names in a town, ascending. */
-export function streetsQuery(rows: readonly ResaleRow[], town: string): string[] {
+export function streetsQuery(c: Columns, town: string): string[] {
   const set = new Set<string>();
-  for (const r of rows) if (r.town === town) set.add(r.street_name);
+  for (let i = 0; i < c.n; i++) if (c.town[i] === town) set.add(c.street_name[i]);
   return [...set].sort();
 }
 
 /** psf-trends: filtered scatter (capped random sample) + per-month medians + total count. */
 export function psfScatterQuery(
-  rows: readonly ResaleRow[],
+  c: Columns,
   spec: PsfSpec,
 ): { sample: ScatterRow[]; monthly: Monthly[]; total: number } {
-  const filtered = rows.filter(
-    (r) =>
-      r.town === spec.town &&
-      r.month >= spec.monthFrom &&
-      (spec.monthTo === undefined || r.month <= spec.monthTo) &&
-      r.psf != null &&
-      (spec.street === '__all' || r.street_name === spec.street) &&
+  const idx: number[] = [];
+  for (let i = 0; i < c.n; i++) {
+    if (
+      c.town[i] === spec.town &&
+      c.month[i] >= spec.monthFrom &&
+      (spec.monthTo === undefined || c.month[i] <= spec.monthTo) &&
+      !Number.isNaN(c.psf[i]) &&
+      (spec.street === '__all' || c.street_name[i] === spec.street) &&
       (spec.storeyLo === null ||
-        (r.storey_lower_bound >= spec.storeyLo &&
-          r.storey_lower_bound <= (spec.storeyHi ?? spec.storeyLo))),
-  );
-  const sample: ScatterRow[] = sampleN(filtered, spec.cap).map((r) => ({
-    month: r.month,
-    psf: r.psf as number,
-    address: r.address,
-    storey: r.storey_range,
-    price: r.resale_price,
-    lease: r.remaining_lease_years,
+        (c.storey_lower_bound[i] >= spec.storeyLo &&
+          c.storey_lower_bound[i] <= (spec.storeyHi ?? spec.storeyLo)))
+    )
+      idx.push(i);
+  }
+  const sample: ScatterRow[] = sampleN(idx, spec.cap).map((i) => ({
+    month: c.month[i],
+    psf: c.psf[i],
+    address: c.address[i],
+    storey: c.storey_range[i],
+    price: c.resale_price[i],
+    lease: c.remaining_lease_years[i],
   }));
-  const monthly: Monthly[] = [...groupBy(filtered, (r) => r.month).entries()]
-    .map(([month, rs]) => ({ month, med: median(rs.map((r) => r.psf as number)), n: rs.length }))
+  const monthly: Monthly[] = [...groupBy(idx, (i) => c.month[i]).entries()]
+    .map(([month, is]) => ({ month, med: median(gather(c.psf, is)), n: is.length }))
     .sort((a, b) => (a.month < b.month ? -1 : 1));
-  return { sample, monthly, total: filtered.length };
+  return { sample, monthly, total: idx.length };
 }
 
 /** town-analysis map rows: town + flat (+ optional street), 24-month window, lat present,
  * ORDER BY month DESC, resale_price DESC. Bounded (one town+flat), so the rows can cross. */
 export function townMapQuery(
-  rows: readonly ResaleRow[],
+  c: Columns,
   { town, flat, street }: { town: string; flat: string; street: string },
   now?: Date,
 ): TownMapRow[] {
   const cutoff = monthsAgo(24, now);
-  return rows
-    .filter(
-      (r) =>
-        r.town === town &&
-        r.flat_type === flat &&
-        (street === '__all' || r.street_name === street) &&
-        r.month >= cutoff &&
-        r.latitude != null,
+  const idx: number[] = [];
+  for (let i = 0; i < c.n; i++) {
+    if (
+      c.town[i] === town &&
+      c.flat_type[i] === flat &&
+      (street === '__all' || c.street_name[i] === street) &&
+      c.month[i] >= cutoff &&
+      !Number.isNaN(c.latitude[i])
     )
-    .sort((a, b) =>
-      a.month < b.month ? 1 : a.month > b.month ? -1 : b.resale_price - a.resale_price,
-    )
-    .map((r) => ({
-      lat: r.latitude as number,
-      lng: r.longitude as number,
-      price: r.resale_price,
-      address: r.address,
-      month: r.month,
-      storey: r.storey_range,
-      psf: r.psf ?? 0,
-      lease: r.remaining_lease_years,
-    }));
+      idx.push(i);
+  }
+  idx.sort((a, b) =>
+    c.month[a] < c.month[b]
+      ? 1
+      : c.month[a] > c.month[b]
+        ? -1
+        : c.resale_price[b] - c.resale_price[a],
+  );
+  return idx.map((i) => ({
+    lat: c.latitude[i],
+    lng: c.longitude[i],
+    price: c.resale_price[i],
+    address: c.address[i],
+    month: c.month[i],
+    storey: c.storey_range[i],
+    psf: Number.isNaN(c.psf[i]) ? 0 : c.psf[i],
+    lease: c.remaining_lease_years[i],
+  }));
 }
 
 /** town-analysis records: town mode (all sales in town) or global mode (peak sale per town),
  * each joined to the median resale_price of its own (town, flat_type). One page returned. */
 export function townRecordsQuery(
-  rows: readonly ResaleRow[],
+  c: Columns,
   {
     town,
     scope,
@@ -378,177 +464,160 @@ export function townRecordsQuery(
     pageSize,
   }: { town: string; scope: 'town' | 'global'; page: number; pageSize: number },
 ): { rows: TownRecord[]; total: number } {
-  const toRec = (r: ResaleRow, med: number): TownRecord => ({
-    town: r.town,
-    price: r.resale_price,
-    address: r.address,
-    storey: r.storey_range,
-    area: r.floor_area_sqft,
-    month: r.month,
+  const toRec = (i: number, med: number): TownRecord => ({
+    town: c.town[i],
+    price: c.resale_price[i],
+    address: c.address[i],
+    storey: c.storey_range[i],
+    area: c.floor_area_sqft[i],
+    month: c.month[i],
     med,
-    flat: r.flat_type,
-    psf: r.psf ?? 0,
+    flat: c.flat_type[i],
+    psf: Number.isNaN(c.psf[i]) ? 0 : c.psf[i],
   });
 
-  let ranked: ResaleRow[];
+  let ranked: number[];
   let total: number;
-  let medFor: (r: ResaleRow) => number;
+  let medFor: (i: number) => number;
 
   if (scope === 'town') {
-    const townRows = rows.filter((r) => r.town === town);
+    const townIdx: number[] = [];
+    for (let i = 0; i < c.n; i++) if (c.town[i] === town) townIdx.push(i);
     const medMap = new Map<string, number>();
-    for (const [flat, rs] of groupBy(townRows, (r) => r.flat_type))
-      medMap.set(flat, median(rs.map((r) => r.resale_price)));
-    ranked = [...townRows].sort((a, b) => b.resale_price - a.resale_price);
-    total = townRows.length;
-    medFor = (r) => medMap.get(r.flat_type) ?? 0;
+    for (const [flat, is] of groupBy(townIdx, (i) => c.flat_type[i]))
+      medMap.set(flat, median(gather(c.resale_price, is)));
+    ranked = [...townIdx].sort((a, b) => c.resale_price[b] - c.resale_price[a]);
+    total = townIdx.length;
+    medFor = (i) => medMap.get(c.flat_type[i]) ?? 0;
   } else {
     // Peak sale per town (max price, tie-break month DESC), then rank those across towns.
+    const all: number[] = [];
+    for (let i = 0; i < c.n; i++) all.push(i);
     const medMap = new Map<string, number>();
-    for (const [k, rs] of groupBy(rows, (r) => `${r.town}|${r.flat_type}`))
-      medMap.set(k, median(rs.map((r) => r.resale_price)));
-    const peak = new Map<string, ResaleRow>();
-    for (const r of rows) {
-      const cur = peak.get(r.town);
+    for (const [k, is] of groupBy(all, (i) => `${c.town[i]}|${c.flat_type[i]}`))
+      medMap.set(k, median(gather(c.resale_price, is)));
+    const peak = new Map<string, number>();
+    for (let i = 0; i < c.n; i++) {
+      const cur = peak.get(c.town[i]);
       if (
-        !cur ||
-        r.resale_price > cur.resale_price ||
-        (r.resale_price === cur.resale_price && r.month > cur.month)
+        cur === undefined ||
+        c.resale_price[i] > c.resale_price[cur] ||
+        (c.resale_price[i] === c.resale_price[cur] && c.month[i] > c.month[cur])
       )
-        peak.set(r.town, r);
+        peak.set(c.town[i], i);
     }
-    ranked = [...peak.values()].sort((a, b) => b.resale_price - a.resale_price);
+    ranked = [...peak.values()].sort((a, b) => c.resale_price[b] - c.resale_price[a]);
     total = peak.size;
-    medFor = (r) => medMap.get(`${r.town}|${r.flat_type}`) ?? 0;
+    medFor = (i) => medMap.get(`${c.town[i]}|${c.flat_type[i]}`) ?? 0;
   }
 
   const start = page * pageSize;
-  return { rows: ranked.slice(start, start + pageSize).map((r) => toRec(r, medFor(r))), total };
+  return { rows: ranked.slice(start, start + pageSize).map((i) => toRec(i, medFor(i))), total };
 }
-
-const psfNonNull = (rows: readonly ResaleRow[]): number[] =>
-  rows.filter((r) => r.psf != null).map((r) => r.psf as number);
 
 /** my-flat-insights postal lookup: block identity via arg_max(latest) + mode, plus the flat
  * types seen at that postal (count DESC). Returns null when the postal has no transactions. */
-export function resolveBlockQuery(rows: readonly ResaleRow[], postal: number): BlockMeta | null {
-  const pr = rows.filter((r) => r.postal === postal);
-  if (!pr.length) return null;
+export function resolveBlockQuery(c: Columns, postal: number): BlockMeta | null {
+  const idx: number[] = [];
+  for (let i = 0; i < c.n; i++) if (c.postal[i] === postal) idx.push(i);
+  if (!idx.length) return null;
+  const latest = <V>(pick: (i: number) => V): V | undefined => argMax(idx, (i) => c.month[i], pick);
+  const lat = latest((i) => c.latitude[i]);
+  const lng = latest((i) => c.longitude[i]);
   return {
-    town:
-      argMax(
-        pr,
-        (r) => r.month,
-        (r) => r.town,
-      ) ?? '',
-    street:
-      argMax(
-        pr,
-        (r) => r.month,
-        (r) => r.street_name,
-      ) ?? '',
-    address:
-      argMax(
-        pr,
-        (r) => r.month,
-        (r) => r.address,
-      ) ?? '',
-    model: mode(pr, (r) => r.flat_model) ?? '',
-    lc: Number(mode(pr, (r) => r.lease_commence_date) ?? 0),
-    lat:
-      argMax(
-        pr,
-        (r) => r.month,
-        (r) => r.latitude,
-      ) ?? null,
-    lng:
-      argMax(
-        pr,
-        (r) => r.month,
-        (r) => r.longitude,
-      ) ?? null,
-    flats: [...groupBy(pr, (r) => r.flat_type)]
-      .map(([flat_type, rs]) => ({ flat_type, n: rs.length }))
+    town: latest((i) => c.town[i]) ?? '',
+    street: latest((i) => c.street_name[i]) ?? '',
+    address: latest((i) => c.address[i]) ?? '',
+    model: mode(idx, (i) => c.flat_model[i]) ?? '',
+    lc: Number(mode(idx, (i) => c.lease_commence_date[i]) ?? 0),
+    lat: lat == null || Number.isNaN(lat) ? null : lat,
+    lng: lng == null || Number.isNaN(lng) ? null : lng,
+    flats: [...groupBy(idx, (i) => c.flat_type[i])]
+      .map(([flat_type, is]) => ({ flat_type, n: is.length }))
       .sort((a, b) => b.n - a.n),
   };
 }
 
 /** Dependent fields for a postal+flat: storey ranges (min lower-bound, ASC) + median area. */
-export function storeysAreaQuery(
-  rows: readonly ResaleRow[],
-  postal: number,
-  flat: string,
-): StoreysArea {
-  const pr = rows.filter((r) => r.postal === postal && r.flat_type === flat);
+export function storeysAreaQuery(c: Columns, postal: number, flat: string): StoreysArea {
+  const idx: number[] = [];
+  for (let i = 0; i < c.n; i++) if (c.postal[i] === postal && c.flat_type[i] === flat) idx.push(i);
   return {
-    storeys: [...groupBy(pr, (r) => r.storey_range)]
-      .map(([storey_range, rs]) => ({
+    storeys: [...groupBy(idx, (i) => c.storey_range[i])]
+      .map(([storey_range, is]) => ({
         storey_range,
-        lo: Math.min(...rs.map((r) => r.storey_lower_bound)),
+        lo: Math.min(...is.map((i) => c.storey_lower_bound[i])),
       }))
       .sort((a, b) => a.lo - b.lo),
-    areaMedian: median(pr.map((r) => r.floor_area_sqft)),
+    areaMedian: median(gather(c.floor_area_sqft, idx)),
   };
 }
 
 /** The full valuation dataset: comps (12mo, widened to 24 if thin), island medians, yearly
  * trajectory, and lease-decay buckets (town: 36mo/n>=8, island: 24mo/n>=30). */
 export function valuationQuery(
-  rows: readonly ResaleRow[],
+  c: Columns,
   { town, flat }: { town: string; flat: string },
   now?: Date,
 ): ValuationData {
   const c12 = monthsAgo(12, now);
   const c24 = monthsAgo(24, now);
   const c36 = monthsAgo(36, now);
-  const inTownFlat = rows.filter((r) => r.town === town && r.flat_type === flat);
+
+  const inTownFlat: number[] = [];
+  for (let i = 0; i < c.n; i++)
+    if (c.town[i] === town && c.flat_type[i] === flat) inTownFlat.push(i);
 
   let months: 12 | 24 = 12;
-  let comps = inTownFlat.filter((r) => r.month >= c12);
+  let comps = inTownFlat.filter((i) => c.month[i] >= c12);
   if (comps.length < 10) {
     months = 24;
-    comps = inTownFlat.filter((r) => r.month >= c24);
+    comps = inTownFlat.filter((i) => c.month[i] >= c24);
   }
-  const compRows: CompRow[] = comps.map((r) => ({
-    month: r.month,
-    address: r.address,
-    street_name: r.street_name,
-    storey_range: r.storey_range,
-    slo: r.storey_lower_bound,
-    area: r.floor_area_sqft,
-    lease: r.remaining_lease_years,
-    price: r.resale_price,
-    psf: r.psf ?? 0,
-    lat: r.latitude,
-    lng: r.longitude,
+  const compRows: CompRow[] = comps.map((i) => ({
+    month: c.month[i],
+    address: c.address[i],
+    street_name: c.street_name[i],
+    storey_range: c.storey_range[i],
+    slo: c.storey_lower_bound[i],
+    area: c.floor_area_sqft[i],
+    lease: c.remaining_lease_years[i],
+    price: c.resale_price[i],
+    psf: Number.isNaN(c.psf[i]) ? 0 : c.psf[i],
+    lat: Number.isNaN(c.latitude[i]) ? null : c.latitude[i],
+    lng: Number.isNaN(c.longitude[i]) ? null : c.longitude[i],
   }));
 
-  const islandRows = rows.filter((r) => r.flat_type === flat && r.month >= c12);
+  const islandIdx: number[] = [];
+  for (let i = 0; i < c.n; i++) if (c.flat_type[i] === flat && c.month[i] >= c12) islandIdx.push(i);
   const island = {
-    psf: median(psfNonNull(islandRows)),
-    price: median(islandRows.map((r) => r.resale_price)),
-    area: median(islandRows.map((r) => r.floor_area_sqft)),
+    psf: median(psfAt(c, islandIdx)),
+    price: median(gather(c.resale_price, islandIdx)),
+    area: median(gather(c.floor_area_sqft, islandIdx)),
   };
 
-  const trajectory = [...groupBy(inTownFlat, (r) => yearOf(r.month))]
-    .map(([yr, rs]) => ({
+  const trajectory = [...groupBy(inTownFlat, (i) => yearOf(c.month[i]))]
+    .map(([yr, is]) => ({
       yr,
-      psf: median(psfNonNull(rs)),
-      price: median(rs.map((r) => r.resale_price)),
-      n: rs.length,
+      psf: median(psfAt(c, is)),
+      price: median(gather(c.resale_price, is)),
+      n: is.length,
     }))
     .sort((a, b) => (a.yr < b.yr ? -1 : 1));
 
-  const buckets = (src: ResaleRow[], cutoff: string, minN: number): LeaseBucket[] =>
+  const buckets = (src: number[], cutoff: string, minN: number): LeaseBucket[] =>
     [
       ...groupBy(
-        src.filter((r) => r.month >= cutoff),
-        (r) => Math.floor(r.remaining_lease_years / 10) * 10,
+        src.filter((i) => c.month[i] >= cutoff),
+        (i) => Math.floor(c.remaining_lease_years[i] / 10) * 10,
       ),
     ]
-      .map(([bucket, rs]) => ({ bucket, psf: median(psfNonNull(rs)), n: rs.length }))
+      .map(([bucket, is]) => ({ bucket, psf: median(psfAt(c, is)), n: is.length }))
       .filter((g) => g.n >= minN)
       .sort((a, b) => a.bucket - b.bucket);
+
+  const islandAll: number[] = [];
+  for (let i = 0; i < c.n; i++) if (c.flat_type[i] === flat) islandAll.push(i);
 
   return {
     comps: compRows,
@@ -556,35 +625,26 @@ export function valuationQuery(
     island,
     trajectory,
     leaseTown: buckets(inTownFlat, c36, 8),
-    leaseIsland: buckets(
-      rows.filter((r) => r.flat_type === flat),
-      c24,
-      30,
-    ),
+    leaseIsland: buckets(islandAll, c24, 30),
   };
 }
 
 // ============================ resident engine ============================
 
-let allRowsPromise: Promise<ResaleRow[]> | null = null;
+let columnsPromise: Promise<Columns> | null = null;
 
-/** Lazily fetch + decode all of resale.parquet into memory, cached. A failed load isn't
- * cached (next call retries), mirroring db.ts. Used by createEngine and by the main-thread
- * pages that still aggregate locally (my-flat-insights, until Phase 2). */
-export function loadResaleRows(): Promise<ResaleRow[]> {
-  return (allRowsPromise ??= (async () => {
-    const rows = await fetchParquet();
-    for (let i = 0; i < rows.length; i++) coerceRowInPlace(rows[i]);
-    return rows as unknown as ResaleRow[];
+/** Lazily fetch + decode resale.parquet into columnar form, cached. A failed load isn't
+ * cached (next call retries). Decode goes through parquetReadObjects, then toColumns
+ * transposes into the typed column arrays and the row objects are dropped. */
+export function loadColumns(): Promise<Columns> {
+  return (columnsPromise ??= (async () => {
+    const file = await fetchFile();
+    const rows = await parquetReadObjects({ file, compressors });
+    return toColumns(rows as unknown as ResaleRow[]);
   })().catch((e) => {
-    allRowsPromise = null;
+    columnsPromise = null;
     throw e;
   }));
-}
-
-/** Boot the in-memory table now (at idle), so the first query resolves instantly. */
-export function prefetchResale(): void {
-  loadResaleRows().catch(() => {});
 }
 
 /** The set of methods exposed across the Comlink boundary. All async, all return small,
@@ -611,36 +671,36 @@ export interface HyparquetApi {
   valuation(o: { town: string; flat: string }): Promise<ValuationData>;
 }
 
-/** The resident engine: owns the decoded rows (via loadResaleRows) and runs every scan.
- * Instantiated inside the Web Worker; the row array never leaves this context. */
+/** The resident engine: owns the decoded columns (via loadColumns) and runs every scan.
+ * Instantiated inside the Web Worker; the columns never leave this context. */
 export function createEngine(): HyparquetApi {
   return {
     async warm() {
-      await loadResaleRows();
+      await loadColumns();
     },
     async recent(o) {
-      return recentQuery(await loadResaleRows(), o);
+      return recentQuery(await loadColumns(), o);
     },
     async streets(town) {
-      return streetsQuery(await loadResaleRows(), town);
+      return streetsQuery(await loadColumns(), town);
     },
     async psfScatter(spec) {
-      return psfScatterQuery(await loadResaleRows(), spec);
+      return psfScatterQuery(await loadColumns(), spec);
     },
     async townMap(o) {
-      return townMapQuery(await loadResaleRows(), o);
+      return townMapQuery(await loadColumns(), o);
     },
     async townRecords(o) {
-      return townRecordsQuery(await loadResaleRows(), o);
+      return townRecordsQuery(await loadColumns(), o);
     },
     async resolveBlock(postal) {
-      return resolveBlockQuery(await loadResaleRows(), postal);
+      return resolveBlockQuery(await loadColumns(), postal);
     },
     async storeysAndArea(postal, flat) {
-      return storeysAreaQuery(await loadResaleRows(), postal, flat);
+      return storeysAreaQuery(await loadColumns(), postal, flat);
     },
     async valuation(o) {
-      return valuationQuery(await loadResaleRows(), o);
+      return valuationQuery(await loadColumns(), o);
     },
   };
 }
