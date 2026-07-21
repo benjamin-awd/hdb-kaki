@@ -478,6 +478,13 @@ const kpis = stats
   import { money, moneyShort, psf as fpsf, titleCase } from '../lib/format';
   import { byId as q } from '../lib/dom';
   import { createHyparquet } from '../lib/hyparquetClient';
+  import {
+    createUrlState,
+    selectBinding,
+    chipBinding,
+    stateBinding,
+    type UrlState,
+  } from '../lib/urlState';
 
   // Landing renders from a single precomputed aggregate (webapp/update/emit_web.py), so the
   // default view needs no data engine. The one exception is the recent-transactions table:
@@ -500,6 +507,11 @@ const kpis = stats
   // off the main thread). Only the recent filters/pager touch data; everything else renders
   // from overview.json.
   const { recent, warmWhenIdle } = createHyparquet();
+
+  // URL-synced landing filters (see web/src/lib/urlState.ts), assigned in boot() once the
+  // recent-transactions selects are populated. The chip/pager handlers below call
+  // url?.sync() — url is always defined by the time a user can interact.
+  let url: UrlState | undefined;
 
   // ---- 01 price trends (with lens toggle) ----
   // Initialised in boot(), after data loads, so the SSR placeholder SVG stays
@@ -691,6 +703,7 @@ const kpis = stats
       document.querySelectorAll('#trend-toggle .chip').forEach((b) => b.classList.remove('on'));
       btn.classList.add('on');
       renderTrends(btn.dataset.mode!);
+      url?.sync();
     });
   });
 
@@ -718,6 +731,7 @@ const kpis = stats
 
   let mapChart: ReturnType<typeof echarts.init> | undefined;
   let currentLevel: Level = 'town';
+  let mapClickBound = false;
   const geoReady = new Set<string>();
   const labelsFit = () => window.innerWidth >= 640;
   const isNarrowMap = () => window.matchMedia('(max-width: 640px)').matches;
@@ -770,6 +784,16 @@ const kpis = stats
     const showLabels = labelsFit();
 
     mapChart ??= initChart(q('chart-map'));
+    // Choropleth deep-link: clicking a town region opens its Town Analysis view. Town
+    // level only (subzone names aren't towns), and the choropleth series only (index 0).
+    // `p.name` is the SCREAMING town name, which matches sel-town's option values there.
+    if (!mapClickBound) {
+      mapClickBound = true;
+      mapChart.on('click', (p: any) => {
+        if (currentLevel === 'town' && p.seriesIndex === 0 && p.name)
+          location.href = `${import.meta.env.BASE_URL}town-analysis/?town=${encodeURIComponent(p.name)}`;
+      });
+    }
     mapChart.setOption(
       {
         ...baseOption(),
@@ -852,6 +876,7 @@ const kpis = stats
       document.querySelectorAll('#map-toggle .chip').forEach((b) => b.classList.remove('on'));
       btn.classList.add('on');
       renderMap(btn.dataset.level as Level).catch((e) => console.error(e));
+      url?.sync();
     });
   });
 
@@ -1072,20 +1097,24 @@ const kpis = stats
     q('rec-town').addEventListener('change', () => {
       recentPage = 0;
       loadRecent();
+      url?.sync();
     });
     q('rec-flat').addEventListener('change', () => {
       recentPage = 0;
       loadRecent();
+      url?.sync();
     });
     q('rec-prev').addEventListener('click', () => {
       if (recentPage > 0) {
         recentPage--;
         loadRecent();
+        url?.sync();
       }
     });
     q('rec-next').addEventListener('click', () => {
       recentPage++;
       loadRecent();
+      url?.sync();
     });
   }
 
@@ -1105,6 +1134,52 @@ const kpis = stats
     renderLease();
     renderRecent();
     fillRecentFilters();
+
+    // URL-synced filter state. The trend/map toggles re-render client-side from the
+    // snapshot (no DuckDB); only the recent-transactions filters/pager reach the engine.
+    url = createUrlState(
+      [
+        chipBinding('#trend-toggle', 'trend', 'mode', 'lease'),
+        chipBinding('#map-toggle', 'map', 'level', 'town'),
+        selectBinding('rec-town', 'rtown', '__all'),
+        selectBinding('rec-flat', 'rflat', '__all'),
+        stateBinding(
+          'rpage',
+          () => String(recentPage),
+          (v) => {
+            recentPage = parseInt(v, 10) || 0;
+          },
+          '0',
+        ),
+      ],
+      ['trend', 'map', 'rtown', 'rflat', 'rpage'],
+    );
+
+    // Deep-link restore. Everything above already painted the default snapshot view; here
+    // we override from the URL when it deviates. Toggles just re-render; the recent table
+    // reloads through DuckDB only if one of its own params (rtown/rflat/rpage) deviates.
+    if (url.deviates()) {
+      url.restore();
+      const mode =
+        (document.querySelector('#trend-toggle .chip.on') as HTMLElement | null)?.dataset.mode ??
+        'lease';
+      const level =
+        ((document.querySelector('#map-toggle .chip.on') as HTMLElement | null)?.dataset
+          .level as Level) ?? 'town';
+      renderTrends(mode);
+      if (level !== 'town') renderMap(level).catch((e) => console.error(e));
+      if (deviatesRecent()) loadRecent();
+    }
+  }
+
+  // Do the recent-transactions params (its own slice of the URL) deviate from default?
+  // Gates whether restore boots DuckDB for the table — trend/map toggles never do.
+  function deviatesRecent(): boolean {
+    return (
+      (q('rec-town') as HTMLSelectElement).value !== '__all' ||
+      (q('rec-flat') as HTMLSelectElement).value !== '__all' ||
+      recentPage !== 0
+    );
   }
   boot();
 
