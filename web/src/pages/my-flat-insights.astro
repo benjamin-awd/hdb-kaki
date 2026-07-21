@@ -119,6 +119,14 @@ import LeafletMap from '../components/LeafletMap.astro';
             ><span class="v" id="vs-storey">—</span>
           </div>
           <div class="vs-row">
+            <span class="k"
+              ><Term term="Lease adjustment" end
+                >How much your remaining lease shifts the estimate versus the comps' typical lease,
+                using the SLA Leasehold Table.</Term
+              ></span
+            ><span class="v" id="vs-lease">—</span>
+          </div>
+          <div class="vs-row">
             <span class="k">Your floor area</span><span class="v" id="vs-area">—</span>
           </div>
           <div class="conf">
@@ -130,8 +138,8 @@ import LeafletMap from '../components/LeafletMap.astro';
           </div>
           <p class="disclaimer">
             Indicative estimate for guidance only — not a valuation for HDB, bank or CPF purposes.
-            Adjusted for storey band; not for exact lease or unit condition. Based on registered
-            resale transactions from data.gov.sg.
+            Adjusted for storey band and remaining lease (SLA Leasehold Table); not for unit
+            condition. Based on registered resale transactions from data.gov.sg.
           </p>
         </div>
       </div>
@@ -969,6 +977,7 @@ import LeafletMap from '../components/LeafletMap.astro';
   } from '../lib/echartsTheme';
   import { money, moneyShort, psf as fpsf, titleCase, deltaPill } from '../lib/format';
   import { reformatWithCaret, parsePrice, computeReturns } from '../lib/returns';
+  import { leaseAdjustment } from '../lib/lease';
 
   const NOW_YEAR = new Date().getFullYear();
 
@@ -1378,10 +1387,19 @@ import LeafletMap from '../components/LeafletMap.astro';
     const useStorey = nearStorey.length >= 5; // only adjust when the band has enough sales
     const basis = useStorey ? nearStorey : comps;
     const psfs = basis.map((c) => c.psf).sort((a, b) => a - b);
-    const medPsf = med(psfs),
-      q25 = quantile(psfs, 0.25),
-      q75 = quantile(psfs, 0.75);
-    const storeyAdjPct = baseMedPsf ? (medPsf / baseMedPsf - 1) * 100 : 0;
+    const rawMedPsf = med(psfs);
+    const storeyAdjPct = baseMedPsf ? (rawMedPsf / baseMedPsf - 1) * 100 : 0;
+    // lease adjustment — normalise the comps' typical remaining lease to this
+    // flat's via the SLA Leasehold Table, so a longer/shorter lease moves the estimate.
+    const compLease = med(basis.map((c) => c.lease).filter((l) => l > 0));
+    const {
+      factor: leaseAdj,
+      pct: leaseAdjPct,
+      known: leaseKnown,
+    } = leaseAdjustment(rem, compLease);
+    const medPsf = rawMedPsf * leaseAdj,
+      q25 = quantile(psfs, 0.25) * leaseAdj,
+      q75 = quantile(psfs, 0.75) * leaseAdj;
     const estimate = medPsf * area,
       low = q25 * area,
       high = q75 * area;
@@ -1408,6 +1426,9 @@ import LeafletMap from '../components/LeafletMap.astro';
     $('vs-storey').textContent = useStorey
       ? `${storeyAdjPct >= 0 ? '+' : ''}${storeyAdjPct.toFixed(1)}% · ${storey}`
       : 'n/a — too few';
+    $('vs-lease').textContent = leaseKnown
+      ? `${leaseAdjPct >= 0 ? '+' : ''}${leaseAdjPct.toFixed(1)}% · ${rem} yr vs ${Math.round(compLease)} yr`
+      : 'n/a';
     $('conf-label').textContent = confLabel;
     $('conf-bars').innerHTML = [0, 1, 2, 3]
       .map((i) => `<i class="${i < confBars ? 'on' : ''}"></i>`)
