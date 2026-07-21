@@ -158,7 +158,22 @@ const kpis = stats
       </div>
     </div>
     <ChartCard title="Median resale price · 4-room · by town" titleId="map-title">
-      <div id="chart-map" class="chart-box map-box"></div>
+      <div class="map-wrap">
+        <div id="chart-map" class="chart-box map-box"></div>
+        <div class="map-zoom" role="group" aria-label="Zoom the map">
+          <button type="button" id="map-zoom-in" class="map-zoom-btn" aria-label="Zoom in">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+          </button>
+          <button type="button" id="map-zoom-out" class="map-zoom-btn" aria-label="Zoom out">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"></path></svg>
+          </button>
+          <button type="button" id="map-zoom-reset" class="map-zoom-btn" aria-label="Reset view">
+            <svg viewBox="0 0 24 24" aria-hidden="true"
+              ><path d="M3.5 12a8.5 8.5 0 1 0 2.4-5.9M4 4v3.2h3.2"></path></svg
+            >
+          </button>
+        </div>
+      </div>
     </ChartCard>
 
     <!-- 03 · DISTRIBUTION -->
@@ -380,9 +395,64 @@ const kpis = stats
   #chart-buckets {
     height: 320px;
   }
-  /* Singapore is wide and short — give the choropleth more room than a plot box. */
+  /* Singapore is wide and short — give the choropleth more room than a plot box, but not so
+     tall that it leaves empty bands above and below the island. */
   .map-box {
-    height: 460px;
+    height: 420px;
+  }
+  /* Positioning context for the overlaid zoom controls. */
+  .map-wrap {
+    position: relative;
+  }
+  .map-zoom {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    z-index: 2;
+  }
+  .map-zoom-btn {
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    color: var(--ink-2);
+    background: color-mix(in srgb, var(--paper-2) 92%, transparent);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    cursor: pointer;
+    box-shadow: 0 2px 8px -5px rgba(24, 20, 16, 0.4);
+    transition:
+      background 0.12s ease,
+      color 0.12s ease,
+      border-color 0.12s ease;
+  }
+  .map-zoom-btn svg {
+    width: 16px;
+    height: 16px;
+    display: block;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .map-zoom-btn:hover {
+    background: var(--paper-2);
+    color: var(--ink);
+    border-color: #cfc7b8;
+  }
+  .map-zoom-btn:active {
+    transform: translateY(0.5px);
+  }
+  @media (max-width: 640px) {
+    .map-zoom-btn {
+      width: 30px;
+      height: 30px;
+    }
   }
   /* On a narrow phone the map fits to width, so a 460px box leaves a huge empty band.
      Shrink to roughly the map's own aspect + a horizontal legend strip. */
@@ -403,6 +473,7 @@ const kpis = stats
     axisLine,
     ink3,
     mono,
+    sans,
   } from '../lib/echartsTheme';
   import { money, moneyShort, psf as fpsf, titleCase } from '../lib/format';
   import { createQuery, sqlEsc, byId as q } from '../lib/duckdbClient';
@@ -649,6 +720,9 @@ const kpis = stats
   const geoReady = new Set<string>();
   const labelsFit = () => window.innerWidth >= 640;
   const isNarrowMap = () => window.matchMedia('(max-width: 640px)').matches;
+  // Transit-map label styling: upper-case, letter-spaced. ECharts canvas text has no
+  // letter-spacing, so fake the tracking by threading a space between characters.
+  const trackedCaps = (s: string) => s.toUpperCase().split('').join(' ');
 
   async function registerGeo(url: string, name: string) {
     if (geoReady.has(name)) return;
@@ -663,12 +737,8 @@ const kpis = stats
   async function renderMap(level: Level) {
     currentLevel = level;
     const cfg = MAP_LEVELS[level];
-    // Subzone geometry is only fetched the first time it's viewed, keeping initial load
-    // light. The outline layer is shared across levels.
-    await Promise.all([
-      registerGeo(cfg.geo, cfg.mapName),
-      registerGeo('geo/sg-outline.geojson', 'sg-outline'),
-    ]);
+    // Subzone geometry is only fetched the first time it's viewed, keeping initial load light.
+    await registerGeo(cfg.geo, cfg.mapName);
     q('map-title').textContent = cfg.title;
 
     const rows = cfg.rows();
@@ -678,21 +748,25 @@ const kpis = stats
     const lo = Math.min(...vals),
       hi = Math.max(...vals);
 
-    // Shared placement — zoomed to fill the card, and identical on both layers so the
-    // coastline outline overlays the choropleth exactly. Singapore is wide and short, so
-    // on a narrow phone the map fits to width and leaves a big empty band in the tall box;
-    // there we shrink the box (CSS) and pull the map up to sit above a horizontal legend.
+    // Placement — zoomed to fill the card. Singapore is wide and short, so on a narrow phone
+    // the map fits to width and leaves a big empty band in the tall box; there we shrink the
+    // box (CSS) and pull the map up to sit above a horizontal legend.
     const narrow = isNarrowMap();
     const layout = {
       aspectScale: 1, // Singapore sits on the equator — keep lon/lat 1:1, don't squash
-      zoom: 1.28,
-      layoutCenter: narrow ? ['50%', '40%'] : ['50%', '54%'],
-      layoutSize: '96%',
+      // The desktop card is far wider than the island is tall, so zoom in to fill the frame
+      // and cut the empty margins; phones already fit to width, so stay gentler. Nudge the
+      // desktop map right of centre so its west coast clears the left-hand legend.
+      zoom: narrow ? 1.28 : 1.32,
+      layoutCenter: narrow ? ['50%', '40%'] : ['53%', '50%'],
+      layoutSize: narrow ? '96%' : '100%',
     } as const;
 
-    // 26 town names won't fit legibly on a phone-width map, so labels show only where
-    // there's room; on narrow screens the map stays clean and a tap reveals the tooltip.
-    const showLabels = level === 'town' && labelsFit();
+    // Label both levels on wider screens: overlaps are dropped so the overview stays legible,
+    // and the zoom controls let you push in to reveal the tightly-packed central names (many
+    // subzones only surface once zoomed). On phones the map stays clean and a tap shows the
+    // tooltip instead.
+    const showLabels = labelsFit();
 
     mapChart ??= initChart(q('chart-map'));
     mapChart.setOption(
@@ -726,52 +800,44 @@ const kpis = stats
             ? { orient: 'horizontal', left: 'center', bottom: 10, itemWidth: 12, itemHeight: 160 }
             : { orient: 'vertical', left: 16, bottom: 24, itemHeight: 150 }),
           inRange: { color: ['#fde8ec', '#f7b8c2', '#f07087', '#e11d3e', '#a80019'] },
-          textStyle: { color: ink3, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 },
+          textStyle: { color: ink3, fontFamily: "'IBM Plex Mono', monospace", fontSize: 13 },
           formatter: (v: number) => moneyShort(v),
         },
         series: [
           {
+            id: 'choropleth', // referenced by the zoom controls' geoRoam dispatch
             type: 'map',
             map: cfg.mapName,
             nameProperty: 'name',
-            roam: false,
+            // Pan + wheel-zoom for a closer look; the overlaid +/− controls drive the same
+            // roam view for those who'd rather click than scroll.
+            roam: true,
+            scaleLimit: { min: 1, max: 12 },
             ...layout,
             // No-data areas: a muted warm grey. Crisp white dividers between every region so
-            // boundaries read clearly against both the red ramp and the beige no-data fills
-            // (the outer coast is drawn by the outline layer below).
+            // boundaries read clearly against both the red ramp and the beige no-data fills.
             itemStyle: { areaColor: '#efeadf', borderColor: '#ffffff', borderWidth: 1 },
             emphasis: {
               label: { fontWeight: 'bold' },
               itemStyle: { borderColor: '#181410', borderWidth: 1.4 },
             },
             select: { disabled: true },
-            // Town names sit on the priced regions only (no-data areas stay unlabelled). Dark
-            // ink with a white halo stays legible across the full light→dark red ramp; overlaps
-            // are thinned automatically so it doesn't clutter on narrow screens.
+            // Town names sit on the priced regions only (no-data areas stay unlabelled), in the
+            // tracked all-caps of a transit map. Dark ink with a light halo stays legible across
+            // the full light→dark red ramp; overlaps are dropped so the overview stays uncluttered
+            // (zoom in to reveal the tightly-packed central towns).
             label: {
               show: false,
-              formatter: (p: any) => titleCase(p.name),
-              color: '#2b261f',
-              fontFamily: mono,
-              fontSize: 9,
-              textBorderColor: 'rgba(255,255,255,0.85)',
-              textBorderWidth: 2.5,
+              formatter: (p: any) => trackedCaps(p.name),
+              color: '#3a332b',
+              fontFamily: sans,
+              fontSize: 10,
+              fontWeight: 400,
+              textBorderColor: 'rgba(251,247,239,0.9)',
+              textBorderWidth: 3,
             },
-            labelLayout: { hideOverlap: true, minMargin: 4 },
+            labelLayout: { hideOverlap: true, minMargin: 8 },
             data: colored.map((r) => ({ name: r.name, value: r.med, label: { show: showLabels } })),
-          },
-          {
-            // Coastline only (all internal borders dissolved away) → a clean country outline.
-            type: 'map',
-            map: 'sg-outline',
-            nameProperty: 'name',
-            roam: false,
-            silent: true,
-            z: 5,
-            ...layout,
-            itemStyle: { areaColor: 'transparent', borderColor: '#8c8479', borderWidth: 1.4 },
-            emphasis: { disabled: true },
-            label: { show: false },
           },
         ],
       },
@@ -786,6 +852,26 @@ const kpis = stats
       btn.classList.add('on');
       renderMap(btn.dataset.level as Level).catch((e) => console.error(e));
     });
+  });
+
+  // Overlaid +/− controls: drive the same roam view as the wheel, stepping toward the map's
+  // centre. geoRoam's `zoom` is a relative factor and is clamped by the series' scaleLimit.
+  function zoomMap(factor: number) {
+    if (!mapChart) return;
+    mapChart.dispatchAction({
+      type: 'geoRoam',
+      componentType: 'series',
+      seriesId: 'choropleth',
+      zoom: factor,
+      originX: mapChart.getWidth() / 2,
+      originY: mapChart.getHeight() / 2,
+    });
+  }
+  q('map-zoom-in').addEventListener('click', () => zoomMap(1.5));
+  q('map-zoom-out').addEventListener('click', () => zoomMap(1 / 1.5));
+  // Reset re-renders the level from scratch, which restores the default zoom/centre.
+  q('map-zoom-reset').addEventListener('click', () => {
+    renderMap(currentLevel).catch((e) => console.error(e));
   });
 
   // ---- 03 box plot by town ----
