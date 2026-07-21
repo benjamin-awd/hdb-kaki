@@ -1,0 +1,76 @@
+---
+import Base from '../layouts/Base.astro';
+---
+
+<Base
+  title="About | HDB Kaki"
+  description="HDB Kaki is an independent project that turns Singapore's public HDB resale data into clear, honest market insights."
+>
+  <section class="hero">
+    <div class="wrap">
+      <span class="eyebrow rise"><span class="dot"></span> About</span>
+      <h1 class="title rise" style="animation-delay:.05s">
+        About <em>HDB Kaki</em>.
+      </h1>
+      <p class="lede rise" style="animation-delay:.1s">
+        A small, independent project that turns Singapore's public HDB resale data into clear,
+        honest answers about the market.
+      </p>
+    </div>
+  </section>
+
+  <main class="wrap pagepad">
+    <div class="prose">
+      <h2>What it is</h2>
+      <p>
+        HDB Kaki helps you stay on top of Singapore's HDB resale market. It pulls together median
+        prices, price-per-square-foot trends, town-by-town comparisons, and a tool that estimates
+        what your own flat might be worth against nearby transactions. The goal is to make public
+        data genuinely useful, without the guesswork.
+      </p>
+
+      <h2>Who made it</h2>
+      <p>
+        HDB Kaki is built and maintained by Benjamin Dornel as an independent, personal project. It
+        is not a company, and it is not affiliated with the Housing &amp; Development Board (HDB) or
+        any government agency.
+      </p>
+
+      <h2>How it works</h2>
+      <p>
+        Everything runs in your browser. The resale dataset is downloaded to your device and queried
+        locally, so the tools stay fast and your inputs, including your postal code, never leave
+        your machine. There are no accounts, no cookies for tracking, and no analytics. You can read
+        more on the <a href="/privacy">privacy page</a>.
+      </p>
+
+      <h2>Where the data comes from</h2>
+      <p>
+        Figures are based on official resale transaction data from
+        <a
+          href="https://data.gov.sg/datasets/d_8b84c4ee58e3cfc0ece0d773c8ca6abc/view"
+          rel="noopener"
+          target="_blank">data.gov.sg</a
+        >, used under the Singapore Open Data Licence v1.0. All prices and valuations are estimates
+        drawn from past sales and are indicative only. See the <a href="/terms">terms of use</a> for the
+        full picture.
+      </p>
+
+      <h2>Open source</h2>
+      <p>
+        The code behind HDB Kaki is open source. You can browse it, report a bug, or suggest an
+        improvement on
+        <a href="https://github.com/benjamin-awd/hdb-kaki" rel="noopener" target="_blank">GitHub</a
+        >.
+      </p>
+
+      <h2>Get in touch</h2>
+      <p>
+        Have feedback or a question? Open an issue on the
+        <a href="https://github.com/benjamin-awd/hdb-kaki/issues" rel="noopener" target="_blank"
+          >GitHub repository</a
+        >.
+      </p>
+    </div>
+  </main>
+</Base>

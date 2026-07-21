@@ -9,14 +9,13 @@ import LeafletMap from '../components/LeafletMap.astro';
 ---
 
 <Base active="My Flat Insights" title="My Flat Insights | HDB Kaki">
-  <!-- The DuckDB engine is warmed from JS (at idle after load), so we deliberately do NOT
-       <link rel="prefetch"> the wasm here: a declarative prefetch would pull the ~4.7 MB wasm
-       a second time, since the worker's instantiate fetch doesn't reuse the prefetch cache. -->
+  <!-- The data worker is warmed from JS (at idle after load); no declarative resource
+       hints are needed for it here. -->
   <section class="hero">
     <div class="wrap">
-      <span class="eyebrow rise"><span class="dot"></span> New · Personalised</span>
+      <span class="eyebrow rise"><span class="dot"></span> My Flat Insights</span>
       <h1 class="title rise" style="animation-delay:.05s">
-        What's your flat<br /><em>really</em> worth?
+        What's your flat <em>really</em> worth?
       </h1>
       <p class="lede solo rise" style="animation-delay:.1s">
         Start with your postal code, and we'll value your flat against nearby transactions.
@@ -25,7 +24,7 @@ import LeafletMap from '../components/LeafletMap.astro';
       <div class="form-card rise" style="animation-delay:.16s">
         <div class="form-grid">
           <div class="field">
-            <label for="f-postal"><span class="step">1</span>Postal code</label>
+            <label for="f-postal">Postal code</label>
             <input
               id="f-postal"
               class="big"
@@ -133,6 +132,14 @@ import LeafletMap from '../components/LeafletMap.astro';
             ><span class="v" id="vs-storey">—</span>
           </div>
           <div class="vs-row">
+            <span class="k"
+              ><Term term="Lease adjustment" end
+                >How much your remaining lease shifts the estimate versus the comps' typical lease,
+                using the SLA Leasehold Table.</Term
+              ></span
+            ><span class="v" id="vs-lease">—</span>
+          </div>
+          <div class="vs-row">
             <span class="k">Your floor area</span><span class="v" id="vs-area">—</span>
           </div>
           <div class="conf">
@@ -144,8 +151,8 @@ import LeafletMap from '../components/LeafletMap.astro';
           </div>
           <p class="disclaimer">
             Indicative estimate for guidance only — not a valuation for HDB, bank or CPF purposes.
-            Adjusted for storey band; not for exact lease or unit condition. Based on registered
-            resale transactions from data.gov.sg.
+            Adjusted for storey band and remaining lease (SLA Leasehold Table); not for unit
+            condition. Based on registered resale transactions from data.gov.sg.
           </p>
         </div>
       </div>
@@ -369,13 +376,6 @@ import LeafletMap from '../components/LeafletMap.astro';
     color: var(--ink-3);
     margin-bottom: 9px;
   }
-  /* The step chip is out of flow (absolute), so the postal label keeps the same height
-     as its neighbours; the form-alignment test asserts every cell in a row shares one
-     value baseline. padding-left just reserves the space the chip overlays. */
-  .field label[for='f-postal'] {
-    position: relative;
-    padding-left: 25px;
-  }
   .field .val {
     font-size: 17px;
     font-weight: 500;
@@ -415,6 +415,11 @@ import LeafletMap from '../components/LeafletMap.astro';
     outline-offset: 2px;
     border-radius: 2px;
   }
+  /* The postal code is the field people actively type into; a heavy ring around
+     the big mono value looks jarring, so keep it unhighlighted. */
+  .field input.big:focus-visible {
+    outline: none;
+  }
   .field input.big {
     font-family: var(--font-mono);
     font-size: 26px;
@@ -438,31 +443,28 @@ import LeafletMap from '../components/LeafletMap.astro';
       no-repeat right center;
     background-size: 10px 14px;
   }
+  /* Hide the browser's native up/down spinner on the number fields. A stepper
+     chevron here would only be decorative (it can't increment), so drop it and
+     let these read as plain typed values like the postal field above. */
+  .field input[type='number'] {
+    -webkit-appearance: none;
+    -moz-appearance: textfield;
+    appearance: none;
+  }
+  .field input[type='number']::-webkit-outer-spin-button,
+  .field input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
   .field .sub {
     font-size: 12.5px;
     color: var(--ink-3);
     margin-top: 5px;
   }
+  /* A gentle nudge toward the first action — kept subtle (muted, not red) so it
+     guides without shouting. It self-clears once a postal resolves (see JS). */
   .field .sub.cue {
-    color: var(--red-ink);
-    font-weight: 600;
-  }
-  .field label .step {
-    position: absolute;
-    left: 0;
-    top: 50%;
-    transform: translateY(-50%);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 17px;
-    height: 17px;
-    border-radius: 50%;
-    background: var(--red);
-    color: #fff;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    letter-spacing: 0;
+    color: var(--ink-2);
   }
   .form-foot {
     display: flex;
@@ -1102,22 +1104,28 @@ import LeafletMap from '../components/LeafletMap.astro';
 <script>
   import 'leaflet/dist/leaflet.css';
   import L from 'leaflet';
-  // DuckDB-WASM is heavy; load it lazily so the page shell is interactive first and
-  // the engine only downloads when the user runs a valuation.
-  import { createQuery, sqlEsc as sql, byId as $ } from '../lib/duckdbClient';
+  // The valuation reads resale.parquet via the hyparquet data worker: postal lookups, comps
+  // and benchmarks are computed off the main thread and only the summaries cross back.
+  import { byId as $ } from '../lib/dom';
+  import { createHyparquet } from '../lib/hyparquetClient';
   import { createUrlState, selectBinding, inputBinding } from '../lib/urlState';
   import { downloadCsv } from '../lib/csv';
 
-  const { query, warmEngineWhenIdle } = createQuery();
-  // No default valuation is auto-loaded, so there's no query to front-run on load. Warm the
-  // engine speculatively at idle instead (skipped under Save-Data; deferred while the page is
-  // only being prerendered, though this page is noPrefetch so that never fires) so it's ready
-  // by the time the user finishes typing their postal — without contending with first paint,
-  // which matters on this map- and chart-heavy page. Idempotent; reuses the one lazy engine
-  // import. There is no focus-triggered warm: the postal field autofocuses on load, so a
-  // focus listener would warm eagerly for everyone (including Save-Data), so the idle warm is
-  // the single entry point.
-  warmEngineWhenIdle();
+  // The valuation runs in the hyparquet Web Worker: the 236k-row scans (postal lookup,
+  // comps, benchmarks, trajectory, lease curves) stay off the main thread; only small
+  // summaries cross back. `q*` aliases avoid colliding with the page's own resolveBlock().
+  const {
+    resolveBlock: qResolveBlock,
+    storeysAndArea: qStoreysArea,
+    valuation: qValuation,
+    warmWhenIdle,
+  } = createHyparquet();
+
+  // No default valuation is auto-loaded, so there's nothing to front-run. Warm the worker
+  // speculatively at idle (skipped under Save-Data) so the parquet is decoded by the time the
+  // user finishes typing their postal — without contending with first paint on this map- and
+  // chart-heavy page.
+  warmWhenIdle();
   import echarts, { initChart } from '../lib/echarts';
   import {
     baseOption,
@@ -1130,6 +1138,7 @@ import LeafletMap from '../components/LeafletMap.astro';
   } from '../lib/echartsTheme';
   import { money, moneyShort, psf as fpsf, titleCase, deltaPill } from '../lib/format';
   import { reformatWithCaret, parsePrice, computeReturns } from '../lib/returns';
+  import { leaseAdjustment } from '../lib/lease';
 
   const NOW_YEAR = new Date().getFullYear();
 
@@ -1197,25 +1206,21 @@ import LeafletMap from '../components/LeafletMap.astro';
       return false;
     }
 
-    const meta = await query<any>(
-      `SELECT arg_max(town,month) town, arg_max(street_name,month) street, arg_max(address,month) address,
-              mode(flat_model) model, mode(lease_commence_date) lc,
-              arg_max(latitude,month) lat, arg_max(longitude,month) lng
-       FROM resale WHERE postal=${postal}`,
-    );
-    if (!meta.length || !meta[0].town) {
+    // Postal → block identity (arg_max latest / mode) + flat-type list, resolved in the worker.
+    const meta = await qResolveBlock(postal);
+    if (!meta) {
       resolveError('No transactions found for that postal code — try another.');
       return false;
     }
     resolvedPostal = postal;
     block = {
-      town: meta[0].town,
-      street: meta[0].street,
-      address: meta[0].address,
-      model: meta[0].model,
-      lc: Number(meta[0].lc),
+      town: meta.town,
+      street: meta.street,
+      address: meta.address,
+      model: meta.model,
+      lc: meta.lc,
     };
-    userLatLng = meta[0].lat != null ? [Number(meta[0].lat), Number(meta[0].lng)] : null;
+    userLatLng = meta.lat != null ? [meta.lat, meta.lng as number] : null;
     const postalSub = $('f-postal-sub');
     postalSub.classList.remove('cue'); // resolved: drop the red "start here" prompt
     postalSub.textContent = `${titleCase(block.address)} · ${titleCase(block.town)}`;
@@ -1224,10 +1229,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     // 3Gen), so render it as-is — titleCase would lowercase acronyms like DBSS -> Dbss.
     $('f-model').textContent = block.model || '—';
 
-    const flats = await query<{ flat_type: string; n: number }>(
-      `SELECT flat_type, count(*) n FROM resale WHERE postal=${postal} GROUP BY flat_type ORDER BY n DESC`,
-    );
-    ($('f-flat') as HTMLSelectElement).innerHTML = flats
+    ($('f-flat') as HTMLSelectElement).innerHTML = meta.flats
       .map((f) => `<option>${f.flat_type}</option>`)
       .join('');
     await onFlatChange();
@@ -1239,18 +1241,13 @@ import LeafletMap from '../components/LeafletMap.astro';
     const flat = ($('f-flat') as HTMLSelectElement).value;
     $('f-flat-sub').textContent = block.model || '';
 
-    const storeys = await query<{ storey_range: string; lo: number }>(
-      `SELECT storey_range, min(storey_lower_bound) lo FROM resale WHERE postal=${postal} AND flat_type='${sql(flat)}' GROUP BY storey_range ORDER BY lo`,
-    );
+    const { storeys, areaMedian: areaMed } = await qStoreysArea(postal, flat);
     const sel = $('f-storey') as HTMLSelectElement;
     sel.innerHTML = storeys.map((s) => `<option>${s.storey_range}</option>`).join('');
     if (storeys.length) sel.selectedIndex = Math.floor(storeys.length / 2); // default mid-floor
 
-    const [area] = await query<{ a: number }>(
-      `SELECT median(floor_area_sqft) a FROM resale WHERE postal=${postal} AND flat_type='${sql(flat)}'`,
-    );
-    if (area?.a) {
-      ($('f-area') as HTMLInputElement).value = String(Math.round(Number(area.a)));
+    if (areaMed) {
+      ($('f-area') as HTMLInputElement).value = String(Math.round(areaMed));
       $('f-area-sub').textContent = `≈ typical for this block`;
     }
     const remDefault = Math.max(1, Math.min(99, 99 - (NOW_YEAR - block.lc)));
@@ -1515,38 +1512,16 @@ import LeafletMap from '../components/LeafletMap.astro';
     const rem = Number(($('f-lease') as HTMLInputElement).value) || 0;
     if (!block.town || !flat || !area) return;
 
-    // comps: same town + flat type, last 12mo; widen to 24 if thin
-    const compQ = (mb: number) =>
-      query<any>(
-        `SELECT month, address, street_name, storey_range, storey_lower_bound slo, floor_area_sqft area,
-              remaining_lease_years lease, resale_price price, psf, latitude lat, longitude lng
-       FROM resale WHERE town='${sql(block.town)}' AND flat_type='${sql(flat)}'
-         AND month >= strftime(current_date - INTERVAL ${mb} MONTH, '%Y-%m')`,
-      );
-    let months = 12;
-    let comps = await compQ(12);
-    if (comps.length < 10) {
-      months = 24;
-      comps = await compQ(24);
-    }
-    comps = comps.map((c) => ({
-      ...c,
-      price: Number(c.price),
-      psf: Number(c.psf),
-      area: Number(c.area),
-      lease: Number(c.lease),
-      slo: Number(c.slo),
-      lat: Number(c.lat),
-      lng: Number(c.lng),
-    }));
-
-    const [island] = await query<any>(
-      `SELECT median(psf) psf, median(resale_price) price, median(floor_area_sqft) area
-       FROM resale WHERE flat_type='${sql(flat)}' AND month >= strftime(current_date - INTERVAL 12 MONTH, '%Y-%m')`,
-    );
-    const islandPsf = Number(island?.psf || 0),
-      islandPrice = Number(island?.price || 0),
-      islandArea = Number(island?.area || 0);
+    // One worker round-trip returns everything this valuation needs from the dataset: comps
+    // (same town+flat, 12mo → widened to 24 if thin), island medians, the yearly trajectory,
+    // and the lease-decay buckets. All the shaping below stays on the (cheap) main thread.
+    const { comps, months, island, trajectory, leaseTown, leaseIsland } = await qValuation({
+      town: block.town,
+      flat,
+    });
+    const islandPsf = island.psf,
+      islandPrice = island.price,
+      islandArea = island.area;
 
     // valuation — base median PSF over all comps, then adjust for the chosen storey band
     const baseMedPsf = med(comps.map((c) => c.psf));
@@ -1555,10 +1530,19 @@ import LeafletMap from '../components/LeafletMap.astro';
     const useStorey = nearStorey.length >= 5; // only adjust when the band has enough sales
     const basis = useStorey ? nearStorey : comps;
     const psfs = basis.map((c) => c.psf).sort((a, b) => a - b);
-    const medPsf = med(psfs),
-      q25 = quantile(psfs, 0.25),
-      q75 = quantile(psfs, 0.75);
-    const storeyAdjPct = baseMedPsf ? (medPsf / baseMedPsf - 1) * 100 : 0;
+    const rawMedPsf = med(psfs);
+    const storeyAdjPct = baseMedPsf ? (rawMedPsf / baseMedPsf - 1) * 100 : 0;
+    // lease adjustment — normalise the comps' typical remaining lease to this
+    // flat's via the SLA Leasehold Table, so a longer/shorter lease moves the estimate.
+    const compLease = med(basis.map((c) => c.lease).filter((l) => l > 0));
+    const {
+      factor: leaseAdj,
+      pct: leaseAdjPct,
+      known: leaseKnown,
+    } = leaseAdjustment(rem, compLease);
+    const medPsf = rawMedPsf * leaseAdj,
+      q25 = quantile(psfs, 0.25) * leaseAdj,
+      q75 = quantile(psfs, 0.75) * leaseAdj;
     const estimate = medPsf * area,
       low = q25 * area,
       high = q75 * area;
@@ -1585,6 +1569,9 @@ import LeafletMap from '../components/LeafletMap.astro';
     $('vs-storey').textContent = useStorey
       ? `${storeyAdjPct >= 0 ? '+' : ''}${storeyAdjPct.toFixed(1)}% · ${storey}`
       : 'n/a — too few';
+    $('vs-lease').textContent = leaseKnown
+      ? `${leaseAdjPct >= 0 ? '+' : ''}${leaseAdjPct.toFixed(1)}% · ${rem} yr vs ${Math.round(compLease)} yr`
+      : 'n/a';
     $('conf-label').textContent = confLabel;
     $('conf-bars').innerHTML = [0, 1, 2, 3]
       .map((i) => `<i class="${i < confBars ? 'on' : ''}"></i>`)
@@ -1697,26 +1684,9 @@ import LeafletMap from '../components/LeafletMap.astro';
     // 04 · lease thresholds (client-side, from remaining lease)
     renderLeaseFlags(rem);
 
-    // 02/04 · queries that need wider history than the comps window
-    const [trajRows, leaseTownRows, leaseIslandRows] = await Promise.all([
-      query<any>(`SELECT substr(month,1,4) yr, median(psf) psf, median(resale_price) price, count(*) n
-                  FROM resale WHERE town='${sql(block.town)}' AND flat_type='${sql(flat)}'
-                  GROUP BY yr ORDER BY yr`),
-      query<any>(`SELECT floor(remaining_lease_years/10)*10 bucket, median(psf) psf, count(*) n
-                  FROM resale WHERE town='${sql(block.town)}' AND flat_type='${sql(flat)}'
-                    AND month >= strftime(current_date - INTERVAL 36 MONTH, '%Y-%m')
-                  GROUP BY bucket HAVING count(*) >= 8 ORDER BY bucket`),
-      query<any>(`SELECT floor(remaining_lease_years/10)*10 bucket, median(psf) psf, count(*) n
-                  FROM resale WHERE flat_type='${sql(flat)}'
-                    AND month >= strftime(current_date - INTERVAL 24 MONTH, '%Y-%m')
-                  GROUP BY bucket HAVING count(*) >= 30 ORDER BY bucket`),
-    ]);
-    const traj = trajRows.map((r) => ({
-      yr: r.yr,
-      psf: Number(r.psf),
-      price: Number(r.price),
-      n: Number(r.n),
-    }));
+    // 02/04 · trajectory + lease-decay curves came from the same worker round-trip above
+    // (they need wider history than the comps window).
+    const traj = trajectory;
     townYearPrice = {};
     traj.forEach((r) => {
       townYearPrice[r.yr] = r.price;
@@ -1725,10 +1695,10 @@ import LeafletMap from '../components/LeafletMap.astro';
     renderTrajectory(traj, medPsf, flat, block.town);
     renderReturns(); // reflects the refreshed estimate + town series
     // prefer the user's own town for the lease curve; fall back to island-wide when too thin
-    const leaseInTown = leaseTownRows.length >= 2;
-    const leaseRows = leaseInTown ? leaseTownRows : leaseIslandRows;
+    const leaseInTown = leaseTown.length >= 2;
+    const leaseRows = leaseInTown ? leaseTown : leaseIsland;
     renderLeaseCurve(
-      leaseRows.map((r) => ({ bucket: Number(r.bucket), psf: Number(r.psf) })),
+      leaseRows.map((r) => ({ bucket: r.bucket, psf: r.psf })),
       rem,
       leaseInTown ? titleCase(block.town) : null,
     );
@@ -1737,7 +1707,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     layer.clearLayers();
     const pts: [number, number][] = [];
     comps.forEach((c) => {
-      if (!c.lat) return;
+      if (c.lat == null || c.lng == null) return;
       pts.push([c.lat, c.lng]);
       L.circleMarker([c.lat, c.lng], {
         radius: 6,
@@ -1825,7 +1795,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     compute();
   });
   ['f-storey', 'f-area', 'f-lease'].forEach((id) => $(id).addEventListener('change', compute));
-  // Returns panel recomputes locally from the current estimate — no DuckDB round-trip.
+  // Returns panel recomputes locally from the current estimate — no worker round-trip.
   $('r-paid').addEventListener('input', () => {
     formatPaid();
     renderReturns();

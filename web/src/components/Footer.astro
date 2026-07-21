@@ -1,15 +1,34 @@
 ---
-// Site footer with data attribution.
+// Site footer with data attribution and page links.
 ---
 
 <footer>
   <div class="wrap footin">
     <span>HDB&nbsp;Kaki · Singapore HDB resale insights</span>
+    <nav class="footlinks">
+      <a href="/about">About</a>
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+    </nav>
     <span
       >Data: <a
         href="https://data.gov.sg/datasets/d_8b84c4ee58e3cfc0ece0d773c8ca6abc/view"
         style="color:inherit">data.gov.sg</a
-      > resale transactions · Updated daily · Estimates are indicative only</span
+      > resale transactions · Updated daily</span
     >
   </div>
 </footer>
+
+<style>
+  .footlinks {
+    display: flex;
+    gap: 16px;
+  }
+  .footlinks a {
+    color: inherit;
+    text-decoration: none;
+  }
+  .footlinks a:hover {
+    color: var(--red-ink);
+  }
+</style>
