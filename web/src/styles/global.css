@@ -493,10 +493,14 @@ footer {
   visibility: visible;
   transform: translateX(-50%) translateY(0);
 }
-/* Reveal on hover only on real pointer devices. On touch iOS leaves :hover "stuck"
-   after a tap, so a hover reveal would show the popover with no way to dismiss it;
-   touch instead drives everything through the tap-toggle (.open) in lib/tooltip. */
-@media (hover: hover) {
+/* Reveal on hover only on real pointer devices, and only above the phone breakpoint.
+   On touch iOS leaves :hover "stuck" after a tap, so a hover reveal would show the
+   popover with no way to dismiss it; touch instead drives everything through the
+   tap-toggle (.open) in lib/tooltip. The min-width guard also covers hybrid devices
+   (a mouse on a narrow viewport / DevTools responsive mode): below 560px the popover
+   is only ever positioned by place() on tap, so revealing it on an un-clamped hover
+   would let a right/left-anchored popover overflow the viewport edge. */
+@media (hover: hover) and (min-width: 561px) {
   .info:hover .info-pop,
   .term:hover .info-pop {
     opacity: 1;
