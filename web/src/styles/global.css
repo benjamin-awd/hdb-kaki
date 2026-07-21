@@ -485,15 +485,24 @@ footer {
 .info-pop strong {
   font-weight: 700;
 }
-.info:hover .info-pop,
 .info:focus-visible .info-pop,
 .info.open .info-pop,
-.term:hover .info-pop,
 .term:focus-visible .info-pop,
 .term.open .info-pop {
   opacity: 1;
   visibility: visible;
   transform: translateX(-50%) translateY(0);
+}
+/* Reveal on hover only on real pointer devices. On touch iOS leaves :hover "stuck"
+   after a tap, so a hover reveal would show the popover with no way to dismiss it;
+   touch instead drives everything through the tap-toggle (.open) in lib/tooltip. */
+@media (hover: hover) {
+  .info:hover .info-pop,
+  .term:hover .info-pop {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0);
+  }
 }
 /* keep right-edge popovers (e.g. the R² card, table columns) from overflowing */
 .info-end .info-pop {
@@ -748,12 +757,9 @@ table.comp tbody tr:hover {
     gap: 12px;
   }
   /* Two per row: captions wrap to a second line unevenly (e.g. "Million $ flats · 12
-     mo" vs "Median PSF"), which left the value and YoY pill of the shorter card riding
-     higher than its neighbour. Reserve two caption lines so the values line up, and
-     pin the pill to the bottom so it aligns even if a caption still runs long. */
-  .kpi-cap {
-    min-height: 2lh;
-  }
+     mo" vs "Median PSF"). Keep the caption and value tight together and pin the YoY
+     pill to the bottom of the (equal-height) card so the pills line up across a row
+     regardless of how many lines the caption takes. */
   .kpi .pill {
     margin-top: auto;
   }
