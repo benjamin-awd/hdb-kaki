@@ -29,7 +29,9 @@ ROOT = Path(__file__).resolve().parents[2]
 SRC_PARQUET = ROOT / "data" / "df.parquet"
 METADATA = ROOT / "data" / "metadata"
 OUT_DIR = ROOT / "web" / "public" / "data"
-GEO_DIR = ROOT / "web" / "public" / "geo"  # committed boundary assets (build_town_geojson.py)
+GEO_DIR = (
+    ROOT / "web" / "public" / "geo"
+)  # committed boundary assets (build_town_geojson.py)
 
 # Default view the town-analysis page renders on load. MUST match the DEFAULT_TOWN /
 # DEFAULT_FLAT constants in web/src/pages/town-analysis.astro.
@@ -91,7 +93,10 @@ def _subzone_medians(df: pl.DataFrame, cutoff: str) -> list[dict]:
             buckets[names[hit[0]]].append(pr)
 
     return sorted(
-        ({"sz": sz, "med": statistics.median(v), "n": len(v)} for sz, v in buckets.items()),
+        (
+            {"sz": sz, "med": statistics.median(v), "n": len(v)}
+            for sz, v in buckets.items()
+        ),
         key=lambda r: r["sz"],
     )
 
@@ -187,7 +192,15 @@ def emit_overview(df: pl.DataFrame) -> None:
         recent_window.sort(["month", "resale_price"], descending=[True, True])
         .head(RECENT_PAGE_SIZE)
         .select(
-            ["month", "town", "address", "flat_type", "floor_area_sqft", "resale_price", "psf"]
+            [
+                "month",
+                "town",
+                "address",
+                "flat_type",
+                "floor_area_sqft",
+                "resale_price",
+                "psf",
+            ]
         )
         .to_dicts()
     )
@@ -196,7 +209,9 @@ def emit_overview(df: pl.DataFrame) -> None:
     # Four headline metrics for the hero, each a last-12-month value paired with a
     # year-on-year delta against the preceding 12 months (recent_window vs prev_window).
     prev_cutoff = f"{today.year - 2}-{today.month:02d}"  # 24 months back
-    prev_window = df.filter((pl.col("month") >= prev_cutoff) & (pl.col("month") < cutoff))
+    prev_window = df.filter(
+        (pl.col("month") >= prev_cutoff) & (pl.col("month") < cutoff)
+    )
 
     def _kpi(now: float | None, prev: float | None) -> dict:
         yoy = (now - prev) / prev * 100 if (now is not None and prev) else None
@@ -204,9 +219,13 @@ def emit_overview(df: pl.DataFrame) -> None:
 
     million = pl.col("resale_price") >= 1_000_000
     stats = {
-        "medianPrice": _kpi(recent_window["resale_price"].median(), prev_window["resale_price"].median()),
+        "medianPrice": _kpi(
+            recent_window["resale_price"].median(), prev_window["resale_price"].median()
+        ),
         "txns": _kpi(recent_window.height, prev_window.height),
-        "millionDollar": _kpi(recent_window.filter(million).height, prev_window.filter(million).height),
+        "millionDollar": _kpi(
+            recent_window.filter(million).height, prev_window.filter(million).height
+        ),
         "medianPsf": _kpi(recent_window["psf"].median(), prev_window["psf"].median()),
     }
 
@@ -272,7 +291,9 @@ def emit_town_analysis(df: pl.DataFrame) -> None:
     # type in the town, so the outlier reads against a like-for-like typical. Only the
     # first page is precomputed; paging, changing town, or switching to the "All Singapore"
     # cross-town scope boots DuckDB (see town-analysis.astro).
-    RECORDS_PAGE_SIZE = 8  # keep in sync with RECORDS_PAGE_SIZE in web/src/pages/town-analysis.astro
+    RECORDS_PAGE_SIZE = (
+        8  # keep in sync with RECORDS_PAGE_SIZE in web/src/pages/town-analysis.astro
+    )
     town_flat_med = df.group_by(["town", "flat_type"]).agg(
         pl.col("resale_price").median().alias("med")
     )
@@ -298,7 +319,10 @@ def emit_town_analysis(df: pl.DataFrame) -> None:
     # Street list for the default town — populates the dependent street dropdown on
     # load. Mirrors loadStreets()'s DISTINCT query in town-analysis.astro.
     streets = (
-        df.filter(pl.col("town") == TA_DEFAULT_TOWN)["street_name"].unique().sort().to_list()
+        df.filter(pl.col("town") == TA_DEFAULT_TOWN)["street_name"]
+        .unique()
+        .sort()
+        .to_list()
     )
 
     payload = {
@@ -354,7 +378,10 @@ def emit_psf_trends(df: pl.DataFrame) -> None:
     )
 
     streets = (
-        df.filter(pl.col("town") == PSF_DEFAULT_TOWN)["street_name"].unique().sort().to_list()
+        df.filter(pl.col("town") == PSF_DEFAULT_TOWN)["street_name"]
+        .unique()
+        .sort()
+        .to_list()
     )
 
     payload = {
@@ -372,6 +399,17 @@ def emit_psf_trends(df: pl.DataFrame) -> None:
 def emit() -> None:
     df = pl.read_parquet(SRC_PARQUET)
     df = df.drop([c for c in DROP_COLS if c in df.columns])
+
+    # int64 -> int32 for the small integer columns the web client reads: postal,
+    # lease_commence_date and storey_lower_bound all fit in int32, and it lets the browser
+    # Parquet decoder return plain numbers instead of boxing every value as a BigInt.
+    df = df.with_columns(
+        [
+            pl.col(c).cast(pl.Int32)
+            for c in ("postal", "lease_commence_date", "storey_lower_bound")
+            if c in df.columns
+        ]
+    )
 
     # Sort so repeated low-cardinality values cluster (better ZSTD compression) and so
     # town-filtered queries can skip row groups via the town min/max statistics.
@@ -393,9 +431,11 @@ def emit() -> None:
     epoch = int(METADATA.read_text().strip()) if METADATA.exists() else None
     manifest = {
         "lastUpdatedEpoch": epoch,
-        "lastUpdated": datetime.fromtimestamp(epoch, tz=timezone.utc).strftime("%Y-%m-%d")
-        if epoch
-        else None,
+        "lastUpdated": (
+            datetime.fromtimestamp(epoch, tz=timezone.utc).strftime("%Y-%m-%d")
+            if epoch
+            else None
+        ),
         "rows": df.height,
         "file": out.name,
         "bytes": out.stat().st_size,
@@ -413,8 +453,10 @@ def emit() -> None:
     # files at 25 MiB. Warn well before that so growth doesn't silently break deploys;
     # if we ever cross it, route the file through src/worker.ts (like the wasm) or R2.
     if size > 20 * 1024 * 1024:
-        print(f"  WARNING: {out.name} is {size/1024/1024:.1f} MiB — approaching "
-              "Cloudflare's 25 MiB static-asset cap.")
+        print(
+            f"  WARNING: {out.name} is {size/1024/1024:.1f} MiB — approaching "
+            "Cloudflare's 25 MiB static-asset cap."
+        )
 
 
 if __name__ == "__main__":
