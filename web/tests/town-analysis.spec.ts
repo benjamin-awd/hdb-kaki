@@ -1,13 +1,12 @@
 import { test, expect } from '@playwright/test';
 
 // Guards the town-analysis perf win: the default view must paint from the precomputed
-// town-analysis.json snapshot, with DuckDB entirely off the load path. DuckDB is only
-// booted when the visitor changes a Town/Flat filter.
+// town-analysis.json snapshot, with the data worker entirely off the load path. The worker is
+// only queried when the visitor changes a Town/Flat filter.
 
-test('default view renders from JSON even with DuckDB + parquet blocked', async ({ page }) => {
-  // Hard-block the engine and the data file. If the default view still renders fully,
-  // it provably does not depend on DuckDB — the whole point of the precompute.
-  await page.route(/\/duckdb\//, (r) => r.abort());
+test('default view renders from JSON even with the data file blocked', async ({ page }) => {
+  // Hard-block resale.parquet. If the default view still renders fully, it provably does not
+  // depend on the data worker — the whole point of the precompute.
   await page.route(/\/data\/resale\.parquet$/, (r) => r.abort());
 
   await page.goto('/town-analysis/');
@@ -18,15 +17,14 @@ test('default view renders from JSON even with DuckDB + parquet blocked', async 
   await expect(page.locator('#tbody-town tr').first()).toBeVisible();
 });
 
-test('changing the Town filter boots DuckDB and re-renders', async ({ page }) => {
+test('changing the Town filter re-queries in the worker and re-renders', async ({ page }) => {
   await page.goto('/town-analysis/');
   await expect(page.locator('#map-sub')).toContainText('Ang Mo Kio', { timeout: 20_000 });
 
-  // Changing the town re-queries via DuckDB. The engine is pre-warmed on idle and the
-  // whole parquet is buffered into memory, so the query resolves without a network
-  // request — the re-render is the signal. 'Bedok' only appears if the query ran, since
-  // the default snapshot covers Ang Mo Kio. (That the data file is fetched at all is
-  // guarded by prefetch.spec.ts / wasm-single-fetch.spec.ts.)
+  // Changing the town re-queries in the worker. It is pre-warmed on idle and holds the decoded
+  // columns in memory, so the query resolves without a network request — the re-render is the
+  // signal. 'Bedok' only appears if the query ran, since the default snapshot covers Ang Mo
+  // Kio. (That the data file is fetched at all is guarded by prefetch.spec.ts.)
   await page.selectOption('#sel-town', 'BEDOK');
   await expect(page.locator('#map-sub')).toContainText('Bedok', { timeout: 45_000 });
 });
