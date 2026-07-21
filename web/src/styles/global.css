@@ -522,31 +522,22 @@ footer {
   border-top-color: transparent;
   border-bottom-color: var(--ink);
 }
-/* On phones the centred (or right-anchored) popover overflows the viewport next to
-   left-of-centre triggers — every trigger sits in the left ~third of the screen, so
-   `end` right-anchoring pushes the popover off the left edge. Anchor all of them to
-   the trigger's left instead and cap the width to the viewport so nothing clips. */
+/* On phones the centred (or `end`-anchored) popover would clip against the viewport
+   edge next to a trigger near it. lib/tooltip re-anchors an opening popover to a
+   clamped offset and sets --tip-arrow so the arrow still points at the trigger; here
+   we only cap the width and let that variable drive the arrow. The closed popover
+   keeps its transform-based centring (excluded from scroll width) so it never widens
+   the page. */
 @media (max-width: 560px) {
   .info .info-pop,
   .term .info-pop {
-    left: 0;
-    right: auto;
-    transform: translateY(4px);
-    max-width: min(250px, calc(100vw - 32px));
+    max-width: min(250px, calc(100vw - 16px));
   }
-  .info:hover .info-pop,
-  .info:focus-visible .info-pop,
-  .info.open .info-pop,
-  .term:hover .info-pop,
-  .term:focus-visible .info-pop,
-  .term.open .info-pop {
-    transform: translateY(0);
-  }
-  .info .info-pop::after,
-  .term .info-pop::after {
-    left: 4px;
+  .info.open .info-pop::after,
+  .term.open .info-pop::after {
+    left: var(--tip-arrow, 50%);
     right: auto;
-    transform: none;
+    transform: translateX(-50%);
   }
 }
 
