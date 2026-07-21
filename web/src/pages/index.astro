@@ -462,9 +462,11 @@ const kpis = stats
       layoutSize: narrow ? '96%' : '100%',
     } as const;
 
-    // 26 town names won't fit legibly on a phone-width map, so labels show only where
-    // there's room; on narrow screens the map stays clean and a tap reveals the tooltip.
-    const showLabels = level === 'town' && labelsFit();
+    // Label both levels on wider screens: overlaps are dropped so the overview stays legible,
+    // and the zoom controls let you push in to reveal the tightly-packed central names (many
+    // subzones only surface once zoomed). On phones the map stays clean and a tap shows the
+    // tooltip instead.
+    const showLabels = labelsFit();
 
     mapChart ??= initChart(q('chart-map'));
     mapChart.setOption(
