@@ -10,8 +10,8 @@ import LeafletMap from '../components/LeafletMap.astro';
 ---
 
 <Base active="Town Analysis" title="Town Analysis | HDB Kaki">
-  <!-- The default view paints from a precomputed JSON snapshot (town-analysis.json),
-       so DuckDB is NOT on the load path — the engine is warmed on idle and only booted
+  <!-- The default view paints from a precomputed JSON snapshot (town-analysis.json), so no
+       data engine is on the load path — the worker is warmed on idle and only queried
        when the visitor changes a filter. -->
   <section class="hero">
     <div class="wrap">
@@ -279,20 +279,16 @@ import LeafletMap from '../components/LeafletMap.astro';
   import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
   import L from 'leaflet';
   import 'leaflet.markercluster';
-  // DuckDB-WASM is heavy and NOT needed for first paint: the default view renders from
-  // a precomputed snapshot (town-analysis.json). The engine is imported lazily and only
-  // booted when the visitor changes a filter (warmed on idle so that first change is
-  // snappy). The query() wrapper primes the same lazy import the warm path reuses.
+  // The default view renders from a precomputed snapshot (town-analysis.json); no data
+  // engine is needed for first paint. Filters query the hyparquet data worker (resale.parquet
+  // decoded once, off the main thread, warmed at idle). Map/records filtering and the record
+  // medians run in the worker.
   import { money, moneyShort, psf as fpsf, titleCase } from '../lib/format';
-  import {
-    createQuery,
-    sqlEsc as sql,
-    byId as $,
-    setStreets,
-    loadStreets,
-  } from '../lib/duckdbClient';
+  import { byId as $, setStreets } from '../lib/dom';
+  import { createHyparquet } from '../lib/hyparquetClient';
 
-  const { query, warmEngineWhenIdle } = createQuery();
+  const { townMap, townRecords, streets, warmWhenIdle } = createHyparquet();
+
   const DEFAULT_TOWN = 'ANG MO KIO';
   const DEFAULT_FLAT = '4 ROOM';
   const BAND_COLOR: Record<string, string> = {
@@ -348,7 +344,7 @@ import LeafletMap from '../components/LeafletMap.astro';
   }
 
   // Paint the map + summary + table from already-fetched rows. Pure client-side, so
-  // changing only the threshold re-bands the same rows without touching DuckDB.
+  // changing only the threshold re-bands the same rows without a new query.
   function paintMap(rows: Row[], town: string, flat: string) {
     currentRows = rows;
     currentTown = town;
@@ -409,31 +405,15 @@ import LeafletMap from '../components/LeafletMap.astro';
       `Showing ${Math.min(12, rows.length)} of ${rows.length.toLocaleString()} sales in view`;
   }
 
-  // Fetch rows for the current town/flat from DuckDB, then paint. Mirrors the SQL the
-  // default snapshot was precomputed from (see webapp/update/emit_web.py).
+  // Fetch rows for the current town/flat from the in-memory parquet, then paint. Mirrors
+  // the SQL the default snapshot was precomputed from (see webapp/update/emit_web.py).
   async function loadMap() {
     const town = ($('sel-town') as HTMLSelectElement).value || DEFAULT_TOWN;
     const flat = ($('sel-flat') as HTMLSelectElement).value;
     const street = ($('sel-street') as HTMLSelectElement).value;
-    const streetClause = street && street !== '__all' ? ` AND street_name='${sql(street)}'` : '';
-    const rows = await query<Row>(
-      `SELECT latitude lat, longitude lng, resale_price price, address, month,
-              storey_range storey, psf, remaining_lease_years lease
-       FROM resale
-       WHERE town='${sql(town)}' AND flat_type='${sql(flat)}'${streetClause}
-         AND month >= strftime(current_date - INTERVAL 24 MONTH, '%Y-%m')
-         AND latitude IS NOT NULL
-       ORDER BY month DESC, resale_price DESC`,
-    ).then((rs) =>
-      rs.map((r) => ({
-        ...r,
-        price: Number(r.price),
-        psf: Number(r.psf),
-        lat: Number(r.lat),
-        lng: Number(r.lng),
-        lease: Number(r.lease),
-      })),
-    );
+    // The worker scans its resident rows and returns the (bounded) town+flat slice already
+    // coerced to numbers, in month DESC, resale_price DESC order.
+    const rows = await townMap({ town, flat, street });
     paintMap(rows, town, flat);
   }
 
@@ -485,53 +465,19 @@ import LeafletMap from '../components/LeafletMap.astro';
 
   async function loadRecords() {
     const token = ++recordReq;
-    const townMode = recordScope === 'town';
     const town = ($('sel-town') as HTMLSelectElement).value || DEFAULT_TOWN;
-    // Town mode: every sale in the town, ranked. Global mode: one row per town (its peak),
-    // ranked across towns. Both join the median for the row's own flat type in its town.
-    const rowsSql = townMode
-      ? `WITH med AS (
-           SELECT town, flat_type, median(resale_price) med
-           FROM resale WHERE town='${sql(town)}' GROUP BY town, flat_type
-         )
-         SELECT r.town, r.resale_price price, r.address, r.storey_range storey,
-                r.floor_area_sqft area, r.month, r.flat_type flat, r.psf, m.med
-         FROM resale r JOIN med m ON r.town = m.town AND r.flat_type = m.flat_type
-         WHERE r.town='${sql(town)}'
-         ORDER BY price DESC
-         LIMIT ${RECORDS_PAGE_SIZE} OFFSET ${recordPage * RECORDS_PAGE_SIZE}`
-      : `WITH ranked AS (
-           SELECT town, resale_price, address, storey_range, floor_area_sqft, month, flat_type, psf,
-                  row_number() OVER (PARTITION BY town ORDER BY resale_price DESC, month DESC) rn
-           FROM resale
-         ), med AS (
-           SELECT town, flat_type, median(resale_price) med FROM resale GROUP BY town, flat_type
-         )
-         SELECT r.town, r.resale_price price, r.address, r.storey_range storey,
-                r.floor_area_sqft area, r.month, r.flat_type flat, r.psf, m.med
-         FROM ranked r JOIN med m ON r.town = m.town AND r.flat_type = m.flat_type
-         WHERE r.rn = 1 ORDER BY price DESC
-         LIMIT ${RECORDS_PAGE_SIZE} OFFSET ${recordPage * RECORDS_PAGE_SIZE}`;
-    const countSql = townMode
-      ? `SELECT count(*) n FROM resale WHERE town='${sql(town)}'`
-      : `SELECT count(DISTINCT town) n FROM resale`;
     try {
-      const [rows, cnt] = await Promise.all([query<Rec>(rowsSql), query<{ n: number }>(countSql)]);
+      // The worker ranks records (town or peak-per-town), joins the per-(town,flat) median,
+      // and returns just this page plus the total.
+      const { rows, total } = await townRecords({
+        town,
+        scope: recordScope,
+        page: recordPage,
+        pageSize: RECORDS_PAGE_SIZE,
+      });
       if (token !== recordReq) return; // a newer request superseded this one
-      recordTotal = Number(cnt[0].n);
-      paintRecords(
-        rows.map((r) => ({
-          town: r.town,
-          price: Number(r.price),
-          address: r.address,
-          storey: r.storey,
-          area: Number(r.area),
-          month: r.month,
-          med: Number(r.med),
-          flat: r.flat,
-          psf: Number(r.psf),
-        })),
-      );
+      recordTotal = total;
+      paintRecords(rows);
     } catch (e) {
       console.error(e);
       if (token === recordReq) $('record-foot').textContent = 'Could not load records.';
@@ -578,23 +524,20 @@ import LeafletMap from '../components/LeafletMap.astro';
       .join('');
     setStreets($('sel-street'), data.streets);
 
-    // Paint immediately from JSON — no DuckDB needed for the default view.
+    // Paint immediately from JSON — no data fetch needed for the default view.
     paintMap(data.rows, data.default.town, data.default.flat);
     recordPage = 0;
     recordTotal = Number(data.recordsTotal);
     paintRecords(data.records);
 
-    // Filters go through DuckDB. Threshold-only changes just re-band the rows we
-    // already have, so they never touch the engine. Changing town reloads its street
+    // Filters go through the worker. Threshold-only changes just re-band the rows we
+    // already have, so they never query. Changing town reloads its street
     // list (resetting the street filter to "all") before re-querying the map, and — in
     // "This town" scope — reloads the records for the new town (global scope is town-
     // independent, so it doesn't). The records span all flat types, so sel-flat only
     // drives the map.
     $('sel-town').addEventListener('change', async () => {
-      setStreets(
-        $('sel-street'),
-        await loadStreets(query, ($('sel-town') as HTMLSelectElement).value),
-      );
+      setStreets($('sel-street'), await streets(($('sel-town') as HTMLSelectElement).value));
       loadMap();
       if (recordScope === 'town') {
         recordPage = 0;
@@ -625,7 +568,9 @@ import LeafletMap from '../components/LeafletMap.astro';
       loadRecords();
     });
 
-    warmEngineWhenIdle();
+    // Warm the worker (decode the parquet off-thread) at idle so the first filter change is
+    // instant. Save-Data / idle / prerender gated.
+    warmWhenIdle();
   })();
 
   window.addEventListener('resize', () => {
