@@ -81,8 +81,29 @@ import DataTable from '../components/DataTable.astro';
       Each dot is a transaction (sampled); the line is the fitted trend on monthly medians.
     </SecHead>
     <ChartCard title="Price per sqft" titleId="chart-title">
-      <div id="scatter-note" slot="head" style="font-size:12.5px;color:var(--ink-3)"></div>
+      <div class="head-right" slot="head">
+        <label
+          class="proj-toggle"
+          id="proj-toggle"
+          title="Extend the OLS trend 9 months forward, if the fit is strong enough"
+        >
+          Show projection
+          <input type="checkbox" id="proj-check" checked />
+          <span class="sw" aria-hidden="true"><i></i></span>
+        </label>
+        <div id="scatter-note" style="font-size:12.5px;color:var(--ink-3)"></div>
+      </div>
       <div id="chart-psf" style="width:100%;height:420px"></div>
+      <div class="banner" id="proj-banner" hidden>
+        <span class="k">Read me</span>
+        <span
+          ><b>This is not a prediction.</b> It shows where price-per-sqft would land
+          <em>if the recent trend simply continued</em> — real prices are moved by policy, interest rates
+          and supply, none of which this line knows about. The band widens with distance because confidence
+          falls the further ahead you look.</span
+        >
+      </div>
+      <div class="proj-note" id="proj-note" hidden></div>
     </ChartCard>
 
     <SecHead num="02" title="Fitted PSF by month">
@@ -110,6 +131,100 @@ import DataTable from '../components/DataTable.astro';
   #chart-psf {
     min-height: 420px;
   }
+
+  /* right column of the chart head: projection toggle over the sample note */
+  .head-right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+    text-align: right;
+  }
+
+  /* on/off switch for the forward projection, matching the wireframe */
+  .proj-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--ink-2);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+  .proj-toggle input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+  .proj-toggle .sw {
+    width: 34px;
+    height: 20px;
+    border-radius: 999px;
+    background: var(--ink-3);
+    position: relative;
+    flex: 0 0 auto;
+    transition: background 0.15s;
+  }
+  .proj-toggle .sw i {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    transition: left 0.15s;
+  }
+  .proj-toggle input:checked + .sw {
+    background: var(--red);
+  }
+  .proj-toggle input:checked + .sw i {
+    left: 16px;
+  }
+  .proj-toggle input:focus-visible + .sw {
+    outline: 2px solid var(--red);
+    outline-offset: 2px;
+  }
+  .proj-toggle.disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  /* "read me" band shown while the projection is drawn */
+  .banner[hidden],
+  .proj-note[hidden] {
+    display: none;
+  }
+  .banner {
+    display: flex;
+    gap: 9px;
+    align-items: flex-start;
+    font-size: 13px;
+    color: var(--ink-2);
+    background: var(--red-wash);
+    border: 1px solid #f4d3d9;
+    border-radius: 10px;
+    padding: 11px 14px;
+    margin-top: 16px;
+  }
+  .banner .k {
+    flex: 0 0 auto;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--red-ink);
+    padding-top: 2px;
+  }
+
+  /* muted note when the projection is on but withheld (weak fit / thin series) */
+  .proj-note {
+    font-size: 12.5px;
+    color: var(--ink-3);
+    margin-top: 14px;
+  }
 </style>
 
 <script>
@@ -127,12 +242,13 @@ import DataTable from '../components/DataTable.astro';
     ink2,
     line as lineCol,
     red,
+    mono,
   } from '../lib/echartsTheme';
   import { money, psf as fpsf, titleCase, deltaPill } from '../lib/format';
   import { byId as $, setStreets } from '../lib/dom';
   import { createHyparquet } from '../lib/hyparquetClient';
   import type { PsfSpec, ScatterRow, Monthly } from '../lib/hyparquetClient';
-  import { createUrlState, selectBinding, chipBinding } from '../lib/urlState';
+  import { createUrlState, selectBinding, chipBinding, stateBinding } from '../lib/urlState';
 
   const { psfScatter, streets, warmWhenIdle } = createHyparquet();
 
@@ -146,6 +262,24 @@ import DataTable from '../components/DataTable.astro';
 
   const chart = initChart($('chart-psf'));
   let regType: 'ols' | 'loess' = 'ols';
+
+  // Forward trend projection: continue only the OLS fit a few months past the last data
+  // point as a dashed line with a prediction-interval cone. Framed as "if the recent trend
+  // continues", not a forecast — and withheld entirely when the fit is weak or the series
+  // too thin to project honestly.
+  const PROJ_MONTHS = 9; // how far forward to continue the line
+  const PROJ_MIN_MONTHS = 8; // don't project a series thinner than this
+  const PROJ_MIN_R2 = 0.5; // don't project a fit weaker than this
+  const PROJ_T = 1.96; // ~95% prediction interval multiplier
+  let showProjection = true;
+
+  // Reflect the projection state into the module flag + checkbox without repainting; the
+  // caller decides when to re-render. Used by the toggle handler and the URL binding.
+  function setProjection(on: boolean) {
+    showProjection = on;
+    const cb = $('proj-check') as HTMLInputElement | null;
+    if (cb) cb.checked = on;
+  }
   let fullMinIdx = 0,
     fullMaxIdx = 0; // full x-extent, for mapping zoom % → months
   let zoomTimer: ReturnType<typeof setTimeout>;
@@ -234,6 +368,10 @@ import DataTable from '../components/DataTable.astro';
     // fitted value per month index
     const fitted = new Map<number, number>();
     let r2 = NaN;
+    // Set for OLS only: the line's own predictor (extrapolatable past the data) and the
+    // residual sum of squares, both needed to draw the forward projection + its cone.
+    let olsPredict: ((idx: number) => number) | null = null;
+    let ssRes = 0;
     if (pts.length >= 2) {
       if (regType === 'ols') {
         const reg = regressionLinear()
@@ -241,7 +379,9 @@ import DataTable from '../components/DataTable.astro';
           .y((d: any) => d.med);
         const line = reg(pts as any);
         r2 = (line as any).rSquared;
-        pts.forEach((p) => fitted.set(p.idx, (line as any).predict(p.idx)));
+        olsPredict = (idx: number) => (line as any).predict(idx);
+        pts.forEach((p) => fitted.set(p.idx, olsPredict!(p.idx)));
+        ssRes = pts.reduce((s, p) => s + (p.med - fitted.get(p.idx)!) ** 2, 0);
       } else {
         const reg = regressionLoess()
           .x((d: any) => d.idx)
@@ -269,6 +409,62 @@ import DataTable from '../components/DataTable.astro';
     const lineData = pts.map((p) => [dateOf(p.idx), Math.round(fitted.get(p.idx) ?? p.med)]);
     const scatterData = toScatter(sample);
 
+    // ---- forward projection ----------------------------------------------------------
+    // Extend the OLS line PROJ_MONTHS past the last month. Guard hard: only the linear fit
+    // (never the LOWESS tail), only a strong-enough fit, only a thick-enough series. The
+    // cone is the OLS prediction interval, which widens with distance from the data's mean
+    // month — so it naturally fans out the further ahead we look.
+    const projectable =
+      regType === 'ols' && !!olsPredict && pts.length >= PROJ_MIN_MONTHS && r2 >= PROJ_MIN_R2;
+    const drawProj = showProjection && projectable;
+
+    // toggle chrome: disable it under LOWESS (nothing to project), tell the visitor why
+    // when they asked for a projection we won't draw.
+    const toggle = $('proj-toggle');
+    const check = $('proj-check') as HTMLInputElement;
+    toggle.classList.toggle('disabled', regType !== 'ols');
+    check.disabled = regType !== 'ols';
+    $('proj-banner').hidden = !drawProj;
+    const note = $('proj-note');
+    if (showProjection && !projectable && pts.length) {
+      note.hidden = false;
+      note.textContent =
+        regType !== 'ols'
+          ? 'Projection is only drawn on the straight OLS fit — switch to OLS to see it.'
+          : pts.length < PROJ_MIN_MONTHS
+            ? `Projection withheld: too few months (${pts.length}) to continue the trend honestly.`
+            : 'Projection withheld: the fit is too weak (low R²) to project with confidence.';
+    } else {
+      note.hidden = true;
+      note.textContent = '';
+    }
+
+    const projLine: [number, number][] = [];
+    const projBandLower: [number, number][] = [];
+    const projBandSpan: [number, number][] = [];
+    let projEnd = NaN;
+    if (drawProj) {
+      const n = pts.length;
+      const xbar = pts.reduce((s, p) => s + p.idx, 0) / n;
+      const sxx = pts.reduce((s, p) => s + (p.idx - xbar) ** 2, 0);
+      const rse = Math.sqrt(ssRes / (n - 2)); // residual standard error of the fit
+      const lastIdx = pts[n - 1].idx;
+      // half-width of the prediction interval at a future month index
+      const halfAt = (idx: number) =>
+        sxx > 0 ? PROJ_T * rse * Math.sqrt(1 + 1 / n + (idx - xbar) ** 2 / sxx) : 0;
+      // start at the last month so the dashed line + cone join the solid fit at "today"
+      for (let k = 0; k <= PROJ_MONTHS; k++) {
+        const idx = lastIdx + k;
+        const t = dateOf(idx);
+        const yhat = olsPredict!(idx);
+        const half = halfAt(idx);
+        projLine.push([t, Math.round(yhat)]);
+        projBandLower.push([t, Math.round(yhat - half)]);
+        projBandSpan.push([t, Math.round(2 * half)]);
+      }
+      projEnd = olsPredict!(lastIdx + PROJ_MONTHS);
+    }
+
     chart.setOption(
       {
         ...baseOption(),
@@ -276,7 +472,11 @@ import DataTable from '../components/DataTable.astro';
           top: 0,
           right: 0,
           textStyle: { fontSize: 12 },
-          data: ['Transactions', regType === 'ols' ? 'OLS trend' : 'LOWESS trend'],
+          data: [
+            'Transactions',
+            regType === 'ols' ? 'OLS trend' : 'LOWESS trend',
+            ...(drawProj ? ['Projected (9 mo)'] : []),
+          ],
         },
         grid: { left: 60, right: 24, top: 40, bottom: 70, containLabel: false },
         dataZoom: [
@@ -307,7 +507,9 @@ import DataTable from '../components/DataTable.astro';
             }
             const dt = new Date(p.value[0]);
             const ml = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
-            return `${ml}<br/><b>${fpsf(p.value[1])}</b> fitted trend`;
+            const kind =
+              p.seriesName === 'Projected (9 mo)' ? 'projected · if trend holds' : 'fitted trend';
+            return `${ml}<br/><b>${fpsf(p.value[1])}</b> ${kind}`;
           },
         },
         xAxis: { type: 'time', axisLabel, axisLine, splitLine: { show: false } },
@@ -348,6 +550,72 @@ import DataTable from '../components/DataTable.astro';
             emphasis: { disabled: true },
             z: 4,
           },
+          // Uncertainty cone, drawn as a stacked pair: a transparent lower-bound line sets
+          // the baseline, and the span (2×half-width) stacked on top is filled. Both hidden
+          // from the legend and silent so they never steal a tooltip from the trend line.
+          ...(drawProj
+            ? [
+                {
+                  name: '_projLower',
+                  type: 'line' as const,
+                  data: projBandLower,
+                  stack: 'proj-band',
+                  symbol: 'none' as const,
+                  lineStyle: { opacity: 0 },
+                  silent: true,
+                  emphasis: { disabled: true },
+                  z: 0,
+                },
+                {
+                  name: '_projBand',
+                  type: 'line' as const,
+                  data: projBandSpan,
+                  stack: 'proj-band',
+                  symbol: 'none' as const,
+                  lineStyle: { opacity: 0 },
+                  areaStyle: { color: 'rgba(254,1,43,.13)' },
+                  silent: true,
+                  emphasis: { disabled: true },
+                  z: 0,
+                },
+                {
+                  name: 'Projected (9 mo)',
+                  type: 'line' as const,
+                  data: projLine,
+                  showSymbol: false,
+                  lineStyle: { color: red, width: 2.5, type: 'dashed' as const },
+                  itemStyle: { color: red },
+                  emphasis: { disabled: true },
+                  endLabel: {
+                    show: true,
+                    color: red,
+                    fontFamily: mono,
+                    fontSize: 11,
+                    formatter: () => `~${fpsf(projEnd)}`,
+                  },
+                  markLine: {
+                    silent: true,
+                    symbol: 'none' as const,
+                    lineStyle: {
+                      color: '#c9001f',
+                      type: 'dashed' as const,
+                      width: 1,
+                      opacity: 0.6,
+                    },
+                    label: {
+                      show: true,
+                      position: 'insideEndTop' as const,
+                      formatter: 'today',
+                      color: '#c9001f',
+                      fontFamily: mono,
+                      fontSize: 10,
+                    },
+                    data: [{ xAxis: projLine[0][0] }],
+                  },
+                  z: 3,
+                },
+              ]
+            : []),
         ],
       },
       true,
@@ -404,6 +672,13 @@ import DataTable from '../components/DataTable.astro';
     });
   });
 
+  // Show/hide the forward projection. Purely client-side — re-render the data we hold; the
+  // URL sync is wired later (needs `url`), mirroring the #reg-toggle split above.
+  ($('proj-check') as HTMLInputElement).addEventListener('change', (e) => {
+    setProjection((e.target as HTMLInputElement).checked);
+    paintChart(curSample, curMonthly);
+  });
+
   // ---- boot: paint the default view from the precomputed snapshot, then wire filters ----
   type Snapshot = {
     default: { town: string };
@@ -433,9 +708,18 @@ import DataTable from '../components/DataTable.astro';
         selectBinding('sel-storey', 'storey', 'all'),
         selectBinding('sel-lease', 'lease', 'all'),
         chipBinding('#reg-toggle', 'reg', 'reg', 'ols'),
+        stateBinding(
+          'proj',
+          () => (showProjection ? 'on' : 'off'),
+          (v) => setProjection(v !== 'off'),
+          'on',
+        ),
       ],
-      ['town', 'street', 'storey', 'lease', 'reg'],
+      ['town', 'street', 'storey', 'lease', 'reg', 'proj'],
     );
+
+    // Honour ?proj=off before the first paint — it's client-side, so no worker query.
+    url.applyKey('proj');
 
     // Paint immediately from JSON — no parquet needed for the default view.
     paintChart(data.sample, data.monthly);
@@ -475,6 +759,8 @@ import DataTable from '../components/DataTable.astro';
     document.querySelectorAll<HTMLButtonElement>('#reg-toggle .chip').forEach((btn) => {
       btn.addEventListener('click', () => url.sync());
     });
+    // Record the projection choice in the URL (the module-level handler above re-renders).
+    $('proj-check').addEventListener('change', () => url.sync());
     $('sel-lease').addEventListener('change', () => {
       loadRender();
       url.sync();
