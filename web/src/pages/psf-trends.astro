@@ -176,6 +176,7 @@ import DataTable from '../components/DataTable.astro';
   // closures). Mirrors the old SQL WHERE: this town, since START, psf present, plus optional
   // street + storey band. The zoom resample just overrides monthFrom/monthTo.
   function specFromUI(): PsfSpec {
+    const storey = ($('sel-storey') as HTMLSelectElement).value;
     const lease = ($('sel-lease') as HTMLSelectElement).value;
     let storeyLo: number | null = null,
       storeyHi: number | null = null;
