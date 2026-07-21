@@ -29,7 +29,9 @@ ROOT = Path(__file__).resolve().parents[2]
 SRC_PARQUET = ROOT / "data" / "df.parquet"
 METADATA = ROOT / "data" / "metadata"
 OUT_DIR = ROOT / "web" / "public" / "data"
-GEO_DIR = ROOT / "web" / "public" / "geo"  # committed boundary assets (build_town_geojson.py)
+GEO_DIR = (
+    ROOT / "web" / "public" / "geo"
+)  # committed boundary assets (build_town_geojson.py)
 
 # Default view the town-analysis page renders on load. MUST match the DEFAULT_TOWN /
 # DEFAULT_FLAT constants in web/src/pages/town-analysis.astro.
@@ -91,7 +93,10 @@ def _subzone_medians(df: pl.DataFrame, cutoff: str) -> list[dict]:
             buckets[names[hit[0]]].append(pr)
 
     return sorted(
-        ({"sz": sz, "med": statistics.median(v), "n": len(v)} for sz, v in buckets.items()),
+        (
+            {"sz": sz, "med": statistics.median(v), "n": len(v)}
+            for sz, v in buckets.items()
+        ),
         key=lambda r: r["sz"],
     )
 
@@ -187,7 +192,15 @@ def emit_overview(df: pl.DataFrame) -> None:
         recent_window.sort(["month", "resale_price"], descending=[True, True])
         .head(RECENT_PAGE_SIZE)
         .select(
-            ["month", "town", "address", "flat_type", "floor_area_sqft", "resale_price", "psf"]
+            [
+                "month",
+                "town",
+                "address",
+                "flat_type",
+                "floor_area_sqft",
+                "resale_price",
+                "psf",
+            ]
         )
         .to_dicts()
     )
@@ -196,7 +209,9 @@ def emit_overview(df: pl.DataFrame) -> None:
     # Four headline metrics for the hero, each a last-12-month value paired with a
     # year-on-year delta against the preceding 12 months (recent_window vs prev_window).
     prev_cutoff = f"{today.year - 2}-{today.month:02d}"  # 24 months back
-    prev_window = df.filter((pl.col("month") >= prev_cutoff) & (pl.col("month") < cutoff))
+    prev_window = df.filter(
+        (pl.col("month") >= prev_cutoff) & (pl.col("month") < cutoff)
+    )
 
     def _kpi(now: float | None, prev: float | None) -> dict:
         yoy = (now - prev) / prev * 100 if (now is not None and prev) else None
@@ -204,9 +219,13 @@ def emit_overview(df: pl.DataFrame) -> None:
 
     million = pl.col("resale_price") >= 1_000_000
     stats = {
-        "medianPrice": _kpi(recent_window["resale_price"].median(), prev_window["resale_price"].median()),
+        "medianPrice": _kpi(
+            recent_window["resale_price"].median(), prev_window["resale_price"].median()
+        ),
         "txns": _kpi(recent_window.height, prev_window.height),
-        "millionDollar": _kpi(recent_window.filter(million).height, prev_window.filter(million).height),
+        "millionDollar": _kpi(
+            recent_window.filter(million).height, prev_window.filter(million).height
+        ),
         "medianPsf": _kpi(recent_window["psf"].median(), prev_window["psf"].median()),
     }
 
@@ -272,7 +291,9 @@ def emit_town_analysis(df: pl.DataFrame) -> None:
     # type in the town, so the outlier reads against a like-for-like typical. Only the
     # first page is precomputed; paging, changing town, or switching to the "All Singapore"
     # cross-town scope boots DuckDB (see town-analysis.astro).
-    RECORDS_PAGE_SIZE = 8  # keep in sync with RECORDS_PAGE_SIZE in web/src/pages/town-analysis.astro
+    RECORDS_PAGE_SIZE = (
+        8  # keep in sync with RECORDS_PAGE_SIZE in web/src/pages/town-analysis.astro
+    )
     town_flat_med = df.group_by(["town", "flat_type"]).agg(
         pl.col("resale_price").median().alias("med")
     )
@@ -298,7 +319,10 @@ def emit_town_analysis(df: pl.DataFrame) -> None:
     # Street list for the default town — populates the dependent street dropdown on
     # load. Mirrors loadStreets()'s DISTINCT query in town-analysis.astro.
     streets = (
-        df.filter(pl.col("town") == TA_DEFAULT_TOWN)["street_name"].unique().sort().to_list()
+        df.filter(pl.col("town") == TA_DEFAULT_TOWN)["street_name"]
+        .unique()
+        .sort()
+        .to_list()
     )
 
     payload = {
@@ -354,7 +378,10 @@ def emit_psf_trends(df: pl.DataFrame) -> None:
     )
 
     streets = (
-        df.filter(pl.col("town") == PSF_DEFAULT_TOWN)["street_name"].unique().sort().to_list()
+        df.filter(pl.col("town") == PSF_DEFAULT_TOWN)["street_name"]
+        .unique()
+        .sort()
+        .to_list()
     )
 
     payload = {
@@ -367,6 +394,229 @@ def emit_psf_trends(df: pl.DataFrame) -> None:
     out = OUT_DIR / "psf-trends.json"
     out.write_text(json.dumps(payload))
     print(f"Wrote psf-trends.json ({out.stat().st_size / 1024:.1f} KB)")
+
+
+def emit_flat_index(df: pl.DataFrame) -> None:
+    """Precompute the postal -> block lookup into flat-index.json.
+
+    Lets the my-flat-insights form resolve a postal and populate its dependent fields
+    (flat types, storey bands, typical area, lease) WITHOUT booting DuckDB-WASM — the
+    ~4.7 MB engine then loads in the background only for the valuation/comps/map. Mirrors
+    resolveBlock() + onFlatChange() in web/src/pages/my-flat-insights.astro one-for-one:
+
+      * block meta   — arg_max(town/street/address/lat/lng, month) (latest on record) plus
+                        mode(flat_model) and mode(lease_commence_date).
+      * per flat type — storey_range list ordered by min(storey_lower_bound), and the
+                        median floor_area_sqft (rounded, as the form does). Flat types are
+                        ordered by descending sale count, matching the page's ORDER BY n DESC.
+
+    Keys are the numeric postal; float lat/lng are rounded to 6 dp (~11 cm) to trim JSON.
+    """
+    # Drop rows with no postal — they can't be looked up by the form.
+    df = df.filter(pl.col("postal").is_not_null())
+
+    # arg_max(col, month): the value at the latest month on record for the postal.
+    latest = pl.col("month") == pl.col("month").max()
+    meta = (
+        df.group_by("postal")
+        .agg(
+            pl.col("town").filter(latest).first().alias("t"),
+            pl.col("address").filter(latest).first().alias("ad"),
+            pl.col("street_name").filter(latest).first().alias("st"),
+            pl.col("latitude").filter(latest).first().alias("lat"),
+            pl.col("longitude").filter(latest).first().alias("lng"),
+            pl.col("flat_model").mode().first().alias("md"),
+            pl.col("lease_commence_date").mode().first().alias("lc"),
+        )
+        .to_dicts()
+    )
+
+    # Storey bands per postal+flat, ordered by lower bound (mirrors GROUP BY storey_range
+    # ORDER BY min(storey_lower_bound)).
+    storeys = (
+        df.group_by(["postal", "flat_type", "storey_range"])
+        .agg(pl.col("storey_lower_bound").min().alias("lo"))
+        .sort("lo")
+        .group_by(["postal", "flat_type"])
+        .agg(pl.col("storey_range").alias("sr"))
+    )
+    # Median area + sale count per postal+flat; count drives the flat-type ordering.
+    per_flat = (
+        df.group_by(["postal", "flat_type"])
+        .agg(
+            pl.col("floor_area_sqft").median().round(0).cast(pl.Int32).alias("a"),
+            pl.len().alias("n"),
+        )
+        .join(storeys, on=["postal", "flat_type"])
+        .sort(["postal", "n"], descending=[False, True])  # flats: most-sold first
+        .to_dicts()
+    )
+
+    idx: dict[int, dict] = {}
+    for r in meta:
+        idx[r["postal"]] = {
+            "t": r["t"],
+            "ad": r["ad"],
+            "st": r["st"],
+            "lat": round(r["lat"], 6) if r["lat"] is not None else None,
+            "lng": round(r["lng"], 6) if r["lng"] is not None else None,
+            "md": r["md"],
+            "lc": r["lc"],
+            "ft": {},  # insertion order = descending sale count (preserved by JSON)
+        }
+    for r in per_flat:
+        e = idx.get(r["postal"])
+        if e is not None:
+            e["ft"][r["flat_type"]] = {"sr": r["sr"], "a": r["a"]}
+
+    # Shard by the first 2 digits of the zero-padded 6-digit postal. Singapore postals are
+    # 6 digits, but districts 01-09 lose their leading zero as an int (e.g. 050004), so pad
+    # before slicing. The client fetches only the ~5 KB shard for the prefix being typed
+    # instead of the whole ~296 KB index — and prefetches it as the first digits are keyed
+    # in. Entry keys are the int form (str(postal)), matching parseInt() on the client.
+    old_single = OUT_DIR / "flat-index.json"
+    if old_single.exists():
+        old_single.unlink()  # superseded by the sharded directory below
+    shard_dir = OUT_DIR / "flat-index"
+    shard_dir.mkdir(parents=True, exist_ok=True)
+    for old in shard_dir.glob("*.json"):
+        old.unlink()
+    shards: dict[str, dict] = {}
+    for postal, entry in idx.items():
+        shards.setdefault(f"{postal:06d}"[:2], {})[str(postal)] = entry
+    total = 0
+    for pp, entries in shards.items():
+        f = shard_dir / f"{pp}.json"
+        f.write_text(json.dumps(entries, separators=(",", ":")))
+        total += f.stat().st_size
+    print(
+        f"Wrote flat-index/ ({len(shards)} shards, {total / 1024:.0f} KB total, {len(idx)} postals)"
+    )
+
+
+def emit_flat_aggregates(df: pl.DataFrame) -> None:
+    """Precompute town x flat_type aggregates into flat-aggregates.json.
+
+    Feeds the trajectory + lease-decay charts on my-flat-insights so they paint the
+    moment a postal resolves, without DuckDB. Mirrors the corresponding queries in
+    compute() (web/src/pages/my-flat-insights.astro):
+
+      * traj  — median PSF, median price + count by calendar year, all history
+                (GROUP BY substr(month,1,4)).
+      * lease — town+flat median PSF by 10-year remaining-lease bucket, last 36 months,
+                HAVING count >= 8.
+      * island.lease — same by flat type island-wide, last 24 months, HAVING count >= 30
+                (the page's fallback when a town's own curve is too thin).
+      * island.med   — island median psf/price/area per flat type, last 12 months.
+
+    psf is cast to Float64 before rounding so the JSON carries clean 1-dp values rather
+    than Float32 binary noise.
+    """
+    today = date.today()
+
+    def months_back(n: int) -> str:
+        y, m = today.year, today.month - n
+        while m <= 0:
+            y -= 1
+            m += 12
+        return f"{y}-{m:02d}"
+
+    psf1 = pl.col("psf").cast(pl.Float64).round(1)
+    price0 = pl.col("resale_price").median().round(0).cast(pl.Int64)
+
+    traj = (
+        df.with_columns(pl.col("month").str.slice(0, 4).alias("yr"))
+        .group_by(["town", "flat_type", "yr"])
+        .agg(psf1.median().alias("psf"), price0.alias("price"), pl.len().alias("n"))
+        .sort(["town", "flat_type", "yr"])
+    )
+    lease_town = (
+        df.filter(pl.col("month") >= months_back(36))
+        .with_columns((pl.col("remaining_lease_years") // 10 * 10).alias("b"))
+        .group_by(["town", "flat_type", "b"])
+        .agg(psf1.median().alias("psf"), pl.len().alias("n"))
+        .filter(pl.col("n") >= 8)
+        .sort(["town", "flat_type", "b"])
+    )
+    lease_island = (
+        df.filter(pl.col("month") >= months_back(24))
+        .with_columns((pl.col("remaining_lease_years") // 10 * 10).alias("b"))
+        .group_by(["flat_type", "b"])
+        .agg(psf1.median().alias("psf"), pl.len().alias("n"))
+        .filter(pl.col("n") >= 30)
+        .sort(["flat_type", "b"])
+    )
+    island_med = (
+        df.filter(pl.col("month") >= months_back(12))
+        .group_by("flat_type")
+        .agg(
+            psf1.median().alias("psf"),
+            price0.alias("price"),
+            pl.col("floor_area_sqft").median().round(0).cast(pl.Int32).alias("area"),
+        )
+    )
+
+    by_town_flat: dict[str, dict] = {}
+    for r in traj.to_dicts():
+        key = f"{r['town']}|{r['flat_type']}"
+        by_town_flat.setdefault(key, {}).setdefault("traj", []).append(
+            [r["yr"], r["psf"], r["price"], r["n"]]
+        )
+    for r in lease_town.to_dicts():
+        key = f"{r['town']}|{r['flat_type']}"
+        by_town_flat.setdefault(key, {}).setdefault("lease", []).append(
+            [r["b"], r["psf"]]
+        )
+
+    island: dict[str, dict] = {"lease": {}, "med": {}}
+    for r in lease_island.to_dicts():
+        island["lease"].setdefault(r["flat_type"], []).append([r["b"], r["psf"]])
+    for r in island_med.to_dicts():
+        island["med"][r["flat_type"]] = {
+            "psf": r["psf"],
+            "price": r["price"],
+            "area": r["area"],
+        }
+
+    # Valuation comps: town+flat sales in the last 12 months, widened to 24 when a combo has
+    # < 10 (mirrors compute()'s widen rule). We ship each comp's psf + storey_lower_bound so
+    # the client runs the SAME storey-windowed quantile math it runs on DuckDB rows — an
+    # identical valuation, range and PSF distribution without booting the engine. tp/ta are
+    # the median comp price/area (the town benchmarks in section 03); the comps *table*, map
+    # and priciest/lowest-sale tiles still come from DuckDB since they need per-row address.
+    c12 = df.filter(pl.col("month") >= months_back(12))
+    c24 = df.filter(pl.col("month") >= months_back(24))
+    for cb in df.select(["town", "flat_type"]).unique().iter_rows(named=True):
+        t, f = cb["town"], cb["flat_type"]
+        sel = c12.filter((pl.col("town") == t) & (pl.col("flat_type") == f))
+        months = 12
+        if sel.height < 10:  # widen to 24 months when the 12-month window is too thin
+            sel = c24.filter((pl.col("town") == t) & (pl.col("flat_type") == f))
+            months = 24
+        if sel.height == 0:
+            continue
+        d = sel.select(
+            pl.col("psf").cast(pl.Float64).round(1).alias("psf"),
+            pl.col("storey_lower_bound").alias("slo"),
+        )
+        by_town_flat.setdefault(f"{t}|{f}", {})["comps"] = {
+            "m": months,
+            "n": sel.height,
+            "tp": int(round(sel["resale_price"].median())),
+            "ta": int(round(sel["floor_area_sqft"].median())),
+            "psf": d["psf"].to_list(),
+            "slo": d["slo"].to_list(),
+        }
+
+    out = OUT_DIR / "flat-aggregates.json"
+    out.write_text(
+        json.dumps(
+            {"byTownFlat": by_town_flat, "island": island}, separators=(",", ":")
+        )
+    )
+    print(
+        f"Wrote flat-aggregates.json ({out.stat().st_size / 1024:.0f} KB, {len(by_town_flat)} town×flat)"
+    )
 
 
 def emit() -> None:
@@ -393,9 +643,11 @@ def emit() -> None:
     epoch = int(METADATA.read_text().strip()) if METADATA.exists() else None
     manifest = {
         "lastUpdatedEpoch": epoch,
-        "lastUpdated": datetime.fromtimestamp(epoch, tz=timezone.utc).strftime("%Y-%m-%d")
-        if epoch
-        else None,
+        "lastUpdated": (
+            datetime.fromtimestamp(epoch, tz=timezone.utc).strftime("%Y-%m-%d")
+            if epoch
+            else None
+        ),
         "rows": df.height,
         "file": out.name,
         "bytes": out.stat().st_size,
@@ -406,6 +658,8 @@ def emit() -> None:
     emit_overview(df)
     emit_town_analysis(df)
     emit_psf_trends(df)
+    emit_flat_index(df)
+    emit_flat_aggregates(df)
 
     size = out.stat().st_size
     print(f"Wrote {out.name}, {df.height:,} rows, {size/1e6:.2f} MB")
@@ -413,8 +667,10 @@ def emit() -> None:
     # files at 25 MiB. Warn well before that so growth doesn't silently break deploys;
     # if we ever cross it, route the file through src/worker.ts (like the wasm) or R2.
     if size > 20 * 1024 * 1024:
-        print(f"  WARNING: {out.name} is {size/1024/1024:.1f} MiB — approaching "
-              "Cloudflare's 25 MiB static-asset cap.")
+        print(
+            f"  WARNING: {out.name} is {size/1024/1024:.1f} MiB — approaching "
+            "Cloudflare's 25 MiB static-asset cap."
+        )
 
 
 if __name__ == "__main__":

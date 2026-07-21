@@ -43,3 +43,12 @@
 
 /data/psf-trends.json
   Cache-Control: public, max-age=3600, must-revalidate
+
+# my-flat-insights precompute: sharded postal→block index + town×flat aggregates. Let the
+# form resolve and the valuation/charts paint without the DuckDB engine. Change daily with
+# the ETL, so cache like the other data snapshots.
+/data/flat-index/*
+  Cache-Control: public, max-age=3600, must-revalidate
+
+/data/flat-aggregates.json
+  Cache-Control: public, max-age=3600, must-revalidate

@@ -981,6 +981,30 @@ import LeafletMap from '../components/LeafletMap.astro';
   let userLatLng: [number, number] | null = null;
   let resolvedPostal = 0; // the postal the form fields currently reflect
 
+  // Precomputed static data (webapp/update/emit_web.py) lets the form resolve and the
+  // valuation + charts paint WITHOUT the 4.7 MB DuckDB engine — which then boots in the
+  // background (warmEngineWhenIdle) only for the comps table + map.
+  //
+  // Town×flat aggregates (trajectory / lease / comps for the valuation): one ~90 KB fetch on
+  // load, ready before the user finishes typing. null on failure → compute() uses DuckDB.
+  let flatAgg: { byTownFlat: Record<string, any>; island: any } | null = null;
+  const aggReady = fetch(`${import.meta.env.BASE_URL}data/flat-aggregates.json`)
+    .then((r) => (r.ok ? r.json() : null))
+    .then((agg) => (flatAgg = agg))
+    .catch(() => {});
+
+  // Postal→block index, sharded by 2-digit prefix so we fetch only the ~5 KB shard for what's
+  // being typed, not the whole ~296 KB index. Cached per prefix and prefetched from the
+  // 'input' handler as the first digits are keyed in, so resolve is instant. A 404 shard means
+  // "no such prefix" ({} → resolve as no-transactions); a network failure yields null so
+  // resolveBlock falls back to DuckDB. blockEntry holds the resolved entry for onFlatChange.
+  const shardCache: Record<string, Promise<Record<string, any> | null>> = {};
+  const loadShard = (pp: string): Promise<Record<string, any> | null> =>
+    (shardCache[pp] ??= fetch(`${import.meta.env.BASE_URL}data/flat-index/${pp}.json`)
+      .then((r) => (r.ok ? r.json() : r.status === 404 ? {} : null))
+      .catch(() => null));
+  let blockEntry: any = null;
+
   // ---- ECharts: init once per container, reuse across recomputes ----
   const charts: Record<string, echarts.ECharts> = {};
   const ec = (id: string) => (charts[id] ??= initChart($(id)));
@@ -1017,14 +1041,79 @@ import LeafletMap from '../components/LeafletMap.astro';
     $('resolved').innerHTML = `<span class="pin">📍</span><span>${msg}</span>`;
   };
 
+  // Apply resolved block metadata to state + the postal sub-label / model field. Shared
+  // by the index fast-path and the DuckDB fallback so both render identically.
+  function applyBlock(
+    postal: number,
+    b: {
+      town: string;
+      street: string;
+      address: string;
+      model: string;
+      lc: number;
+      lat: any;
+      lng: any;
+    },
+  ) {
+    resolvedPostal = postal;
+    block = {
+      town: b.town,
+      street: b.street,
+      address: b.address,
+      model: b.model,
+      lc: Number(b.lc),
+    };
+    userLatLng = b.lat != null ? [Number(b.lat), Number(b.lng)] : null;
+    const postalSub = $('f-postal-sub');
+    postalSub.classList.remove('cue'); // resolved: drop the red "start here" prompt
+    postalSub.textContent = `${titleCase(block.address)} · ${titleCase(block.town)}`;
+    $('resolved').textContent = ''; // clear any prior error now that we've resolved
+    // flat_model is already stored in its canonical mixed case (DBSS, Model A, Type S1,
+    // 3Gen), so render it as-is — titleCase would lowercase acronyms like DBSS -> Dbss.
+    $('f-model').textContent = block.model || '—';
+  }
+
   // ---- resolve a postal code → block metadata + populate dependent fields ----
   async function resolveBlock() {
-    const postal = parseInt(($('f-postal') as HTMLInputElement).value, 10);
+    const raw = ($('f-postal') as HTMLInputElement).value;
+    const postal = parseInt(raw, 10);
     if (!postal || String(postal).length < 5) {
       resolveError('Enter a valid 6-digit postal code.');
       return false;
     }
+    // Shard key = first 2 digits of the zero-padded 6-digit postal, restoring a dropped
+    // leading zero (e.g. "50004" → "05"); matches how the shards are keyed on emit. Await
+    // the aggregates too so the valuation/charts can render statically right after resolve.
+    const [shard] = await Promise.all([loadShard(raw.padStart(6, '0').slice(0, 2)), aggReady]);
 
+    // Fast path: resolve from the shard, no DuckDB engine needed.
+    const hit = shard?.[String(postal)];
+    if (hit) {
+      blockEntry = hit;
+      applyBlock(postal, {
+        town: hit.t,
+        street: hit.st,
+        address: hit.ad,
+        model: hit.md,
+        lc: hit.lc,
+        lat: hit.lat,
+        lng: hit.lng,
+      });
+      // ft keys are stored most-sold first (mirrors the page's ORDER BY count DESC).
+      ($('f-flat') as HTMLSelectElement).innerHTML = Object.keys(hit.ft)
+        .map((ft) => `<option>${ft}</option>`)
+        .join('');
+      await onFlatChange();
+      return true;
+    }
+    // Shard resolved (or a definitive 404 → {}) but no entry → the postal has no transactions.
+    if (shard) {
+      resolveError('No transactions found for that postal code — try another.');
+      return false;
+    }
+
+    // Fallback: the shard fetch failed (network) → query DuckDB directly.
+    blockEntry = null;
     const meta = await query<any>(
       `SELECT arg_max(town,month) town, arg_max(street_name,month) street, arg_max(address,month) address,
               mode(flat_model) model, mode(lease_commence_date) lc,
@@ -1035,23 +1124,7 @@ import LeafletMap from '../components/LeafletMap.astro';
       resolveError('No transactions found for that postal code — try another.');
       return false;
     }
-    resolvedPostal = postal;
-    block = {
-      town: meta[0].town,
-      street: meta[0].street,
-      address: meta[0].address,
-      model: meta[0].model,
-      lc: Number(meta[0].lc),
-    };
-    userLatLng = meta[0].lat != null ? [Number(meta[0].lat), Number(meta[0].lng)] : null;
-    const postalSub = $('f-postal-sub');
-    postalSub.classList.remove('cue'); // resolved: drop the red "start here" prompt
-    postalSub.textContent = `${titleCase(block.address)} · ${titleCase(block.town)}`;
-    $('resolved').textContent = ''; // clear any prior error now that we've resolved
-    // flat_model is already stored in its canonical mixed case (DBSS, Model A, Type S1,
-    // 3Gen), so render it as-is — titleCase would lowercase acronyms like DBSS -> Dbss.
-    $('f-model').textContent = block.model || '—';
-
+    applyBlock(postal, meta[0]);
     const flats = await query<{ flat_type: string; n: number }>(
       `SELECT flat_type, count(*) n FROM resale WHERE postal=${postal} GROUP BY flat_type ORDER BY n DESC`,
     );
@@ -1062,11 +1135,215 @@ import LeafletMap from '../components/LeafletMap.astro';
     return true;
   }
 
+  // Default the remaining-lease field from the block's lease-commence year (99-year lease).
+  function applyLeaseDefault() {
+    const remDefault = Math.max(1, Math.min(99, 99 - (NOW_YEAR - block.lc)));
+    ($('f-lease') as HTMLInputElement).value = String(remDefault);
+    $('f-lease-sub').textContent = block.lc ? `Commenced ${block.lc}` : '';
+  }
+
+  // Shared valuation + benchmarks + distribution + trajectory + lease renderer. Fed either
+  // from the precomputed comps (renderStatic — instant, no engine) or from DuckDB rows
+  // (compute — which also needs the full rows for the comps table + map). Identical inputs
+  // produce identical output, so the engine's later re-render over the static one is
+  // invisible. Everything here is engine-independent; only the comps table, map and
+  // priciest/lowest-sale tiles (which need per-row address/coords) live in compute().
+  type ValInput = {
+    psfs: number[];
+    slos: number[];
+    flat: string;
+    storey: string;
+    area: number;
+    rem: number;
+    months: number;
+    n: number;
+    townPrice: number;
+    townArea: number;
+    islandPsf: number;
+    islandPrice: number;
+    islandArea: number;
+    trajRows: { yr: string; psf: number; price: number; n: number }[];
+    leaseTown: { bucket: number; psf: number }[];
+    leaseIsland: { bucket: number; psf: number }[];
+  };
+
+  function renderValuation(v: ValInput): { estimate: number; medPsf: number } {
+    const { psfs, slos, flat, storey, area, rem, months, n, townPrice, townArea } = v;
+
+    // valuation — base median PSF over all comps, then adjust for the chosen storey band
+    const baseMedPsf = med(psfs);
+    const userLo = parseInt(storey, 10) || 0; // "10 TO 12" -> 10
+    const nearPsfs = psfs.filter((_, i) => Math.abs(slos[i] - userLo) <= 3);
+    const useStorey = nearPsfs.length >= 5; // only adjust when the band has enough sales
+    const basisPsfs = useStorey ? nearPsfs : psfs;
+    const psfsSorted = [...basisPsfs].sort((a, b) => a - b);
+    const medPsf = med(psfsSorted),
+      q25 = quantile(psfsSorted, 0.25),
+      q75 = quantile(psfsSorted, 0.75);
+    const storeyAdjPct = baseMedPsf ? (medPsf / baseMedPsf - 1) * 100 : 0;
+    const estimate = medPsf * area,
+      low = q25 * area,
+      high = q75 * area;
+    currentEstimate = estimate;
+    const nb = basisPsfs.length;
+    const [confLabel, confBars] =
+      nb >= 30 ? ['High', 4] : nb >= 15 ? ['Medium-High', 3] : nb >= 5 ? ['Medium', 2] : ['Low', 1];
+
+    $('val-hint').textContent = useStorey
+      ? `Modelled from ${nb} comparable ${flat.toLowerCase()} sales on similar storeys (${storey}) in ${titleCase(block.town)}, last ${months} months.`
+      : `Modelled from ${n} comparable ${flat.toLowerCase()} sales in ${titleCase(block.town)}, last ${months} months.`;
+    $('val-big').textContent = money(estimate);
+    $('val-low').textContent = money(low);
+    $('val-high').textContent = money(high);
+    $('scale-low').textContent = moneyShort(low);
+    $('scale-high').textContent = moneyShort(high);
+    const pos =
+      high > low ? Math.min(92, Math.max(8, ((estimate - low) / (high - low)) * 100)) : 50;
+    ($('val-marker') as HTMLElement).style.left = pos + '%';
+    $('vs-n').textContent = String(n);
+    $('vs-psf').textContent = fpsf(baseMedPsf);
+    $('vs-area').textContent = `${area.toLocaleString()} sqft`;
+    $('vs-storey').textContent = useStorey
+      ? `${storeyAdjPct >= 0 ? '+' : ''}${storeyAdjPct.toFixed(1)}% · ${storey}`
+      : 'n/a — too few';
+    $('conf-label').textContent = confLabel as string;
+    $('conf-bars').innerHTML = [0, 1, 2, 3]
+      .map((i) => `<i class="${i < (confBars as number) ? 'on' : ''}"></i>`)
+      .join('');
+
+    // benchmarks
+    const bar = (
+      rows: { lab: string; val: number; you?: boolean; fmt: (n: number) => string }[],
+    ) => {
+      const max = Math.max(...rows.map((r) => r.val), 1);
+      return rows
+        .map(
+          (r) =>
+            `<div class="row"><span class="lab">${r.lab}</span><span class="bar"><span class="${r.you ? 'you' : 'ctx'}" style="width:${Math.round((r.val / max) * 100)}%"></span></span><span class="amt">${r.fmt(r.val)}</span></div>`,
+        )
+        .join('');
+    };
+    const dPsf = v.islandPsf ? (medPsf / v.islandPsf - 1) * 100 : 0;
+    const psfPill = deltaPill(dPsf, { threshold: 1 });
+    $('b1-v').textContent = fpsf(medPsf);
+    $('b1-pill').className = `pill ${psfPill.cls}`;
+    $('b1-pill').textContent = `${psfPill.text} vs island`;
+    $('b1-bars').innerHTML = bar([
+      { lab: 'This flat', val: medPsf, you: true, fmt: fpsf },
+      { lab: 'Island', val: v.islandPsf, fmt: fpsf },
+    ]);
+
+    const dPrice = townPrice ? (estimate / townPrice - 1) * 100 : 0;
+    const pricePill = deltaPill(dPrice, { threshold: 1 });
+    $('b2-v').textContent = moneyShort(estimate);
+    $('b2-pill').className = `pill ${pricePill.cls}`;
+    $('b2-pill').textContent = `${pricePill.text} vs town`;
+    $('b2-bars').innerHTML = bar([
+      { lab: 'This flat', val: estimate, you: true, fmt: moneyShort },
+      { lab: `${titleCase(block.town)}`, val: townPrice, fmt: moneyShort },
+      { lab: 'Island', val: v.islandPrice, fmt: moneyShort },
+    ]);
+
+    const dArea = townArea ? (area / townArea - 1) * 100 : 0;
+    const areaPill = deltaPill(dArea, { threshold: 1, digits: 0 });
+    $('b3-v').textContent = `${area.toLocaleString()} sqft`;
+    $('b3-pill').className = `pill ${Math.abs(dArea) < 3 ? 'flat' : areaPill.cls}`;
+    $('b3-pill').textContent =
+      Math.abs(dArea) < 3 ? '≈ typical for type' : `${areaPill.text} vs town`;
+    $('b3-bars').innerHTML = bar([
+      { lab: 'This flat', val: area, you: true, fmt: (val) => val.toLocaleString() },
+      {
+        lab: `${titleCase(block.town)}`,
+        val: townArea,
+        fmt: (val) => Math.round(val).toLocaleString(),
+      },
+      { lab: 'Island', val: v.islandArea, fmt: (val) => Math.round(val).toLocaleString() },
+    ]);
+
+    // lease decay bar
+    $('lease-rem').textContent = String(rem);
+    $('lease-start').textContent = block.lc ? String(block.lc) : '—';
+    const nowEl = $('lease-now') as HTMLElement;
+    nowEl.style.left = `${((99 - rem) / 99) * 100}%`;
+    nowEl.setAttribute('data-label', `${rem} yrs left`);
+
+    // distribution + market velocity (all from the comps psf array + count)
+    renderDistribution(psfs, medPsf, flat, block.town);
+    const perMonth = n / months;
+    $('mt-vel').textContent = n.toLocaleString();
+    $('mt-vel-s').textContent =
+      `${flat.toLowerCase()} in ${titleCase(block.town)} · ~${perMonth.toFixed(1)}/mo`;
+
+    // trajectory (with the storey-adjusted estimate line) + returns panel
+    townYearPrice = {};
+    v.trajRows.forEach((r) => (townYearPrice[r.yr] = r.price));
+    latestYear = v.trajRows.length ? v.trajRows[v.trajRows.length - 1].yr : '';
+    renderTrajectory(v.trajRows, medPsf, flat, block.town);
+    renderReturns();
+
+    // lease curve — prefer the town's own; fall back to island-wide when too thin
+    const leaseInTown = v.leaseTown.length >= 2;
+    const leaseRows = leaseInTown ? v.leaseTown : v.leaseIsland;
+    renderLeaseCurve(leaseRows, rem, leaseInTown ? titleCase(block.town) : null);
+    renderLeaseFlags(rem);
+
+    return { estimate, medPsf };
+  }
+
+  // Render the full valuation from the precomputed aggregates — instant, no DuckDB. Returns
+  // false if the static data isn't available (compute() then does it from the engine).
+  function renderStatic(): boolean {
+    if (!flatAgg) return false;
+    const flat = ($('f-flat') as HTMLSelectElement).value;
+    const area = Number(($('f-area') as HTMLInputElement).value) || 0;
+    const a = flatAgg.byTownFlat[`${block.town}|${flat}`];
+    if (!a?.comps || !area) return false;
+    const imed = flatAgg.island?.med?.[flat] || {};
+    renderValuation({
+      psfs: a.comps.psf,
+      slos: a.comps.slo,
+      flat,
+      storey: ($('f-storey') as HTMLSelectElement).value,
+      area,
+      rem: Number(($('f-lease') as HTMLInputElement).value) || 0,
+      months: a.comps.m,
+      n: a.comps.n,
+      townPrice: a.comps.tp,
+      townArea: a.comps.ta,
+      islandPsf: imed.psf || 0,
+      islandPrice: imed.price || 0,
+      islandArea: imed.area || 0,
+      trajRows: (a.traj || []).map((t: any[]) => ({ yr: t[0], psf: t[1], price: t[2], n: t[3] })),
+      leaseTown: (a.lease || []).map((l: any[]) => ({ bucket: l[0], psf: l[1] })),
+      leaseIsland: (flatAgg.island?.lease?.[flat] || []).map((l: any[]) => ({
+        bucket: l[0],
+        psf: l[1],
+      })),
+    });
+    return true;
+  }
+
   async function onFlatChange() {
     const postal = parseInt(($('f-postal') as HTMLInputElement).value, 10);
     const flat = ($('f-flat') as HTMLSelectElement).value;
     $('f-flat-sub').textContent = block.model || '';
 
+    // Fast path: storey bands + typical area straight from the resolved shard entry.
+    const info = blockEntry?.ft?.[flat];
+    if (info) {
+      const sel = $('f-storey') as HTMLSelectElement;
+      sel.innerHTML = (info.sr as string[]).map((s) => `<option>${s}</option>`).join('');
+      if (info.sr.length) sel.selectedIndex = Math.floor(info.sr.length / 2); // default mid-floor
+      if (info.a) {
+        ($('f-area') as HTMLInputElement).value = String(info.a);
+        $('f-area-sub').textContent = `≈ typical for this block`;
+      }
+      applyLeaseDefault();
+      renderStatic();
+      return;
+    }
+
+    // Fallback: DuckDB (when the index failed to load).
     const storeys = await query<{ storey_range: string; lo: number }>(
       `SELECT storey_range, min(storey_lower_bound) lo FROM resale WHERE postal=${postal} AND flat_type='${sql(flat)}' GROUP BY storey_range ORDER BY lo`,
     );
@@ -1081,9 +1358,7 @@ import LeafletMap from '../components/LeafletMap.astro';
       ($('f-area') as HTMLInputElement).value = String(Math.round(Number(area.a)));
       $('f-area-sub').textContent = `≈ typical for this block`;
     }
-    const remDefault = Math.max(1, Math.min(99, 99 - (NOW_YEAR - block.lc)));
-    ($('f-lease') as HTMLInputElement).value = String(remDefault);
-    $('f-lease-sub').textContent = block.lc ? `Commenced ${block.lc}` : '';
+    applyLeaseDefault();
   }
 
   // ================= render helpers for the new insight sections =================
@@ -1372,110 +1647,57 @@ import LeafletMap from '../components/LeafletMap.astro';
       `SELECT median(psf) psf, median(resale_price) price, median(floor_area_sqft) area
        FROM resale WHERE flat_type='${sql(flat)}' AND month >= strftime(current_date - INTERVAL 12 MONTH, '%Y-%m')`,
     );
-    const islandPsf = Number(island?.psf || 0),
-      islandPrice = Number(island?.price || 0),
-      islandArea = Number(island?.area || 0);
-
-    // valuation — base median PSF over all comps, then adjust for the chosen storey band
-    const baseMedPsf = med(comps.map((c) => c.psf));
-    const userLo = parseInt(storey, 10) || 0; // "10 TO 12" -> 10
-    const nearStorey = comps.filter((c) => Math.abs(c.slo - userLo) <= 3);
-    const useStorey = nearStorey.length >= 5; // only adjust when the band has enough sales
-    const basis = useStorey ? nearStorey : comps;
-    const psfs = basis.map((c) => c.psf).sort((a, b) => a - b);
-    const medPsf = med(psfs),
-      q25 = quantile(psfs, 0.25),
-      q75 = quantile(psfs, 0.75);
-    const storeyAdjPct = baseMedPsf ? (medPsf / baseMedPsf - 1) * 100 : 0;
-    const estimate = medPsf * area,
-      low = q25 * area,
-      high = q75 * area;
-    currentEstimate = estimate;
-    const n = comps.length;
-    const nb = basis.length;
-    const [confLabel, confBars] =
-      nb >= 30 ? ['High', 4] : nb >= 15 ? ['Medium-High', 3] : nb >= 5 ? ['Medium', 2] : ['Low', 1];
-
-    $('val-hint').textContent = useStorey
-      ? `Modelled from ${nb} comparable ${flat.toLowerCase()} sales on similar storeys (${storey}) in ${titleCase(block.town)}, last ${months} months.`
-      : `Modelled from ${n} comparable ${flat.toLowerCase()} sales in ${titleCase(block.town)}, last ${months} months.`;
-    $('val-big').textContent = money(estimate);
-    $('val-low').textContent = money(low);
-    $('val-high').textContent = money(high);
-    $('scale-low').textContent = moneyShort(low);
-    $('scale-high').textContent = moneyShort(high);
-    const pos =
-      high > low ? Math.min(92, Math.max(8, ((estimate - low) / (high - low)) * 100)) : 50;
-    ($('val-marker') as HTMLElement).style.left = pos + '%';
-    $('vs-n').textContent = String(n);
-    $('vs-psf').textContent = fpsf(baseMedPsf);
-    $('vs-area').textContent = `${area.toLocaleString()} sqft`;
-    $('vs-storey').textContent = useStorey
-      ? `${storeyAdjPct >= 0 ? '+' : ''}${storeyAdjPct.toFixed(1)}% · ${storey}`
-      : 'n/a — too few';
-    $('conf-label').textContent = confLabel;
-    $('conf-bars').innerHTML = [0, 1, 2, 3]
-      .map((i) => `<i class="${i < confBars ? 'on' : ''}"></i>`)
-      .join('');
-
-    // benchmarks
-    const townPrice = med(comps.map((c) => c.price)),
-      townArea = med(comps.map((c) => c.area));
-    const bar = (
-      rows: { lab: string; val: number; you?: boolean; fmt: (n: number) => string }[],
-    ) => {
-      const max = Math.max(...rows.map((r) => r.val), 1);
-      return rows
-        .map(
-          (r) =>
-            `<div class="row"><span class="lab">${r.lab}</span><span class="bar"><span class="${r.you ? 'you' : 'ctx'}" style="width:${Math.round((r.val / max) * 100)}%"></span></span><span class="amt">${r.fmt(r.val)}</span></div>`,
-        )
-        .join('');
-    };
-    const dPsf = islandPsf ? (medPsf / islandPsf - 1) * 100 : 0;
-    const psfPill = deltaPill(dPsf, { threshold: 1 });
-    $('b1-v').textContent = fpsf(medPsf);
-    $('b1-pill').className = `pill ${psfPill.cls}`;
-    $('b1-pill').textContent = `${psfPill.text} vs island`;
-    $('b1-bars').innerHTML = bar([
-      { lab: 'This flat', val: medPsf, you: true, fmt: fpsf },
-      { lab: 'Island', val: islandPsf, fmt: fpsf },
+    // trajectory + lease curves need wider history than the comps window
+    const [trajRows, leaseTownRows, leaseIslandRows] = await Promise.all([
+      query<any>(`SELECT substr(month,1,4) yr, median(psf) psf, median(resale_price) price, count(*) n
+                  FROM resale WHERE town='${sql(block.town)}' AND flat_type='${sql(flat)}'
+                  GROUP BY yr ORDER BY yr`),
+      query<any>(`SELECT floor(remaining_lease_years/10)*10 bucket, median(psf) psf, count(*) n
+                  FROM resale WHERE town='${sql(block.town)}' AND flat_type='${sql(flat)}'
+                    AND month >= strftime(current_date - INTERVAL 36 MONTH, '%Y-%m')
+                  GROUP BY bucket HAVING count(*) >= 8 ORDER BY bucket`),
+      query<any>(`SELECT floor(remaining_lease_years/10)*10 bucket, median(psf) psf, count(*) n
+                  FROM resale WHERE flat_type='${sql(flat)}'
+                    AND month >= strftime(current_date - INTERVAL 24 MONTH, '%Y-%m')
+                  GROUP BY bucket HAVING count(*) >= 30 ORDER BY bucket`),
     ]);
 
-    const dPrice = townPrice ? (estimate / townPrice - 1) * 100 : 0;
-    const pricePill = deltaPill(dPrice, { threshold: 1 });
-    $('b2-v').textContent = moneyShort(estimate);
-    $('b2-pill').className = `pill ${pricePill.cls}`;
-    $('b2-pill').textContent = `${pricePill.text} vs town`;
-    $('b2-bars').innerHTML = bar([
-      { lab: 'This flat', val: estimate, you: true, fmt: moneyShort },
-      { lab: `${titleCase(block.town)}`, val: townPrice, fmt: moneyShort },
-      { lab: 'Island', val: islandPrice, fmt: moneyShort },
-    ]);
+    // Valuation + benchmarks + distribution + trajectory + lease — the SAME renderer the
+    // static path uses, so this engine re-render lands on identical numbers (no flicker);
+    // it exists for the fallback when the precomputed aggregates failed to load.
+    const { estimate, medPsf } = renderValuation({
+      // Round to the SAME precision the precompute emits (psf→1dp, price/area→int) so this
+      // engine re-render lands on numbers identical to renderStatic() — no visible flicker.
+      psfs: comps.map((c) => Math.round(c.psf * 10) / 10),
+      slos: comps.map((c) => c.slo),
+      flat,
+      storey,
+      area,
+      rem,
+      months,
+      n: comps.length,
+      townPrice: Math.round(med(comps.map((c) => c.price))),
+      townArea: Math.round(med(comps.map((c) => c.area))),
+      islandPsf: Math.round(Number(island?.psf || 0) * 10) / 10,
+      islandPrice: Math.round(Number(island?.price || 0)),
+      islandArea: Math.round(Number(island?.area || 0)),
+      trajRows: trajRows.map((r) => ({
+        yr: r.yr,
+        psf: Math.round(Number(r.psf) * 10) / 10,
+        price: Math.round(Number(r.price)),
+        n: Number(r.n),
+      })),
+      leaseTown: leaseTownRows.map((r) => ({
+        bucket: Number(r.bucket),
+        psf: Math.round(Number(r.psf) * 10) / 10,
+      })),
+      leaseIsland: leaseIslandRows.map((r) => ({
+        bucket: Number(r.bucket),
+        psf: Math.round(Number(r.psf) * 10) / 10,
+      })),
+    });
 
-    const dArea = townArea ? (area / townArea - 1) * 100 : 0;
-    const areaPill = deltaPill(dArea, { threshold: 1, digits: 0 });
-    $('b3-v').textContent = `${area.toLocaleString()} sqft`;
-    $('b3-pill').className = `pill ${Math.abs(dArea) < 3 ? 'flat' : areaPill.cls}`;
-    $('b3-pill').textContent =
-      Math.abs(dArea) < 3 ? '≈ typical for type' : `${areaPill.text} vs town`;
-    $('b3-bars').innerHTML = bar([
-      { lab: 'This flat', val: area, you: true, fmt: (v) => v.toLocaleString() },
-      {
-        lab: `${titleCase(block.town)}`,
-        val: townArea,
-        fmt: (v) => Math.round(v).toLocaleString(),
-      },
-      { lab: 'Island', val: islandArea, fmt: (v) => Math.round(v).toLocaleString() },
-    ]);
-
-    // lease decay
-    $('lease-rem').textContent = String(rem);
-    $('lease-start').textContent = block.lc ? String(block.lc) : '—';
-    const nowEl = $('lease-now') as HTMLElement;
-    nowEl.style.left = `${((99 - rem) / 99) * 100}%`;
-    nowEl.setAttribute('data-label', `${rem} yrs left`);
-
+    // ---- engine-only: comps table, priciest/lowest tiles, map (need per-row address/coords) ----
     // comparables table (same street first, then recency)
     const sameStreet = (c: any) => c.street_name === block.street;
     const sorted = [...comps].sort(
@@ -1498,18 +1720,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     $('comp-foot').textContent =
       `Showing ${Math.min(8, comps.length)} of ${comps.length} comparable sales · last ${months} months · ${titleCase(block.town)}`;
 
-    // ---- new insight sections: trajectory, distribution, market tiles, lease, storey ----
-    // 03 · distribution + market texture tiles (derived from comps already fetched)
-    renderDistribution(
-      comps.map((c) => c.psf),
-      medPsf,
-      flat,
-      block.town,
-    );
-    const perMonth = comps.length / months;
-    $('mt-vel').textContent = comps.length.toLocaleString();
-    $('mt-vel-s').textContent =
-      `${flat.toLowerCase()} in ${titleCase(block.town)} · ~${perMonth.toFixed(1)}/mo`;
+    // priciest / lowest nearby sale — need the per-row address + month
     const byPrice = [...comps].sort((a, b) => b.price - a.price);
     const hiC = byPrice[0],
       loC = byPrice[byPrice.length - 1];
@@ -1521,45 +1732,6 @@ import LeafletMap from '../components/LeafletMap.astro';
       $('mt-lo').textContent = moneyShort(loC.price);
       $('mt-lo-s').textContent = `${titleCase(loC.address)} · ${loC.month}`;
     }
-
-    // 04 · lease thresholds (client-side, from remaining lease)
-    renderLeaseFlags(rem);
-
-    // 02/04 · queries that need wider history than the comps window
-    const [trajRows, leaseTownRows, leaseIslandRows] = await Promise.all([
-      query<any>(`SELECT substr(month,1,4) yr, median(psf) psf, median(resale_price) price, count(*) n
-                  FROM resale WHERE town='${sql(block.town)}' AND flat_type='${sql(flat)}'
-                  GROUP BY yr ORDER BY yr`),
-      query<any>(`SELECT floor(remaining_lease_years/10)*10 bucket, median(psf) psf, count(*) n
-                  FROM resale WHERE town='${sql(block.town)}' AND flat_type='${sql(flat)}'
-                    AND month >= strftime(current_date - INTERVAL 36 MONTH, '%Y-%m')
-                  GROUP BY bucket HAVING count(*) >= 8 ORDER BY bucket`),
-      query<any>(`SELECT floor(remaining_lease_years/10)*10 bucket, median(psf) psf, count(*) n
-                  FROM resale WHERE flat_type='${sql(flat)}'
-                    AND month >= strftime(current_date - INTERVAL 24 MONTH, '%Y-%m')
-                  GROUP BY bucket HAVING count(*) >= 30 ORDER BY bucket`),
-    ]);
-    const traj = trajRows.map((r) => ({
-      yr: r.yr,
-      psf: Number(r.psf),
-      price: Number(r.price),
-      n: Number(r.n),
-    }));
-    townYearPrice = {};
-    traj.forEach((r) => {
-      townYearPrice[r.yr] = r.price;
-    });
-    latestYear = traj.length ? traj[traj.length - 1].yr : '';
-    renderTrajectory(traj, medPsf, flat, block.town);
-    renderReturns(); // reflects the refreshed estimate + town series
-    // prefer the user's own town for the lease curve; fall back to island-wide when too thin
-    const leaseInTown = leaseTownRows.length >= 2;
-    const leaseRows = leaseInTown ? leaseTownRows : leaseIslandRows;
-    renderLeaseCurve(
-      leaseRows.map((r) => ({ bucket: Number(r.bucket), psf: Number(r.psf) })),
-      rem,
-      leaseInTown ? titleCase(block.town) : null,
-    );
 
     // map: comps (grey) + your block (red)
     layer.clearLayers();
@@ -1600,6 +1772,12 @@ import LeafletMap from '../components/LeafletMap.astro';
   }
 
   // ---- wiring ----
+  // Prefetch the postal shard as the first digits are keyed in (1 → 12 → …): by the time the
+  // 6th digit lands, the ~5 KB shard is usually already cached, so resolve is instant.
+  ($('f-postal') as HTMLInputElement).addEventListener('input', (e) => {
+    const v = (e.target as HTMLInputElement).value;
+    if (v.length >= 2) void loadShard(v.slice(0, 2));
+  });
   ($('f-postal') as HTMLInputElement).addEventListener('change', async () => {
     if (await resolveBlock()) compute();
   });
@@ -1607,7 +1785,14 @@ import LeafletMap from '../components/LeafletMap.astro';
     await onFlatChange();
     compute();
   });
-  ['f-storey', 'f-area', 'f-lease'].forEach((id) => $(id).addEventListener('change', compute));
+  // Storey/area/lease change the valuation: re-render instantly from the precomputed comps,
+  // then let compute() refresh the engine-only comps table + map "your flat" row.
+  ['f-storey', 'f-area', 'f-lease'].forEach((id) =>
+    $(id).addEventListener('change', () => {
+      renderStatic();
+      compute();
+    }),
+  );
   // Returns panel recomputes locally from the current estimate — no DuckDB round-trip.
   $('r-paid').addEventListener('input', () => {
     formatPaid();
