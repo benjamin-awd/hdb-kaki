@@ -587,7 +587,9 @@ import LeafletMap from '../components/LeafletMap.astro';
         stateBinding(
           'page',
           () => String(recordPage),
-          (v) => void (recordPage = parseInt(v, 10) || 0),
+          (v) => {
+            recordPage = parseInt(v, 10) || 0;
+          },
           '0',
         ),
       ],
