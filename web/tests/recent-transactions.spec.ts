@@ -15,9 +15,15 @@ test('default page renders from JSON with block letters uppercased, data file bl
   await expect(page.locator('#tbody-recent tr')).toHaveCount(20, { timeout: 20_000 });
   await expect(page.locator('#recent-foot')).toContainText('Showing 1–20 of');
 
-  // Block + lane letter suffixes stay uppercase; the rest is title-cased.
-  const firstAddr = page.locator('#tbody-recent tr').first().locator('td').nth(2);
-  await expect(firstAddr).toHaveText('138A Lor 1A Toa Payoh');
+  // Block + lane letter suffixes stay uppercase (311c -> 311C); the rest is title-cased.
+  // Asserted as an invariant over every visible address rather than a pinned newest sale,
+  // which drifts each time the scheduled dataset auto-update refreshes the release: no
+  // letter ever directly follows a digit in lower case, and at least one address carries an
+  // uppercased block/lane suffix (so the transform provably fired, not just absent in data).
+  const addrs = await page.locator('#tbody-recent tr td:nth-child(3)').allTextContents();
+  expect(addrs).toHaveLength(20);
+  for (const a of addrs) expect(a).not.toMatch(/\d[a-z]/);
+  expect(addrs.some((a) => /\d[A-Z]/.test(a))).toBe(true);
 
   // Prev disabled on page 1; Next enabled.
   await expect(page.locator('#rec-prev')).toBeDisabled();
