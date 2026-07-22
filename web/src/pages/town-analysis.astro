@@ -308,6 +308,8 @@ import LeafletMap from '../components/LeafletMap.astro';
     storey: string;
     psf: number;
     lease: number;
+    postal: number;
+    area: number;
     band?: string;
   };
   type Rec = {
@@ -345,6 +347,34 @@ import LeafletMap from '../components/LeafletMap.astro';
     return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
   }
 
+  // Detail card shown when a pin is clicked — the full transaction plus a deep link that
+  // pre-fills My Flat Insights with this exact flat (postal + type + floor area) so "value a
+  // flat like this" lands on a ready-to-compute valuation. Rendered as a Leaflet popup so it
+  // positions and closes natively; the hover tooltip stays as the quick glance. The CTA is
+  // omitted when the row carries no postal (nothing to resolve on the other page).
+  function salePopup(r: Row, flat: string): string {
+    const area = Math.round(r.area);
+    const base = import.meta.env.BASE_URL;
+    const cta =
+      r.postal > 0
+        ? `<a class="pop-cta" href="${base}my-flat-insights/?postal=${r.postal}&flat=${encodeURIComponent(flat)}${area ? `&area=${area}` : ''}">Value a flat like this →</a>`
+        : '';
+    return `<div class="pop">
+      <div class="pop-ey">Selected sale</div>
+      <div class="pop-addr">${titleCase(r.address)}</div>
+      <div class="pop-price">${money(r.price)}</div>
+      <dl class="pop-dl">
+        <dt>Flat type</dt><dd>${titleCase(flat)}</dd>
+        <dt>Storey</dt><dd>${r.storey}</dd>
+        <dt>Floor area</dt><dd>${area ? area.toLocaleString() + ' sqft' : '—'}</dd>
+        <dt>PSF</dt><dd>${r.psf ? fpsf(r.psf) + ' psf' : '—'}</dd>
+        <dt>Sold</dt><dd>${r.month}</dd>
+        <dt>Remaining lease</dt><dd>${r.lease} yrs</dd>
+      </dl>
+      ${cta}
+    </div>`;
+  }
+
   // Paint the map + summary + table from already-fetched rows. Pure client-side, so
   // changing only the threshold re-bands the same rows without a new query.
   function paintMap(rows: Row[], town: string, flat: string) {
@@ -372,6 +402,12 @@ import LeafletMap from '../components/LeafletMap.astro';
           `<b>${titleCase(r.address)}</b><br/>${r.month} · ${r.storey}<br/><b>${money(r.price)}</b> · ${fpsf(r.psf)} psf · ${r.lease} yrs left`,
           { direction: 'top', offset: [0, -6], opacity: 1, className: 'hdb-tip' },
         )
+        .bindPopup(salePopup(r, flat), {
+          className: 'hdb-pop',
+          minWidth: 236,
+          maxWidth: 264,
+          offset: [0, -4],
+        })
         .addTo(cluster);
     }
     if (rows.length) {

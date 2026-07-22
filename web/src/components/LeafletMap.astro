@@ -48,4 +48,76 @@ const style = [height && `height:${height}`, minHeight && `min-height:${minHeigh
   :global(.leaflet-tooltip-top.hdb-tip::before) {
     border-top-color: var(--paper-2);
   }
+  /* Click-to-open sale detail popup (town-analysis). Same paper card as the tooltip, but
+     roomy enough for the transaction breakdown and a deep-link CTA. */
+  :global(.leaflet-popup.hdb-pop .leaflet-popup-content-wrapper) {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    color: var(--ink);
+  }
+  :global(.leaflet-popup.hdb-pop .leaflet-popup-content) {
+    margin: 14px 16px;
+    font-family: var(--font-sans);
+    line-height: 1.5;
+  }
+  :global(.leaflet-popup.hdb-pop .leaflet-popup-tip) {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+  }
+  :global(.leaflet-popup.hdb-pop .leaflet-popup-close-button) {
+    color: var(--ink-3);
+  }
+  :global(.hdb-pop .pop-ey) {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  :global(.hdb-pop .pop-addr) {
+    font-family: var(--font-newsreader);
+    font-weight: 600;
+    font-size: 17px;
+    letter-spacing: -0.01em;
+    margin: 2px 0 3px;
+  }
+  :global(.hdb-pop .pop-price) {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 22px;
+    letter-spacing: -0.02em;
+    color: var(--red-ink);
+  }
+  :global(.hdb-pop .pop-dl) {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 5px 12px;
+    margin: 12px 0 0;
+    font-size: 13px;
+  }
+  :global(.hdb-pop .pop-dl dt) {
+    color: var(--ink-3);
+  }
+  :global(.hdb-pop .pop-dl dd) {
+    text-align: right;
+    font-family: var(--font-mono);
+    color: var(--ink);
+  }
+  :global(.hdb-pop .pop-cta) {
+    display: block;
+    text-align: center;
+    font-weight: 600;
+    font-size: 13px;
+    color: #fff;
+    background: var(--red);
+    border-radius: 9px;
+    padding: 9px;
+    margin-top: 14px;
+    text-decoration: none;
+  }
+  :global(.hdb-pop .pop-cta:hover) {
+    background: var(--red-ink);
+  }
 </style>

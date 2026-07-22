@@ -287,6 +287,8 @@ def emit_town_analysis(df: pl.DataFrame) -> None:
             pl.col("storey_range").alias("storey"),
             "psf",
             pl.col("remaining_lease_years").alias("lease"),
+            "postal",
+            pl.col("floor_area_sqft").alias("area"),
         )
         .to_dicts()
     )
