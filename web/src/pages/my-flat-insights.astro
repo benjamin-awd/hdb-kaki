@@ -53,9 +53,9 @@ import LeafletMap from '../components/LeafletMap.astro';
             <div class="sub" id="f-area-sub">&nbsp;</div>
           </div>
           <div class="field">
-            <label for="f-lease">Remaining lease (years)</label>
-            <input id="f-lease" type="number" min="1" max="99" step="1" value="" />
-            <div class="sub" id="f-lease-sub">&nbsp;</div>
+            <label>Remaining lease</label>
+            <div class="val" id="f-lease">—</div>
+            <div class="sub" id="f-lease-sub">From records</div>
           </div>
           <div class="field">
             <label>Flat model</label>
@@ -132,14 +132,6 @@ import LeafletMap from '../components/LeafletMap.astro';
             ><span class="v" id="vs-storey">—</span>
           </div>
           <div class="vs-row">
-            <span class="k"
-              ><Term term="Lease adjustment" end
-                >How much your remaining lease shifts the estimate versus the comps' typical lease,
-                using the SLA Leasehold Table.</Term
-              ></span
-            ><span class="v" id="vs-lease">—</span>
-          </div>
-          <div class="vs-row">
             <span class="k">Your floor area</span><span class="v" id="vs-area">—</span>
           </div>
           <div class="conf">
@@ -151,8 +143,8 @@ import LeafletMap from '../components/LeafletMap.astro';
           </div>
           <p class="disclaimer">
             Indicative estimate for guidance only — not a valuation for HDB, bank or CPF purposes.
-            Adjusted for storey band and remaining lease (SLA Leasehold Table); not for unit
-            condition. Based on registered resale transactions from data.gov.sg.
+            Adjusted for storey band; not for exact lease or unit condition. Based on registered
+            resale transactions from data.gov.sg.
           </p>
         </div>
       </div>
@@ -1138,13 +1130,17 @@ import LeafletMap from '../components/LeafletMap.astro';
   } from '../lib/echartsTheme';
   import { money, moneyShort, psf as fpsf, titleCase, deltaPill } from '../lib/format';
   import { reformatWithCaret, parsePrice, computeReturns } from '../lib/returns';
-  import { leaseAdjustment } from '../lib/lease';
 
   const NOW_YEAR = new Date().getFullYear();
 
   let block = { town: '', street: '', address: '', model: '', lc: 0 };
   let userLatLng: [number, number] | null = null;
   let resolvedPostal = 0; // the postal the form fields currently reflect
+
+  // Remaining lease is derived straight from the block's lease commencement year in the
+  // HDB dataset (99-year term) — it is not user-editable. Returns 0 when lc is unknown.
+  const remainingLease = () =>
+    block.lc ? Math.max(1, Math.min(99, 99 - (NOW_YEAR - block.lc))) : 0;
 
   // ---- ECharts: init once per container, reuse across recomputes ----
   const charts: Record<string, echarts.ECharts> = {};
@@ -1163,9 +1159,8 @@ import LeafletMap from '../components/LeafletMap.astro';
       selectBinding('f-flat', 'flat', ''),
       selectBinding('f-storey', 'storey', ''),
       inputBinding('f-area', 'area', ''),
-      inputBinding('f-lease', 'lease', ''),
     ],
-    ['postal', 'flat', 'storey', 'area', 'lease'],
+    ['postal', 'flat', 'storey', 'area'],
   );
   let townYearPrice: Record<string, number> = {}; // 'YYYY' -> town median price for the flat type
   let latestYear = '';
@@ -1250,9 +1245,9 @@ import LeafletMap from '../components/LeafletMap.astro';
       ($('f-area') as HTMLInputElement).value = String(Math.round(areaMed));
       $('f-area-sub').textContent = `≈ typical for this block`;
     }
-    const remDefault = Math.max(1, Math.min(99, 99 - (NOW_YEAR - block.lc)));
-    ($('f-lease') as HTMLInputElement).value = String(remDefault);
-    $('f-lease-sub').textContent = block.lc ? `Commenced ${block.lc}` : '';
+    const rem = remainingLease();
+    $('f-lease').textContent = rem ? `${rem} yr` : '—';
+    $('f-lease-sub').textContent = block.lc ? `Commenced ${block.lc}` : 'From records';
   }
 
   // ================= render helpers for the new insight sections =================
@@ -1509,7 +1504,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     const flat = ($('f-flat') as HTMLSelectElement).value;
     const storey = ($('f-storey') as HTMLSelectElement).value;
     const area = Number(($('f-area') as HTMLInputElement).value) || 0;
-    const rem = Number(($('f-lease') as HTMLInputElement).value) || 0;
+    const rem = remainingLease();
     if (!block.town || !flat || !area) return;
 
     // One worker round-trip returns everything this valuation needs from the dataset: comps
@@ -1530,19 +1525,10 @@ import LeafletMap from '../components/LeafletMap.astro';
     const useStorey = nearStorey.length >= 5; // only adjust when the band has enough sales
     const basis = useStorey ? nearStorey : comps;
     const psfs = basis.map((c) => c.psf).sort((a, b) => a - b);
-    const rawMedPsf = med(psfs);
-    const storeyAdjPct = baseMedPsf ? (rawMedPsf / baseMedPsf - 1) * 100 : 0;
-    // lease adjustment — normalise the comps' typical remaining lease to this
-    // flat's via the SLA Leasehold Table, so a longer/shorter lease moves the estimate.
-    const compLease = med(basis.map((c) => c.lease).filter((l) => l > 0));
-    const {
-      factor: leaseAdj,
-      pct: leaseAdjPct,
-      known: leaseKnown,
-    } = leaseAdjustment(rem, compLease);
-    const medPsf = rawMedPsf * leaseAdj,
-      q25 = quantile(psfs, 0.25) * leaseAdj,
-      q75 = quantile(psfs, 0.75) * leaseAdj;
+    const medPsf = med(psfs),
+      q25 = quantile(psfs, 0.25),
+      q75 = quantile(psfs, 0.75);
+    const storeyAdjPct = baseMedPsf ? (medPsf / baseMedPsf - 1) * 100 : 0;
     const estimate = medPsf * area,
       low = q25 * area,
       high = q75 * area;
@@ -1569,9 +1555,6 @@ import LeafletMap from '../components/LeafletMap.astro';
     $('vs-storey').textContent = useStorey
       ? `${storeyAdjPct >= 0 ? '+' : ''}${storeyAdjPct.toFixed(1)}% · ${storey}`
       : 'n/a — too few';
-    $('vs-lease').textContent = leaseKnown
-      ? `${leaseAdjPct >= 0 ? '+' : ''}${leaseAdjPct.toFixed(1)}% · ${rem} yr vs ${Math.round(compLease)} yr`
-      : 'n/a';
     $('conf-label').textContent = confLabel;
     $('conf-bars').innerHTML = [0, 1, 2, 3]
       .map((i) => `<i class="${i < confBars ? 'on' : ''}"></i>`)
@@ -1794,7 +1777,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     await onFlatChange();
     compute();
   });
-  ['f-storey', 'f-area', 'f-lease'].forEach((id) => $(id).addEventListener('change', compute));
+  ['f-storey', 'f-area'].forEach((id) => $(id).addEventListener('change', compute));
   // Returns panel recomputes locally from the current estimate — no worker round-trip.
   $('r-paid').addEventListener('input', () => {
     formatPaid();
@@ -1859,7 +1842,7 @@ import LeafletMap from '../components/LeafletMap.astro';
 
   // ---- deep-link restore ----
   // No postal param → the page stays inert (no DuckDB boot), preserving the JS-free-ish
-  // cold load. resolveBlock()/onFlatChange() auto-overwrite storey/area/lease every run, so
+  // cold load. resolveBlock()/onFlatChange() auto-overwrite storey/area every run, so
   // URL overrides for those are applied strictly AFTER the last onFlatChange().
   async function restoreFromUrl() {
     const params = new URLSearchParams(location.search);
@@ -1875,13 +1858,11 @@ import LeafletMap from '../components/LeafletMap.astro';
         await onFlatChange();
       }
     }
-    // Apply the storey/area/lease overrides last (unknown values are graceful no-op sets).
+    // Apply the storey/area overrides last (unknown values are graceful no-op sets).
     const storey = params.get('storey');
     if (storey) ($('f-storey') as HTMLSelectElement).value = storey;
     const area = params.get('area');
     if (area) ($('f-area') as HTMLInputElement).value = area;
-    const lease = params.get('lease');
-    if (lease) ($('f-lease') as HTMLInputElement).value = lease;
     await compute();
     document.querySelector('.results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
