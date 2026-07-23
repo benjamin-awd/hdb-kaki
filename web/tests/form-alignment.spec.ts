@@ -52,7 +52,7 @@ test('flat-insights form card: values and sub-labels align within each row', asy
     $('f-storey').innerHTML = '<option>10 TO 12</option>';
     ($('f-area') as HTMLInputElement).value = '990';
     $('f-area-sub').textContent = '≈ typical for this block';
-    ($('f-lease') as HTMLInputElement).value = '89';
+    $('f-lease').textContent = '89 yr';
     $('f-lease-sub').textContent = 'Commenced 2016';
     $('f-model').textContent = 'Premium Apartment';
   });
