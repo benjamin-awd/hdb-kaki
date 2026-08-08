@@ -259,6 +259,8 @@ export interface TownMapRow {
   storey: string;
   psf: number;
   lease: number;
+  postal: number; // for the "value a flat like this" deep-link into my-flat-insights
+  area: number; // floor_area_sqft — carried for the same deep-link
 }
 export interface TownRecord {
   town: string;
@@ -460,6 +462,8 @@ export function townMapQuery(
     storey: c.storey_range[i],
     psf: Number.isNaN(c.psf[i]) ? 0 : c.psf[i],
     lease: c.remaining_lease_years[i],
+    postal: c.postal[i],
+    area: c.floor_area_sqft[i],
   }));
 }
 
