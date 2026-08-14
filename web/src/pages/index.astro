@@ -765,9 +765,6 @@ const kpis = stats
   }
   const labelsFit = () => window.innerWidth >= 640;
   const isNarrowMap = () => window.matchMedia('(max-width: 640px)').matches;
-  // Transit-map label styling: plain caps. No per-char spacing; it ~doubled label width and
-  // crowded the centre. Plain caps halve the footprint so more survive hideOverlap.
-  const mapCaps = (s: string) => s.toUpperCase();
 
   async function registerGeo(url: string, name: string) {
     if (geoReady.has(name)) return;
@@ -908,7 +905,7 @@ const kpis = stats
             // regions. Overlaps are dropped so the overview stays uncluttered (zoom reveals the rest).
             label: {
               show: false,
-              formatter: (p: any) => mapCaps(p.name),
+              formatter: (p: any) => p.name.toUpperCase(),
               color: '#181410',
               fontFamily: sans,
               fontSize: 10.5,
