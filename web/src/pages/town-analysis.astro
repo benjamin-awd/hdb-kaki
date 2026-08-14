@@ -289,6 +289,7 @@ import LeafletMap from '../components/LeafletMap.astro';
   import { createHyparquet } from '../lib/hyparquetClient';
   import { createUrlState, selectBinding, chipBinding, stateBinding } from '../lib/urlState';
   import { downloadCsv } from '../lib/csv';
+  import { areaToTown } from '../lib/subzones';
 
   const { townMap, townRecords, streets, warmWhenIdle } = createHyparquet();
 
@@ -330,22 +331,8 @@ import LeafletMap from '../components/LeafletMap.astro';
   // ---- subtown (URA subzone) drill-down ----
   // The parquet carries no subzone column, so the subtown filter is applied client-side by
   // point-in-polygon against sg-subzones.geojson. Subzones group under their HDB town by the
-  // planning `area`, with the same central/Kallang roll-ups the overview map uses.
+  // planning `area`, with the same central/Kallang roll-ups the overview map uses (see areaToTown).
   const SUB_ALL = '__all';
-  const AREA_TO_TOWN: Record<string, string> = {
-    KALLANG: 'KALLANG/WHAMPOA',
-    'DOWNTOWN CORE': 'CENTRAL AREA',
-    'MARINA EAST': 'CENTRAL AREA',
-    'MARINA SOUTH': 'CENTRAL AREA',
-    MUSEUM: 'CENTRAL AREA',
-    NEWTON: 'CENTRAL AREA',
-    ORCHARD: 'CENTRAL AREA',
-    OUTRAM: 'CENTRAL AREA',
-    'RIVER VALLEY': 'CENTRAL AREA',
-    ROCHOR: 'CENTRAL AREA',
-    'SINGAPORE RIVER': 'CENTRAL AREA',
-    'STRAITS VIEW': 'CENTRAL AREA',
-  };
   const subzonesByTown = new Map<string, string[]>();
   const subzoneGeom = new Map<string, any>();
 
@@ -358,7 +345,7 @@ import LeafletMap from '../components/LeafletMap.astro';
       const name = f.properties?.name;
       const area = f.properties?.area;
       if (!name || !area) continue;
-      const town = townSet.has(area) ? area : AREA_TO_TOWN[area];
+      const town = areaToTown(area, townSet);
       if (!town || !townSet.has(town)) continue;
       subzoneGeom.set(name, f.geometry);
       (subzonesByTown.get(town) ?? subzonesByTown.set(town, []).get(town)!).push(name);
