@@ -478,6 +478,7 @@ const kpis = stats
   } from '../lib/echartsTheme';
   import { money, moneyShort, psf as fpsf, titleCase } from '../lib/format';
   import { byId as q } from '../lib/dom';
+  import { areaToTown } from '../lib/subzones';
   import { createHyparquet } from '../lib/hyparquetClient';
   import {
     createUrlState,
@@ -748,24 +749,9 @@ const kpis = stats
   let switchingLevel = false;
 
   // Drill-in click-through: a clicked region (town or subzone) resolves to its HDB town so the
-  // click opens Town Analysis. Subzones carry a `area` (planning area) that mostly *is* the town;
-  // these central/Kallang planning areas roll up into their HDB town. Built from the geojson at
-  // register (subzoneArea) and validated against the towns that actually have data (townSet, lazy
-  // because OV loads async).
-  const AREA_TO_TOWN: Record<string, string> = {
-    KALLANG: 'KALLANG/WHAMPOA',
-    'DOWNTOWN CORE': 'CENTRAL AREA',
-    'MARINA EAST': 'CENTRAL AREA',
-    'MARINA SOUTH': 'CENTRAL AREA',
-    MUSEUM: 'CENTRAL AREA',
-    NEWTON: 'CENTRAL AREA',
-    ORCHARD: 'CENTRAL AREA',
-    OUTRAM: 'CENTRAL AREA',
-    'RIVER VALLEY': 'CENTRAL AREA',
-    ROCHOR: 'CENTRAL AREA',
-    'SINGAPORE RIVER': 'CENTRAL AREA',
-    'STRAITS VIEW': 'CENTRAL AREA',
-  };
+  // click opens Town Analysis. subzoneArea is built from the geojson at register, and the resolved
+  // town is validated against the towns that actually have data (townSet, lazy because OV loads
+  // async). See areaToTown for the subzone → town roll-up.
   const subzoneArea = new Map<string, string>();
   let townSet: Set<string> | null = null;
   const towns = () => (townSet ??= new Set(OV.townMedians.map((r) => r.town)));
@@ -774,7 +760,7 @@ const kpis = stats
     if (currentLevel === 'town') return towns().has(name) ? name : undefined;
     const area = subzoneArea.get(name);
     if (!area) return undefined;
-    const t = towns().has(area) ? area : AREA_TO_TOWN[area];
+    const t = areaToTown(area, towns());
     return t && towns().has(t) ? t : undefined;
   }
   const labelsFit = () => window.innerWidth >= 640;
