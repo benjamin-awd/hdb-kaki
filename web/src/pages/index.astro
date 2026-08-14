@@ -471,6 +471,7 @@ const kpis = stats
     axisLabel,
     splitLine,
     axisLine,
+    ink2,
     ink3,
     mono,
     sans,
@@ -732,7 +733,50 @@ const kpis = stats
   let mapChart: ReturnType<typeof echarts.init> | undefined;
   let currentLevel: Level = 'town';
   let mapClickBound = false;
+  let mapRoamBound = false;
   const geoReady = new Set<string>();
+
+  // Auto level-of-detail: zoom past AUTO_IN drills the town choropleth into subzones; zooming back
+  // below AUTO_OUT returns to towns. The gap between the two is hysteresis so hovering the boundary
+  // doesn't strobe. `roamZoom` tracks the current absolute view zoom (accumulated from roam events,
+  // since the map coord system exposes no public getZoom); `autoLevel` is the pin — a manual chip
+  // click pauses auto until the next zoom.
+  const AUTO_IN = 3.2;
+  const AUTO_OUT = 2.6;
+  let roamZoom = 0;
+  let autoLevel = true;
+  let switchingLevel = false;
+
+  // Drill-in click-through: a clicked region (town or subzone) resolves to its HDB town so the
+  // click opens Town Analysis. Subzones carry a `area` (planning area) that mostly *is* the town;
+  // these central/Kallang planning areas roll up into their HDB town. Built from the geojson at
+  // register (subzoneArea) and validated against the towns that actually have data (townSet, lazy
+  // because OV loads async).
+  const AREA_TO_TOWN: Record<string, string> = {
+    KALLANG: 'KALLANG/WHAMPOA',
+    'DOWNTOWN CORE': 'CENTRAL AREA',
+    'MARINA EAST': 'CENTRAL AREA',
+    'MARINA SOUTH': 'CENTRAL AREA',
+    MUSEUM: 'CENTRAL AREA',
+    NEWTON: 'CENTRAL AREA',
+    ORCHARD: 'CENTRAL AREA',
+    OUTRAM: 'CENTRAL AREA',
+    'RIVER VALLEY': 'CENTRAL AREA',
+    ROCHOR: 'CENTRAL AREA',
+    'SINGAPORE RIVER': 'CENTRAL AREA',
+    'STRAITS VIEW': 'CENTRAL AREA',
+  };
+  const subzoneArea = new Map<string, string>();
+  let townSet: Set<string> | null = null;
+  const towns = () => (townSet ??= new Set(OV.townMedians.map((r) => r.town)));
+  // Resolve a clicked region to a linkable HDB town, or undefined if it doesn't map to one.
+  function drillTown(name: string): string | undefined {
+    if (currentLevel === 'town') return towns().has(name) ? name : undefined;
+    const area = subzoneArea.get(name);
+    if (!area) return undefined;
+    const t = towns().has(area) ? area : AREA_TO_TOWN[area];
+    return t && towns().has(t) ? t : undefined;
+  }
   const labelsFit = () => window.innerWidth >= 640;
   const isNarrowMap = () => window.matchMedia('(max-width: 640px)').matches;
   // Transit-map label styling: plain caps. No per-char spacing; it ~doubled label width and
@@ -747,9 +791,13 @@ const kpis = stats
     });
     echarts.registerMap(name, g);
     geoReady.add(name);
+    // Capture subzone → planning-area for the drill-in click-through (see drillTown).
+    if (name === 'sg-subzones')
+      for (const f of g.features ?? [])
+        if (f.properties?.name) subzoneArea.set(f.properties.name, f.properties.area);
   }
 
-  async function renderMap(level: Level) {
+  async function renderMap(level: Level, view?: { zoom: number; center: number[] }) {
     currentLevel = level;
     const cfg = MAP_LEVELS[level];
     // Subzone geometry is only fetched the first time it's viewed, keeping initial load light.
@@ -767,15 +815,22 @@ const kpis = stats
     // the map fits to width and leaves a big empty band in the tall box; there we shrink the
     // box (CSS) and pull the map up to sit above a horizontal legend.
     const narrow = isNarrowMap();
+    const baseZoom = narrow ? 1.4 : 1.82;
     const layout = {
       aspectScale: 1, // Singapore sits on the equator — keep lon/lat 1:1, don't squash
       // The desktop card is far wider than the island is tall, so zoom in to fill the frame
       // and cut the empty margins; phones already fit to width, so stay gentler. Nudge the
       // desktop map right of centre so its west coast clears the left-hand legend.
-      zoom: narrow ? 1.28 : 1.32,
-      layoutCenter: narrow ? ['50%', '40%'] : ['53%', '50%'],
+      // Start zoomed into the HDB heartland: the western Tuas tail (industrial, no HDB) sits off
+      // the left edge rather than padding the frame. Shifting layoutCenter left crops the empty
+      // west while keeping the eastern towns (Tampines/Pasir Ris) in view.
+      // On an auto level switch, carry the roamed zoom + geo centre so town→subzone is a true
+      // drill-in rather than a jump back to the default framing.
+      zoom: view ? view.zoom : baseZoom,
+      ...(view ? { center: view.center } : {}),
+      layoutCenter: narrow ? ['48%', '40%'] : ['47%', '50%'],
       layoutSize: narrow ? '96%' : '100%',
-    } as const;
+    };
 
     // Label both levels on wider screens: overlaps are dropped so the overview stays legible,
     // and the zoom controls let you push in to reveal the tightly-packed central names (many
@@ -784,15 +839,25 @@ const kpis = stats
     const showLabels = labelsFit();
 
     mapChart ??= initChart(q('chart-map'));
-    // Choropleth deep-link: clicking a town region opens its Town Analysis view. Town
-    // level only (subzone names aren't towns), and the choropleth series only (index 0).
-    // `p.name` is the SCREAMING town name, which matches sel-town's option values there.
+    // Choropleth deep-link: clicking a region opens its Town Analysis view. Works at both levels —
+    // a subzone resolves to its parent HDB town via drillTown. Choropleth series only (index 0).
     if (!mapClickBound) {
       mapClickBound = true;
       mapChart.on('click', (p: any) => {
-        if (currentLevel === 'town' && p.seriesIndex === 0 && p.name)
-          location.href = `${import.meta.env.BASE_URL}town-analysis/?town=${encodeURIComponent(p.name)}`;
+        if (p.seriesIndex !== 0 || !p.name) return;
+        const town = drillTown(p.name);
+        if (!town) return;
+        // Subzone click deep-links straight to that subtown; a town click opens the whole town.
+        const params = new URLSearchParams({ town });
+        if (currentLevel === 'subzone') params.set('zone', p.name);
+        location.href = `${import.meta.env.BASE_URL}town-analysis/?${params.toString()}`;
       });
+    }
+    // Track the live view zoom off roam and drive the auto level-of-detail switch. Bound once.
+    // ECharts lowercases all event names, so the map-series roam event ('geoRoam') is 'georoam'.
+    if (!mapRoamBound) {
+      mapRoamBound = true;
+      mapChart.on('georoam', onRoam as any);
     }
     mapChart.setOption(
       {
@@ -825,7 +890,7 @@ const kpis = stats
             ? { orient: 'horizontal', left: 'center', bottom: 10, itemWidth: 12, itemHeight: 160 }
             : { orient: 'vertical', left: 16, bottom: 24, itemHeight: 150 }),
           inRange: { color: ['#fde8ec', '#f7b8c2', '#f07087', '#e11d3e', '#a80019'] },
-          textStyle: { color: ink3, fontFamily: "'IBM Plex Mono', monospace", fontSize: 13 },
+          textStyle: { color: ink2, fontFamily: "'IBM Plex Mono', monospace", fontSize: 13 },
           formatter: (v: number) => moneyShort(v),
         },
         series: [
@@ -839,66 +904,133 @@ const kpis = stats
             roam: true,
             scaleLimit: { min: 1, max: 12 },
             ...layout,
-            // No-data areas: a muted warm grey. Crisp white dividers between every region so
-            // boundaries read clearly against both the red ramp and the beige no-data fills.
-            itemStyle: { areaColor: '#efeadf', borderColor: '#ffffff', borderWidth: 1 },
+            // No-data areas: a muted warm grey. Crisp raised-paper dividers between every region so
+            // boundaries read clearly against both the red ramp and the beige no-data fills (paper,
+            // not pure white — the Warm-Not-White rule).
+            itemStyle: { areaColor: '#efeadf', borderColor: '#fffdf8', borderWidth: 1 },
+            // Hover: bold the name and outline the region in ink. No label plate (the big collision
+            // padding would make it a huge rectangle), and keep the region's own ramp colour
+            // (`inherit`) instead of ECharts' default yellow emphasis fill.
             emphasis: {
               label: { fontWeight: 'bold' },
-              itemStyle: { borderColor: '#181410', borderWidth: 1.4 },
+              itemStyle: { areaColor: 'inherit', borderColor: '#181410', borderWidth: 1.4 },
             },
             select: { disabled: true },
-            // Town names sit on the priced regions only (no-data areas stay unlabelled), in the
-            // tracked all-caps of a transit map. Dark ink with a light halo stays legible across
-            // the full light→dark red ramp; overlaps are dropped so the overview stays uncluttered
-            // (zoom in to reveal the tightly-packed central towns).
+            // Town names sit on the priced regions only (no-data areas stay unlabelled), all-caps
+            // like a transit map. A soft paper plate carries each name legibly across the full
+            // light→dark red ramp — a halo alone can't rescue dark ink on the deep-red high-price
+            // regions. Overlaps are dropped so the overview stays uncluttered (zoom reveals the rest).
             label: {
               show: false,
               formatter: (p: any) => mapCaps(p.name),
-              color: '#3a332b',
+              color: '#181410',
               fontFamily: sans,
-              fontSize: 10,
-              fontWeight: 400,
-              textBorderColor: 'rgba(251,247,239,0.9)',
+              fontSize: 10.5,
+              fontWeight: 500,
+              // Halo only — no plate. A strong paper text-border carries legibility over the ramp.
+              // The background stays transparent (nothing visible), but the padding still inflates
+              // each label's *collision* box, so in the dense centre hideOverlap drops the weaker
+              // neighbour instead of stacking two names (minMargin is a no-op for map series).
+              backgroundColor: 'transparent',
+              padding: [18, 6],
+              borderRadius: 0,
+              // Softer, more translucent halo — a near-white outline read as jarring on the deep-red
+              // regions. Lower opacity still separates the ink from the ramp without a hard rim.
+              textBorderColor: 'rgba(246,242,234,0.7)',
               textBorderWidth: 3,
             },
-            // Drop colliding labels (map series can't draw leader lines); minMargin spaces the survivors.
-            labelLayout: { hideOverlap: true, minMargin: 12 },
+            // Drop colliding labels (map series can't draw leader lines). The clearance that
+            // decides "too close, hide one" comes from the label's padding above, not minMargin
+            // (a no-op here). Zoom in, or hover, to reach the towns this hides.
+            labelLayout: { hideOverlap: true },
             data: colored.map((r) => ({ name: r.name, value: r.med, label: { show: showLabels } })),
           },
         ],
       },
       true,
     );
+    // The view now sits at this zoom (default framing, or the carried-over roam zoom on a switch).
+    roamZoom = layout.zoom;
+  }
+
+  // ---- auto level-of-detail (town ⇄ subzone by zoom) ----
+  // Read the geo coordinate the container centre currently points at, so a level switch can re-centre
+  // there. The map coord system has no public getZoom, so `roamZoom` is tracked separately via roam.
+  function readMapView(): { zoom: number; center: number[] } | null {
+    const cs: any = (mapChart as any)?.getModel()?.getSeriesByIndex(0)?.coordinateSystem;
+    if (!mapChart || !cs || typeof cs.pointToData !== 'function') return null;
+    const center = cs.pointToData([mapChart.getWidth() / 2, mapChart.getHeight() / 2]);
+    return { zoom: roamZoom, center };
+  }
+
+  function setActiveChip(level: Level) {
+    document
+      .querySelectorAll<HTMLElement>('#map-toggle .chip')
+      .forEach((b) => b.classList.toggle('on', b.dataset.level === level));
+  }
+
+  async function switchLevel(level: Level) {
+    if (switchingLevel || currentLevel === level) return;
+    switchingLevel = true;
+    setActiveChip(level);
+    try {
+      await renderMap(level, readMapView() ?? undefined);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      switchingLevel = false;
+    }
+  }
+
+  function onRoam(p: any) {
+    // Accumulate absolute view zoom from the incremental roam factor (pan events carry no zoom).
+    if (p && p.zoom != null) {
+      roamZoom = Math.min(12, Math.max(1, roamZoom * p.zoom));
+      autoLevel = true; // any manual pin is released the moment the user zooms again
+    }
+    if (switchingLevel || !autoLevel) return;
+    if (currentLevel === 'town' && roamZoom >= AUTO_IN) switchLevel('subzone');
+    else if (currentLevel === 'subzone' && roamZoom <= AUTO_OUT) switchLevel('town');
   }
 
   document.querySelectorAll<HTMLButtonElement>('#map-toggle .chip').forEach((btn) => {
     btn.addEventListener('click', () => {
       if (btn.classList.contains('on')) return;
-      document.querySelectorAll('#map-toggle .chip').forEach((b) => b.classList.remove('on'));
-      btn.classList.add('on');
+      setActiveChip(btn.dataset.level as Level);
+      // A manual pick pins the level: pause the zoom-driven auto-switch until the user zooms again
+      // (see onRoam), so auto doesn't immediately override the choice at the current zoom.
+      autoLevel = false;
       renderMap(btn.dataset.level as Level).catch((e) => console.error(e));
       url?.sync();
     });
   });
 
-  // Overlaid +/− controls: drive the same roam view as the wheel, stepping toward the map's
-  // centre. geoRoam's `zoom` is a relative factor and is clamped by the series' scaleLimit.
+  // Overlaid +/− controls: drive the same roam view as the wheel. Zoom toward the map's own centre
+  // (its view rect), NOT the container centre — the map sits left-of-centre (layoutCenter 47% + the
+  // left-hand legend), so zooming toward the container centre would drift it sideways as it scales.
   function zoomMap(factor: number) {
     if (!mapChart) return;
+    const cs: any = (mapChart as any).getModel()?.getSeriesByIndex(0)?.coordinateSystem;
+    const r = cs?.getViewRect?.();
+    const originX = r ? r.x + r.width / 2 : mapChart.getWidth() / 2;
+    const originY = r ? r.y + r.height / 2 : mapChart.getHeight() / 2;
     mapChart.dispatchAction({
       type: 'geoRoam',
       componentType: 'series',
       seriesId: 'choropleth',
       zoom: factor,
-      originX: mapChart.getWidth() / 2,
-      originY: mapChart.getHeight() / 2,
+      originX,
+      originY,
     });
   }
   q('map-zoom-in').addEventListener('click', () => zoomMap(1.5));
   q('map-zoom-out').addEventListener('click', () => zoomMap(1 / 1.5));
-  // Reset re-renders the level from scratch, which restores the default zoom/centre.
+  // Reset returns to the town overview at the default framing and re-enables the auto level switch
+  // (the default zoom is a town-level view, so snap the level back to match).
   q('map-zoom-reset').addEventListener('click', () => {
-    renderMap(currentLevel).catch((e) => console.error(e));
+    autoLevel = true;
+    setActiveChip('town');
+    renderMap('town').catch((e) => console.error(e));
   });
 
   // ---- 03 box plot by town ----
