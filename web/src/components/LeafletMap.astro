@@ -48,4 +48,40 @@ const style = [height && `height:${height}`, minHeight && `min-height:${minHeigh
   :global(.leaflet-tooltip-top.hdb-tip::before) {
     border-top-color: var(--paper-2);
   }
+
+  /* Warm the cool CARTO basemap a touch toward the paper canvas. Gentle, so road labels stay
+     legible; scoped to the tiles so the coloured pins are untouched. */
+  :global(.map-real .leaflet-tile) {
+    filter: sepia(0.12) saturate(0.9) brightness(1.02);
+  }
+
+  /* Marker clusters keep markercluster's original round translucent-ring form — only the colours
+     change: swap the stock green/amber/orange size ramp for the brand red ramp, so a denser
+     cluster reads warmer (the same "darker = more" language as the choropleth). Count in mono. */
+  :global(.map-real .marker-cluster-small) {
+    background: rgba(247, 184, 194, 0.5);
+  }
+  :global(.map-real .marker-cluster-small div) {
+    background: rgba(247, 184, 194, 0.85);
+    color: var(--ink);
+  }
+  :global(.map-real .marker-cluster-medium) {
+    background: rgba(240, 112, 135, 0.45);
+  }
+  :global(.map-real .marker-cluster-medium div) {
+    background: rgba(240, 112, 135, 0.8);
+    color: var(--ink);
+  }
+  :global(.map-real .marker-cluster-large) {
+    background: rgba(224, 29, 62, 0.4);
+  }
+  :global(.map-real .marker-cluster-large div) {
+    background: rgba(224, 29, 62, 0.78);
+    color: #fff;
+  }
+  :global(.map-real .marker-cluster span) {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-feature-settings: 'tnum' 1;
+  }
 </style>
