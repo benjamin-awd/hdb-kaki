@@ -735,9 +735,9 @@ const kpis = stats
   const geoReady = new Set<string>();
   const labelsFit = () => window.innerWidth >= 640;
   const isNarrowMap = () => window.matchMedia('(max-width: 640px)').matches;
-  // Transit-map label styling: upper-case, letter-spaced. ECharts canvas text has no
-  // letter-spacing, so fake the tracking by threading a space between characters.
-  const trackedCaps = (s: string) => s.toUpperCase().split('').join(' ');
+  // Transit-map label styling: plain caps. No per-char spacing; it ~doubled label width and
+  // crowded the centre. Plain caps halve the footprint so more survive hideOverlap.
+  const mapCaps = (s: string) => s.toUpperCase();
 
   async function registerGeo(url: string, name: string) {
     if (geoReady.has(name)) return;
@@ -853,7 +853,7 @@ const kpis = stats
             // (zoom in to reveal the tightly-packed central towns).
             label: {
               show: false,
-              formatter: (p: any) => trackedCaps(p.name),
+              formatter: (p: any) => mapCaps(p.name),
               color: '#3a332b',
               fontFamily: sans,
               fontSize: 10,
@@ -861,7 +861,8 @@ const kpis = stats
               textBorderColor: 'rgba(251,247,239,0.9)',
               textBorderWidth: 3,
             },
-            labelLayout: { hideOverlap: true, minMargin: 8 },
+            // Drop colliding labels (map series can't draw leader lines); minMargin spaces the survivors.
+            labelLayout: { hideOverlap: true, minMargin: 12 },
             data: colored.map((r) => ({ name: r.name, value: r.med, label: { show: showLabels } })),
           },
         ],
