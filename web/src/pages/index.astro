@@ -938,7 +938,8 @@ const kpis = stats
 
   // The series-0 geo coordinate system — the only surface exposing pointToData/getViewRect for the
   // roam math. Typed loosely (ECharts doesn't export it); null until the map has drawn.
-  const mapCoordSys = (): any => (mapChart as any)?.getModel()?.getSeriesByIndex(0)?.coordinateSystem;
+  const mapCoordSys = (): any =>
+    (mapChart as any)?.getModel()?.getSeriesByIndex(0)?.coordinateSystem;
 
   // ---- auto level-of-detail (town ⇄ subzone by zoom) ----
   // Read the geo coordinate the container centre currently points at, so a level switch can re-centre
