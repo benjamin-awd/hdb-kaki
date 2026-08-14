@@ -57,7 +57,9 @@ test.describe('town-analysis subtown drill-down', () => {
     expect(subCount).toBeLessThan(townCount);
   });
 
-  test('selecting a subtown writes ?zone=, clearing it restores the town view', async ({ page }) => {
+  test('selecting a subtown writes ?zone=, clearing it restores the town view', async ({
+    page,
+  }) => {
     await page.goto('/town-analysis/');
     await expect(page.locator('#map-sub')).toContainText('Ang Mo Kio', { timeout: 20_000 });
 
