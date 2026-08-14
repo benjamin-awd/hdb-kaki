@@ -955,6 +955,13 @@ import LeafletMap from '../components/LeafletMap.astro';
     .field:nth-child(3n) {
       border-right: 1px solid var(--line);
     }
+    /* The postal code renders at 26px mono, which overflows a half-width cell on
+       phones and clips the "e.g. 560123" example. Give the hero field the whole
+       row so the example fits; drop its right border as it now meets the edge. */
+    .field:first-child {
+      grid-column: 1 / -1;
+      border-right: none;
+    }
     .val-hero {
       grid-template-columns: 1fr;
     }
