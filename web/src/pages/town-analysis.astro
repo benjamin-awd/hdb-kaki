@@ -31,6 +31,7 @@ import LeafletMap from '../components/LeafletMap.astro';
 
     <div class="controls" style="margin-bottom:16px">
       <FieldSelect label="Town" id="sel-town" />
+      <FieldSelect label="Subtown" id="sel-sub" />
       <FieldSelect label="Street" id="sel-street" />
       <FieldSelect label="Flat type" id="sel-flat" />
       <FieldSelect label="Threshold" id="sel-thr">
@@ -288,6 +289,7 @@ import LeafletMap from '../components/LeafletMap.astro';
   import { createHyparquet } from '../lib/hyparquetClient';
   import { createUrlState, selectBinding, chipBinding, stateBinding } from '../lib/urlState';
   import { downloadCsv } from '../lib/csv';
+  import { areaToTown } from '../lib/subzones';
 
   const { townMap, townRecords, streets, warmWhenIdle } = createHyparquet();
 
@@ -324,6 +326,72 @@ import LeafletMap from '../components/LeafletMap.astro';
   let currentRows: Row[] = [];
   let currentTown = DEFAULT_TOWN;
   let currentFlat = DEFAULT_FLAT;
+  let currentSub: string | undefined;
+
+  // ---- subtown (URA subzone) drill-down ----
+  // The parquet carries no subzone column, so the subtown filter is applied client-side by
+  // point-in-polygon against sg-subzones.geojson. Subzones group under their HDB town by the
+  // planning `area`, with the same central/Kallang roll-ups the overview map uses (see areaToTown).
+  const SUB_ALL = '__all';
+  const subzonesByTown = new Map<string, string[]>();
+  const subzoneGeom = new Map<string, any>();
+
+  async function loadSubzones(towns: string[]) {
+    const townSet = new Set(towns);
+    const g = await fetch(`${import.meta.env.BASE_URL}geo/sg-subzones.geojson`).then((r) =>
+      r.json(),
+    );
+    for (const f of g.features ?? []) {
+      const name = f.properties?.name;
+      const area = f.properties?.area;
+      if (!name || !area) continue;
+      const town = areaToTown(area, townSet);
+      if (!town || !townSet.has(town)) continue;
+      subzoneGeom.set(name, f.geometry);
+      (subzonesByTown.get(town) ?? subzonesByTown.set(town, []).get(town)!).push(name);
+    }
+    for (const list of subzonesByTown.values()) list.sort();
+  }
+
+  function populateSubtowns(town: string) {
+    const subs = subzonesByTown.get(town) ?? [];
+    ($('sel-sub') as HTMLSelectElement).innerHTML =
+      `<option value="${SUB_ALL}">All subtowns</option>` +
+      subs.map((s) => `<option value="${s}">${titleCase(s)}</option>`).join('');
+  }
+
+  // Ray-casting point-in-polygon; even-odd across rings handles holes, and MultiPolygon tests
+  // each member. Coordinates are [lng, lat], matching the geojson.
+  function pointInRing(x: number, y: number, ring: number[][]): boolean {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const xi = ring[i][0],
+        yi = ring[i][1],
+        xj = ring[j][0],
+        yj = ring[j][1];
+      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+  function pointInPolygon(x: number, y: number, rings: number[][][]): boolean {
+    let inside = false;
+    for (const ring of rings) if (pointInRing(x, y, ring)) inside = !inside;
+    return inside;
+  }
+  function pointInGeom(lng: number, lat: number, geom: any): boolean {
+    if (!geom) return false;
+    if (geom.type === 'Polygon') return pointInPolygon(lng, lat, geom.coordinates);
+    if (geom.type === 'MultiPolygon')
+      return geom.coordinates.some((p: number[][][]) => pointInPolygon(lng, lat, p));
+    return false;
+  }
+  function geomBounds(geom: any): any {
+    const pts: [number, number][] = [];
+    const polys = geom.type === 'MultiPolygon' ? geom.coordinates : [geom.coordinates];
+    for (const poly of polys)
+      for (const ring of poly) for (const [lng, lat] of ring) pts.push([lat, lng]);
+    return pts.length ? L.latLngBounds(pts) : null;
+  }
 
   // ---- Leaflet map (created once) ----
   const map = L.map('map', { scrollWheelZoom: false, attributionControl: true }).setView(
@@ -347,10 +415,11 @@ import LeafletMap from '../components/LeafletMap.astro';
 
   // Paint the map + summary + table from already-fetched rows. Pure client-side, so
   // changing only the threshold re-bands the same rows without a new query.
-  function paintMap(rows: Row[], town: string, flat: string) {
+  function paintMap(rows: Row[], town: string, flat: string, sub?: string, focus?: any) {
     currentRows = rows;
     currentTown = town;
     currentFlat = flat;
+    currentSub = sub;
     const thr = parseFloat(($('sel-thr') as HTMLSelectElement).value);
 
     const med = median(rows.map((r) => r.price));
@@ -374,7 +443,14 @@ import LeafletMap from '../components/LeafletMap.astro';
         )
         .addTo(cluster);
     }
-    if (rows.length) {
+    // Recompute the container size before fitting: if the map div was mis-sized when this paint
+    // ran (initial layout, tab switch), fitBounds would compute the wrong view and never correct.
+    map.invalidateSize();
+    // Focus the subtown polygon when one is picked (stable even with few/no pins); otherwise
+    // frame the town's pins.
+    if (focus) {
+      map.fitBounds(focus.pad(0.08));
+    } else if (rows.length) {
       const b = L.latLngBounds(rows.map((r) => [r.lat, r.lng] as [number, number]));
       map.fitBounds(b.pad(0.1));
     }
@@ -386,7 +462,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     const max = Math.max(1, ...Object.values(counts));
     $('median-price').textContent = med ? money(med) : '—';
     $('map-sub').textContent =
-      `${titleCase(town)} · ${titleCase(flat)} · ${rows.length.toLocaleString()} sales (last 24 mo)`;
+      `${titleCase(town)}${sub ? ' · ' + titleCase(sub) : ''} · ${titleCase(flat)} · ${rows.length.toLocaleString()} sales (last 24 mo)`;
     (['above', 'around', 'below'] as const).forEach((k) => {
       ($('bar-' + k) as HTMLElement).style.width = (counts[k] / max) * 100 + '%';
       $('amt-' + k).textContent = counts[k].toLocaleString();
@@ -413,10 +489,15 @@ import LeafletMap from '../components/LeafletMap.astro';
     const town = ($('sel-town') as HTMLSelectElement).value || DEFAULT_TOWN;
     const flat = ($('sel-flat') as HTMLSelectElement).value;
     const street = ($('sel-street') as HTMLSelectElement).value;
+    const sub = ($('sel-sub') as HTMLSelectElement).value;
     // The worker scans its resident rows and returns the (bounded) town+flat slice already
     // coerced to numbers, in month DESC, resale_price DESC order.
-    const rows = await townMap({ town, flat, street });
-    paintMap(rows, town, flat);
+    let rows = await townMap({ town, flat, street });
+    // Subtown filter: keep only sales that fall inside the picked subzone polygon, and frame
+    // the map to that subzone (see paintMap's `focus`).
+    const geom = sub && sub !== SUB_ALL ? subzoneGeom.get(sub) : null;
+    if (geom) rows = rows.filter((r) => pointInGeom(r.lng, r.lat, geom));
+    paintMap(rows, town, flat, geom ? sub : undefined, geom ? geomBounds(geom) : null);
   }
 
   // ---- record sales (paged, town-scoped or Singapore-wide) ----
@@ -520,12 +601,17 @@ import LeafletMap from '../components/LeafletMap.astro';
       .map((f) => `<option${f === data.default.flat ? ' selected' : ''}>${f}</option>`)
       .join('');
     setStreets($('sel-street'), data.streets);
+    // Subtown options depend on the town; load the subzone geometry and seed the default town's
+    // list before the URL state so a deep-linked `zone` lands on a real option.
+    await loadSubzones(data.towns);
+    populateSubtowns(data.default.town);
 
     // URL-synced filter state (see web/src/lib/urlState.ts). Declared now that the selects
     // are populated so writes land on real options. `page` is the records pager index.
     const url = createUrlState(
       [
         selectBinding('sel-town', 'town', DEFAULT_TOWN),
+        selectBinding('sel-sub', 'zone', SUB_ALL),
         selectBinding('sel-flat', 'flat', DEFAULT_FLAT),
         selectBinding('sel-street', 'street', '__all'),
         selectBinding('sel-thr', 'thr', '0.1'),
@@ -539,30 +625,35 @@ import LeafletMap from '../components/LeafletMap.astro';
           '0',
         ),
       ],
-      ['town', 'flat', 'street', 'thr', 'scope', 'page'],
+      ['town', 'zone', 'flat', 'street', 'thr', 'scope', 'page'],
     );
 
-    // Paint immediately from JSON — no data fetch needed for the default view.
-    paintMap(data.rows, data.default.town, data.default.flat);
     recordPage = 0;
     recordTotal = Number(data.recordsTotal);
-    paintRecords(data.records);
 
-    // Deep-link restore. Gated on url.deviates() so a bare /town-analysis/ paints from the
-    // snapshot above and never queries the worker. Snapshot street options only cover the
-    // default town, so a non-default town must repopulate them (a worker query) before the
-    // street value, and the scope/page, can be applied.
+    // Deep-link restore. Gated on url.deviates(): a bare /town-analysis/ paints from the snapshot
+    // and never queries the worker. On a deep link we DON'T paint the default snapshot first — it
+    // would flash the wrong town and its map fit can race the linked town's fit (leaving the map
+    // stuck on the default). Snapshot street options only cover the default town, so a non-default
+    // town must repopulate them (a worker query) before the street value, and the scope/page.
     if (url.deviates()) {
       url.restore({ only: ['town', 'flat', 'thr', 'scope'] });
       recordScope =
         ((document.querySelector('#record-scope .chip.on') as HTMLElement | null)?.dataset
           .scope as RecordScope) ?? recordScope;
       const town = ($('sel-town') as HTMLSelectElement).value;
+      // Repopulate subtowns for the linked town so a `zone` param can select a real option.
+      populateSubtowns(town);
+      url.applyKey('zone');
       if (town !== DEFAULT_TOWN) setStreets($('sel-street'), await streets(town));
       url.applyKey('street');
       url.applyKey('page');
       loadMap();
       loadRecords();
+    } else {
+      // Default view — paint immediately from JSON, no worker needed.
+      paintMap(data.rows, data.default.town, data.default.flat);
+      paintRecords(data.records);
     }
 
     // Filters go through the worker. Threshold-only changes just re-band the rows we
@@ -572,7 +663,10 @@ import LeafletMap from '../components/LeafletMap.astro';
     // independent, so it doesn't). The records span all flat types, so sel-flat only
     // drives the map.
     $('sel-town').addEventListener('change', async () => {
-      setStreets($('sel-street'), await streets(($('sel-town') as HTMLSelectElement).value));
+      const t = ($('sel-town') as HTMLSelectElement).value;
+      // Changing town resets the subtown filter to "All" and reloads the town's streets.
+      populateSubtowns(t);
+      setStreets($('sel-street'), await streets(t));
       loadMap();
       if (recordScope === 'town') {
         recordPage = 0;
@@ -580,12 +674,16 @@ import LeafletMap from '../components/LeafletMap.astro';
       }
       url.sync();
     });
+    $('sel-sub').addEventListener('change', () => {
+      loadMap();
+      url.sync();
+    });
     $('sel-street').addEventListener('change', () => {
       loadMap();
       url.sync();
     });
     $('sel-thr').addEventListener('change', () => {
-      paintMap(currentRows, currentTown, currentFlat);
+      paintMap(currentRows, currentTown, currentFlat, currentSub);
       url.sync();
     });
     $('sel-flat').addEventListener('change', () => {
