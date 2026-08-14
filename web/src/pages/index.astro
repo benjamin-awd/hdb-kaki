@@ -936,11 +936,15 @@ const kpis = stats
     roamZoom = layout.zoom;
   }
 
+  // The series-0 geo coordinate system — the only surface exposing pointToData/getViewRect for the
+  // roam math. Typed loosely (ECharts doesn't export it); null until the map has drawn.
+  const mapCoordSys = (): any => (mapChart as any)?.getModel()?.getSeriesByIndex(0)?.coordinateSystem;
+
   // ---- auto level-of-detail (town ⇄ subzone by zoom) ----
   // Read the geo coordinate the container centre currently points at, so a level switch can re-centre
   // there. The map coord system has no public getZoom, so `roamZoom` is tracked separately via roam.
   function readMapView(): { zoom: number; center: number[] } | null {
-    const cs: any = (mapChart as any)?.getModel()?.getSeriesByIndex(0)?.coordinateSystem;
+    const cs = mapCoordSys();
     if (!mapChart || !cs || typeof cs.pointToData !== 'function') return null;
     const center = cs.pointToData([mapChart.getWidth() / 2, mapChart.getHeight() / 2]);
     return { zoom: roamZoom, center };
@@ -993,7 +997,7 @@ const kpis = stats
   // left-hand legend), so zooming toward the container centre would drift it sideways as it scales.
   function zoomMap(factor: number) {
     if (!mapChart) return;
-    const cs: any = (mapChart as any).getModel()?.getSeriesByIndex(0)?.coordinateSystem;
+    const cs = mapCoordSys();
     const r = cs?.getViewRect?.();
     const originX = r ? r.x + r.width / 2 : mapChart.getWidth() / 2;
     const originY = r ? r.y + r.height / 2 : mapChart.getHeight() / 2;
