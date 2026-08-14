@@ -351,7 +351,9 @@ import LeafletMap from '../components/LeafletMap.astro';
 
   async function loadSubzones(towns: string[]) {
     const townSet = new Set(towns);
-    const g = await fetch(`${import.meta.env.BASE_URL}geo/sg-subzones.geojson`).then((r) => r.json());
+    const g = await fetch(`${import.meta.env.BASE_URL}geo/sg-subzones.geojson`).then((r) =>
+      r.json(),
+    );
     for (const f of g.features ?? []) {
       const name = f.properties?.name;
       const area = f.properties?.area;
@@ -399,7 +401,8 @@ import LeafletMap from '../components/LeafletMap.astro';
   function geomBounds(geom: any): any {
     const pts: [number, number][] = [];
     const polys = geom.type === 'MultiPolygon' ? geom.coordinates : [geom.coordinates];
-    for (const poly of polys) for (const ring of poly) for (const [lng, lat] of ring) pts.push([lat, lng]);
+    for (const poly of polys)
+      for (const ring of poly) for (const [lng, lat] of ring) pts.push([lat, lng]);
     return pts.length ? L.latLngBounds(pts) : null;
   }
 
