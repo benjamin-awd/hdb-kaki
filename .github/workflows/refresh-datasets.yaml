@@ -1,0 +1,114 @@
+name: Refresh generated datasets
+
+# Regenerates the committed map datasets under web/public/geo/ from their upstream
+# sources and commits each one only when it changes — the same "rebuild → git diff →
+# commit if changed" pattern boundaries.yaml used for town boundaries, now extended to
+# every generated dataset (this workflow replaces boundaries.yaml).
+#
+# Unlike the daily price ETL, these sources move slowly, so most datasets refresh
+# monthly and are a no-op on almost every run. Food (SFA-licensed outlets) churns
+# faster — cafes/restaurants open and close constantly — so it refreshes weekly. A
+# commit here touches web/**, which triggers the "Deploy web" workflow to publish.
+#
+# One matrix entry per dataset, run one-at-a-time (max-parallel: 1) so the per-entry
+# pushes to the default branch never race, and fail-fast: false so a flaky third-party
+# source for one dataset (e.g. Overpass throttling amenities, SFA/OneMap 500ing food)
+# still lets the others refresh. Build and commit are one step, so a failed build makes
+# no partial commit — it just retries next cycle.
+#
+# | Dataset                       | Script                 | Source                            | Cadence |
+# |-------------------------------|------------------------|-----------------------------------|---------|
+# | sg-towns/outline/subzones     | build_town_geojson.py  | URA Master Plan (data.gov.sg)     | monthly |
+# | mrt-stations.json + lines     | build_mrt_stations.py, | LTA train-station CSV mirror      | monthly |
+# |                               | build_mrt_lines.py     |                                   |         |
+# | amenities.json                | build_amenities.py     | NEA (data.gov.sg) + OpenStreetMap | monthly |
+# | food.json                     | build_food.py          | SFA + OneMap geocode + NEA        | weekly  |
+#
+# The scripts are stdlib-only (town also needs shapely), so `uv run --no-project` runs
+# them in an ephemeral env without installing the Streamlit/polars project dependencies.
+#
+# Secrets: the food build geocodes postals via authenticated OneMap Search, so it needs
+# repo secrets ONEMAP_EMAIL / ONEMAP_PASSWORD (token-free API, but the account quota is a
+# reliable bucket the anonymous throttle is not). It commits the postal_coords.json cache
+# alongside food.json, so each weekly run only geocodes newly-seen postals.
+
+on:
+  schedule:
+    - cron: "0 21 1 * *" # monthly: 05:00 UTC / 13:00 SGT on the 1st — town, MRT, amenities
+    - cron: "0 21 * * 1" # weekly:  05:00 UTC / 13:00 SGT every Monday — food only
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Queue overlapping runs (e.g. a manual dispatch during a scheduled run) rather than
+# letting two runs push to the default branch at once.
+concurrency:
+  group: refresh-datasets
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - name: town boundaries
+            # build_town_geojson.py emits all three URA boundary files together, so keep
+            # them in sync (boundaries.yaml only tracked sg-towns.geojson, letting the
+            # outline/subzones silently drift).
+            run: uv run --no-project --with shapely webapp/update/build_town_geojson.py
+            paths: web/public/geo/sg-towns.geojson web/public/geo/sg-outline.geojson web/public/geo/sg-subzones.geojson
+            message: "chore: refresh town boundary GeoJSON from URA Master Plan"
+          - name: MRT stations & lines
+            run: |
+              uv run --no-project webapp/update/build_mrt_stations.py
+              uv run --no-project webapp/update/build_mrt_lines.py
+            paths: web/public/geo/mrt-stations.json web/public/geo/mrt-lines.geojson
+            message: "chore: refresh MRT stations & lines from LTA data"
+          - name: nearby amenities
+            run: uv run --no-project webapp/update/build_amenities.py
+            paths: web/public/geo/amenities.json
+            message: "chore: refresh nearby amenities from NEA + OpenStreetMap"
+          - name: food & drink
+            weekly: true
+            # Commit the postal_coords.json geocode cache with food.json so the next run
+            # only geocodes newly-seen postals (near-instant, gentle on OneMap).
+            run: uv run --no-project webapp/update/build_food.py
+            paths: web/public/geo/food.json webapp/update/postal_coords.json
+            message: "chore: refresh SFA food establishments"
+
+    name: Refresh ${{ matrix.name }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      # Monthly cron drives the slow-moving datasets; the weekly cron drives food only.
+      # A manual dispatch refreshes everything. Build and commit are a single step so a
+      # failed build aborts before any commit (no partial state).
+      - name: Rebuild and commit ${{ matrix.name }} if changed
+        if: >-
+          github.event_name == 'workflow_dispatch' ||
+          (github.event.schedule == '0 21 1 * *' && matrix.weekly != true) ||
+          (github.event.schedule == '0 21 * * 1' && matrix.weekly == true)
+        env:
+          ONEMAP_EMAIL: ${{ secrets.ONEMAP_EMAIL }}
+          ONEMAP_PASSWORD: ${{ secrets.ONEMAP_PASSWORD }}
+        run: |
+          ${{ matrix.run }}
+          git config user.name 'GitHub Actions'
+          git config user.email 'actions@github.com'
+          if git diff --quiet -- ${{ matrix.paths }}; then
+            echo "${{ matrix.name }} unchanged — nothing to commit."
+          else
+            git add ${{ matrix.paths }}
+            git commit -m "${{ matrix.message }}"
+            git push
+          fi
