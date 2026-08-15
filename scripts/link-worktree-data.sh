@@ -46,8 +46,11 @@ if [ ! -e "$WT" ]; then
   fi
 fi
 
-# Symlink gitignored generated data so the web app renders real data.
-for rel in web/public/data web/public/duckdb; do
+# Symlink gitignored paths into the worktree:
+#   - generated data, so the web app renders real data
+#   - .claude/skills, so project-scoped skills (e.g. /impeccable) resolve; they
+#     are gitignored, so a fresh worktree checkout would otherwise omit them
+for rel in web/public/data web/public/duckdb .claude/skills; do
   src="$MAIN/$rel"
   dst="$WT/$rel"
   [ -e "$src" ] || continue      # source not generated yet; skip
