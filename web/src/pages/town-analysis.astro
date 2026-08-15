@@ -338,6 +338,29 @@ import LeafletMap from '../components/LeafletMap.astro';
   const cluster = (L as any).markerClusterGroup({ maxClusterRadius: 45, chunkedLoading: true });
   map.addLayer(cluster);
 
+  // Pin tooltips open upward (direction:'top'). The rounded map has overflow:hidden
+  // (needed to clip the tile layer), so a tooltip on a pin near the top edge gets
+  // clipped. Leaflet tooltips can't autoPan/keepInView and only flip horizontally, so
+  // on open we measure and flip vertically (top<->bottom) if the tooltip spills past an
+  // edge. We never pan the map, so the hovered pin stays under the cursor — panning it
+  // away would fire mouseout and flicker the tooltip shut.
+  const TIP_GAP = 6;
+  map.on('tooltipopen', (e: any) => {
+    const tip = e.tooltip;
+    const el: HTMLElement | null = tip.getElement();
+    if (!el) return;
+    const mapBox = map.getContainer().getBoundingClientRect();
+    const box = el.getBoundingClientRect();
+    let dir = tip.options.direction;
+    if (box.top < mapBox.top) dir = 'bottom';
+    else if (box.bottom > mapBox.bottom) dir = 'top';
+    if (dir !== tip.options.direction) {
+      tip.options.direction = dir;
+      tip.options.offset = [0, dir === 'bottom' ? TIP_GAP : -TIP_GAP];
+      tip.update(); // re-runs _setPosition: repositions + swaps the arrow class
+    }
+  });
+
   function median(nums: number[]): number {
     if (!nums.length) return 0;
     const s = [...nums].sort((a, b) => a - b);

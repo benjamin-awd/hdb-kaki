@@ -48,4 +48,8 @@ const style = [height && `height:${height}`, minHeight && `min-height:${minHeigh
   :global(.leaflet-tooltip-top.hdb-tip::before) {
     border-top-color: var(--paper-2);
   }
+  /* Tooltips near the top edge flip to open downward (see town-analysis.astro). */
+  :global(.leaflet-tooltip-bottom.hdb-tip::before) {
+    border-bottom-color: var(--paper-2);
+  }
 </style>
