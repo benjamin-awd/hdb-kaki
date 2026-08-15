@@ -376,7 +376,10 @@ import LeafletMap from '../components/LeafletMap.astro';
     }
     if (rows.length) {
       const b = L.latLngBounds(rows.map((r) => [r.lat, r.lng] as [number, number]));
-      map.fitBounds(b.pad(0.1));
+      // Reserve pixel room around the pins so upward-opening tooltips (direction:'top')
+      // aren't clipped by the map's rounded, overflow-hidden container — extra at the
+      // top since the tooltip stacks above its pin.
+      map.fitBounds(b, { paddingTopLeft: [28, 92], paddingBottomRight: [28, 28] });
     }
     setTimeout(() => map.invalidateSize(), 50);
 
