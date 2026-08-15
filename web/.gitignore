@@ -7,11 +7,11 @@ dist/
 # `webapp/update/emit_web.py` from data/df.parquet — regenerated in CI on every
 # deploy, so we keep them out of git history rather than commit ~3-4MB daily.
 # For local dev, run once:  uv run --with polars webapp/update/emit_web.py
-public/data/
+public/data
 
 # Brotli-compressed DuckDB-WASM engine, staged from node_modules by
 # scripts/compress-duckdb.mjs on every build. Regenerated, so not committed.
-public/duckdb/
+public/duckdb
 
 # Playwright E2E output.
 test-results/
