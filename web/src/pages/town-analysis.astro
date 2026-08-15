@@ -406,6 +406,29 @@ import LeafletMap from '../components/LeafletMap.astro';
   const cluster = (L as any).markerClusterGroup({ maxClusterRadius: 45, chunkedLoading: true });
   map.addLayer(cluster);
 
+  // Pin tooltips open upward (direction:'top'). The rounded map has overflow:hidden
+  // (needed to clip the tile layer), so a tooltip on a pin near the top edge gets
+  // clipped. Leaflet tooltips can't autoPan/keepInView and only flip horizontally, so
+  // on open we measure and flip vertically (top<->bottom) if the tooltip spills past an
+  // edge. We never pan the map, so the hovered pin stays under the cursor — panning it
+  // away would fire mouseout and flicker the tooltip shut.
+  const TIP_GAP = 6;
+  map.on('tooltipopen', (e: any) => {
+    const tip = e.tooltip;
+    const el: HTMLElement | null = tip.getElement();
+    if (!el) return;
+    const mapBox = map.getContainer().getBoundingClientRect();
+    const box = el.getBoundingClientRect();
+    let dir = tip.options.direction;
+    if (box.top < mapBox.top) dir = 'bottom';
+    else if (box.bottom > mapBox.bottom) dir = 'top';
+    if (dir !== tip.options.direction) {
+      tip.options.direction = dir;
+      tip.options.offset = [0, dir === 'bottom' ? TIP_GAP : -TIP_GAP];
+      tip.update(); // re-runs _setPosition: repositions + swaps the arrow class
+    }
+  });
+
   function median(nums: number[]): number {
     if (!nums.length) return 0;
     const s = [...nums].sort((a, b) => a - b);
@@ -452,7 +475,10 @@ import LeafletMap from '../components/LeafletMap.astro';
       map.fitBounds(focus.pad(0.08));
     } else if (rows.length) {
       const b = L.latLngBounds(rows.map((r) => [r.lat, r.lng] as [number, number]));
-      map.fitBounds(b.pad(0.1));
+      // Reserve pixel room around the pins so upward-opening tooltips (direction:'top')
+      // aren't clipped by the map's rounded, overflow-hidden container — extra at the
+      // top since the tooltip stacks above its pin.
+      map.fitBounds(b, { paddingTopLeft: [28, 92], paddingBottomRight: [28, 28] });
     }
     setTimeout(() => map.invalidateSize(), 50);
 
