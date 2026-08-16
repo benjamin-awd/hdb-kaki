@@ -287,6 +287,7 @@ def emit_town_analysis(df: pl.DataFrame) -> None:
             pl.col("storey_range").alias("storey"),
             "psf",
             pl.col("remaining_lease_years").alias("lease"),
+            "postal",  # deep-links the table row to my-flat-insights (?postal=)
         )
         .to_dicts()
     )
@@ -318,6 +319,7 @@ def emit_town_analysis(df: pl.DataFrame) -> None:
             pl.col("flat_type").alias("flat"),
             "psf",
             "med",
+            "postal",  # deep-links the row to my-flat-insights (?postal=)
         )
         .to_dicts()
     )
