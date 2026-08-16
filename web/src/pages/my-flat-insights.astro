@@ -1713,7 +1713,12 @@ import LeafletMap from '../components/LeafletMap.astro';
       });
       document.addEventListener('fullscreenchange', () => {
         paint();
-        setTimeout(() => map.invalidateSize(), 120);
+        // Re-fit to the 10-min ring after the container resizes, so fullscreen shows exactly the
+        // short-walk range (and nothing beyond) instead of just revealing more map at the old zoom.
+        setTimeout(() => {
+          map.invalidateSize();
+          fitToReach();
+        }, 120);
       });
       return bar;
     },
@@ -1769,6 +1774,15 @@ import LeafletMap from '../components/LeafletMap.astro';
         icon: L.divIcon({ className: 'reach-label', html: ring.label, iconSize: [46, 16] }),
       }).addTo(reachLayer);
     }
+  }
+  // Frame the map on the 10-minute walking ring around the flat: everything a short walk away fills
+  // the view, nothing beyond it. Reused on first compute and whenever the container resizes
+  // (fullscreen), so the visible range stays "10 minutes" regardless of screen size. Leaflet fits
+  // the bounds to whatever the container is at call time, so the zoom adapts to the screen.
+  function fitToReach() {
+    if (!userLatLng) return;
+    const tenMinM = REACH_RINGS[1]?.meters ?? 800;
+    map.fitBounds(L.latLng(userLatLng[0], userLatLng[1]).toBounds(2 * tenMinM));
   }
 
   // MRT/LRT line colours keyed by code prefix. Used only to tint the single nearest-station
@@ -1893,36 +1907,37 @@ import LeafletMap from '../components/LeafletMap.astro';
   // Amenities cluster: dense towns have 100+ food places within 1 km, so individual pins would be
   // soup. Cluster them (same pattern as Town Analysis) — counts collapse, pins expand on zoom, so
   // everything nearby is reachable rather than truncated to an arbitrary few.
-  const amenityLayer = (L as any).markerClusterGroup({
-    // Wider than the default so nearby pins collapse into one count instead of a scatter of raw
-    // dots sitting under half-formed clusters — keeps the centre readable at the default zoom.
-    maxClusterRadius: 70,
-    showCoverageOnHover: false,
-    chunkedLoading: true,
-    // Cluster bubbles carry the dominant category's glyph + colour (not a plain grey circle), so
-    // the map reads as food/supermarket/mall icons at a glance; the child count rides in a corner
-    // pill. Each marker is tagged with `amenityCat` (below) so we can tally categories here.
-    iconCreateFunction: (cluster: any) => {
-      const counts: Record<string, number> = {};
-      for (const mk of cluster.getAllChildMarkers()) {
-        const c = mk.options?.amenityCat as string | undefined;
-        if (c) counts[c] = (counts[c] ?? 0) + 1;
-      }
-      const dominant = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0] ?? 'hawker';
-      const m = AMENITY_META[dominant];
-      const total = cluster.getChildCount();
-      return L.divIcon({
-        className: 'am-cluster',
-        html:
-          `<span class="am-cluster-badge" style="background:${m.color}">` +
-          `<svg viewBox="0 0 24 24" aria-hidden="true">${m.glyph}</svg></span>` +
-          `<span class="am-cluster-count">${total}</span>`,
-        iconSize: [34, 34],
-        iconAnchor: [17, 17],
-      });
-    },
-  });
-  amenityLayer.addTo(map);
+  // One cluster group PER category, not one shared group. A shared group merges nearby food +
+  // supermarket + mall into a single bubble that can only show one glyph, hiding the rest; keeping
+  // groups separate means every bubble is a pure category with an exact count (a food "11" is 11
+  // eateries, never "11, mostly food"). Overlap only happens when two categories sit at the same
+  // spot, which is rare.
+  function amenityClusterIcon(cat: string, total: number) {
+    const m = AMENITY_META[cat];
+    return L.divIcon({
+      className: 'am-cluster',
+      html:
+        `<span class="am-cluster-badge" style="background:${m.color}">` +
+        `<svg viewBox="0 0 24 24" aria-hidden="true">${m.glyph}</svg></span>` +
+        `<span class="am-cluster-count">${total}</span>`,
+      iconSize: [34, 34],
+      iconAnchor: [17, 17],
+    });
+  }
+  function makeAmenityCluster(cat: string) {
+    return (L as any).markerClusterGroup({
+      // Wider than the default so nearby pins collapse into one count instead of a scatter of raw
+      // dots sitting under half-formed clusters — keeps the centre readable at the default zoom.
+      maxClusterRadius: 70,
+      showCoverageOnHover: false,
+      chunkedLoading: true,
+      iconCreateFunction: (cluster: any) => amenityClusterIcon(cat, cluster.getChildCount()),
+    });
+  }
+  const amenityLayers: Record<string, any> = {};
+  for (const cat of Object.keys(AMENITY_META)) {
+    amenityLayers[cat] = makeAmenityCluster(cat).addTo(map);
+  }
   const shownCats = new Set<string>();
   // Food entries compile every eatery at a block into one point: `n` counts them and `names` lists
   // a few for the tooltip. Supermarkets/malls are single places (no n/names).
@@ -1965,7 +1980,7 @@ import LeafletMap from '../components/LeafletMap.astro';
   let amenitySeq = 0;
   async function drawAmenities(from: [number, number]) {
     const seq = ++amenitySeq;
-    amenityLayer.clearLayers();
+    Object.values(amenityLayers).forEach((l) => l.clearLayers());
     if (!shownCats.size) return;
     for (const cat of shownCats) {
       let source: Place[];
@@ -1990,19 +2005,14 @@ import LeafletMap from '../components/LeafletMap.astro';
         } else {
           title = `<b>${a.name}</b>`;
         }
-        // `amenityCat` is a custom option read by the cluster's iconCreateFunction to pick a glyph.
-        L.marker([a.lat, a.lng], {
-          icon: amenityIcon(cat),
-          keyboard: false,
-          amenityCat: cat,
-        } as any)
+        L.marker([a.lat, a.lng], { icon: amenityIcon(cat), keyboard: false })
           .bindTooltip(`${title}<br/>${label} · ${Math.round(d)} m`, {
             direction: 'top',
             offset: [0, -8],
             opacity: 1,
             className: 'hdb-tip',
           })
-          .addTo(amenityLayer);
+          .addTo(amenityLayers[cat]);
       }
     }
   }
@@ -2630,9 +2640,8 @@ import LeafletMap from '../components/LeafletMap.astro';
     }
     // Default the view to the 10-minute walking ring (800 m) around the flat, so "what's a short
     // walk away" fills the frame. Fall back to the comps bounds when we have no flat location.
-    const tenMinM = REACH_RINGS[1]?.meters ?? 800;
     if (userLatLng) {
-      map.fitBounds(L.latLng(userLatLng[0], userLatLng[1]).toBounds(2 * tenMinM));
+      fitToReach();
     } else if (pts.length) {
       map.fitBounds(L.latLngBounds(pts).pad(0.15));
     }
@@ -2644,7 +2653,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     } else {
       routeLayer.clearLayers();
       reachLayer.clearLayers();
-      amenityLayer.clearLayers();
+      Object.values(amenityLayers).forEach((l) => l.clearLayers());
       setStation(null);
     }
 
