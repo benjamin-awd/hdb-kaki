@@ -270,6 +270,7 @@ export interface TownRecord {
   med: number;
   flat: string;
   psf: number;
+  postal: number; // deep-links the row to my-flat-insights (?postal=)
 }
 
 /** psf-trends slice — a serializable spec (no closures) so it can cross the worker boundary.
@@ -484,6 +485,7 @@ export function townRecordsQuery(
     med,
     flat: c.flat_type[i],
     psf: Number.isNaN(c.psf[i]) ? 0 : c.psf[i],
+    postal: c.postal[i],
   });
 
   let ranked: number[];
