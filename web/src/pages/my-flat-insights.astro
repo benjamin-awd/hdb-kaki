@@ -1212,6 +1212,44 @@ import LeafletMap from '../components/LeafletMap.astro';
     line-height: 32px;
     font-feature-settings: 'tnum' 1;
   }
+  /* :global — amenity clusters (our iconCreateFunction): a category-coloured glyph badge with the
+     child count in a corner pill, so the cluster reads as an icon rather than a neutral count
+     bubble. Larger than a single am-pin so a cluster still reads as "several". */
+  :global(.am-cluster) {
+    position: relative;
+  }
+  :global(.am-cluster .am-cluster-badge) {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 999px;
+    border: 2px solid var(--paper-2);
+    box-shadow: var(--shadow);
+  }
+  :global(.am-cluster .am-cluster-badge svg) {
+    display: block;
+    width: 18px;
+    height: 18px;
+  }
+  :global(.am-cluster .am-cluster-count) {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    min-width: 17px;
+    height: 17px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: var(--ink);
+    color: var(--paper);
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 10px;
+    line-height: 15px;
+    text-align: center;
+    border: 1.5px solid var(--paper-2);
+    font-feature-settings: 'tnum' 1;
+  }
   /* :global — comparables rows are injected via innerHTML */
   :global(.addr b) {
     font-weight: 600;
@@ -1861,6 +1899,28 @@ import LeafletMap from '../components/LeafletMap.astro';
     maxClusterRadius: 70,
     showCoverageOnHover: false,
     chunkedLoading: true,
+    // Cluster bubbles carry the dominant category's glyph + colour (not a plain grey circle), so
+    // the map reads as food/supermarket/mall icons at a glance; the child count rides in a corner
+    // pill. Each marker is tagged with `amenityCat` (below) so we can tally categories here.
+    iconCreateFunction: (cluster: any) => {
+      const counts: Record<string, number> = {};
+      for (const mk of cluster.getAllChildMarkers()) {
+        const c = mk.options?.amenityCat as string | undefined;
+        if (c) counts[c] = (counts[c] ?? 0) + 1;
+      }
+      const dominant = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0] ?? 'hawker';
+      const m = AMENITY_META[dominant];
+      const total = cluster.getChildCount();
+      return L.divIcon({
+        className: 'am-cluster',
+        html:
+          `<span class="am-cluster-badge" style="background:${m.color}">` +
+          `<svg viewBox="0 0 24 24" aria-hidden="true">${m.glyph}</svg></span>` +
+          `<span class="am-cluster-count">${total}</span>`,
+        iconSize: [34, 34],
+        iconAnchor: [17, 17],
+      });
+    },
   });
   amenityLayer.addTo(map);
   const shownCats = new Set<string>();
@@ -1930,7 +1990,12 @@ import LeafletMap from '../components/LeafletMap.astro';
         } else {
           title = `<b>${a.name}</b>`;
         }
-        L.marker([a.lat, a.lng], { icon: amenityIcon(cat), keyboard: false })
+        // `amenityCat` is a custom option read by the cluster's iconCreateFunction to pick a glyph.
+        L.marker([a.lat, a.lng], {
+          icon: amenityIcon(cat),
+          keyboard: false,
+          amenityCat: cat,
+        } as any)
           .bindTooltip(`${title}<br/>${label} · ${Math.round(d)} m`, {
             direction: 'top',
             offset: [0, -8],
