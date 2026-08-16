@@ -97,14 +97,65 @@ import LeafletMap from '../components/LeafletMap.astro';
             </div>
           </div>
           <div class="toolbar">
-            <button class="btn primary" id="copy-link" type="button">
-              <span class="ic">🔗</span> Copy shareable link
+            <button class="act act-share" id="copy-link" type="button">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path>
+                <polyline points="16 6 12 2 8 6"></polyline>
+                <line x1="12" y1="2" x2="12" y2="15"></line>
+              </svg>
+              Share
             </button>
-            <button class="btn" id="dl-comps" type="button">
-              <span class="ic">⭳</span> Download comps (CSV)
+            <span class="act-sep" aria-hidden="true"></span>
+            <button
+              class="act act-icon"
+              id="dl-comps"
+              type="button"
+              title="Download comps (CSV)"
+              aria-label="Download comparable sales as CSV"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
             </button>
-            <button class="btn" id="print-btn" type="button">
-              <span class="ic">🖨</span> Print / save PDF
+            <button
+              class="act act-icon"
+              id="print-btn"
+              type="button"
+              title="Print / save PDF"
+              aria-label="Print or save as PDF"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"
+                ></path>
+                <rect x="6" y="14" width="12" height="8"></rect>
+              </svg>
             </button>
           </div>
           <div class="toast" id="copy-toast" role="status" aria-live="polite">
@@ -1216,35 +1267,50 @@ import LeafletMap from '../components/LeafletMap.astro';
   /* ---- export toolbar (in the valuation hero) ---- */
   .toolbar {
     display: flex;
-    gap: 10px;
+    align-items: center;
+    gap: 2px;
     flex-wrap: wrap;
-    margin-top: 20px;
+    margin-top: 24px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
   }
-  .btn {
+  .act {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: 7px;
     font: inherit;
     font-size: 13.5px;
     font-weight: 600;
-    border: 1px solid var(--line);
-    background: var(--paper-2);
-    color: var(--ink);
-    border-radius: 10px;
-    padding: 9px 14px;
+    border: none;
+    background: transparent;
+    color: var(--ink-3);
+    border-radius: 8px;
+    padding: 8px 10px;
     cursor: pointer;
+    transition:
+      color 0.15s ease,
+      background 0.15s ease;
   }
-  .btn:hover {
-    border-color: var(--ink);
+  .act:hover {
+    color: var(--ink);
+    background: var(--paper);
   }
-  .btn.primary {
-    background: var(--red);
-    border-color: var(--red);
-    color: #fff;
+  .act:focus-visible {
+    outline: 2px solid var(--red);
+    outline-offset: 1px;
   }
-  .btn .ic {
-    font-family: var(--font-mono);
-    font-weight: 700;
+  .act svg {
+    width: 15px;
+    height: 15px;
+  }
+  .act-icon {
+    padding: 8px;
+  }
+  .act-sep {
+    width: 1px;
+    height: 18px;
+    background: var(--line);
+    margin: 0 6px;
   }
   .toast {
     display: none;
