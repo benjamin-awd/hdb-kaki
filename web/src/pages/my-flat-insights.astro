@@ -2032,10 +2032,12 @@ import LeafletMap from '../components/LeafletMap.astro';
     const to: [number, number] = [near.station.lat, near.station.lng];
     const kind = stationKind(near.station.codes);
 
-    // Draw only the corridor(s) the nearest station sits on, under the markers + line. Widening
-    // this to every nearby station would draw whole lines (e.g. the full NS line for a Jurong
-    // East 2.5 km away) shooting off-map, so keep it to the highlighted station's own line(s).
-    const prefixes = new Set(near.station.codes.split(' / ').map((c) => c.replace(/\d.*$/, '')));
+    // Draw the corridor(s) every shown station sits on (Downtown, Jurong Region, etc.), under
+    // the markers + line. Lines that run past the framed radius are just clipped by the map
+    // viewport, so this shows each pin on its own line without a full network diagram.
+    const prefixes = new Set(
+      nearby.flatMap((n) => n.station.codes.split(' / ').map((c) => c.replace(/\d.*$/, ''))),
+    );
     try {
       const lines = await loadLines();
       if (seq !== mrtSeq) return;
@@ -2094,7 +2096,9 @@ import LeafletMap from '../components/LeafletMap.astro';
     }).addTo(routeLayer);
     flatMarker?.bringToFront(); // hide the line's start under the red dot, not inside it
 
-    setStation(near, nearby.slice(1));
+    // The map shows every station in range, but the card stays focused on the three closest
+    // MRTs (the highlighted nearest plus the next two).
+    setStation(near, nearby.slice(1, 3));
 
     // Frame the flat and every station shown, so the within-radius pins are actually visible.
     // Only refit when something falls outside the current view, to avoid a jump; maxZoom keeps
