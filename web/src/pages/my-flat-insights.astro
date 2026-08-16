@@ -1912,8 +1912,19 @@ import LeafletMap from '../components/LeafletMap.astro';
   // groups separate means every bubble is a pure category with an exact count (a food "11" is 11
   // eateries, never "11, mostly food"). Overlap only happens when two categories sit at the same
   // spot, which is rare.
+  // Since groups don't know about each other, two categories at the same spot would stack their
+  // bubbles and hide a count. Fan each category a few px off the true point in a fixed triangle so
+  // coincident bubbles stagger and every count pill stays visible. The nudge is small enough that
+  // an isolated cluster still reads as "here". iconAnchor is [17,17] (centre) shifted by (-dx,-dy),
+  // so the icon lands at (point + [dx,dy]).
+  const CLUSTER_NUDGE: Record<string, [number, number]> = {
+    hawker: [0, -14],
+    supermarket: [-14, 8],
+    mall: [14, 8],
+  };
   function amenityClusterIcon(cat: string, total: number) {
     const m = AMENITY_META[cat];
+    const [dx, dy] = CLUSTER_NUDGE[cat] ?? [0, 0];
     return L.divIcon({
       className: 'am-cluster',
       html:
@@ -1921,7 +1932,7 @@ import LeafletMap from '../components/LeafletMap.astro';
         `<svg viewBox="0 0 24 24" aria-hidden="true">${m.glyph}</svg></span>` +
         `<span class="am-cluster-count">${total}</span>`,
       iconSize: [34, 34],
-      iconAnchor: [17, 17],
+      iconAnchor: [17 - dx, 17 - dy],
     });
   }
   function makeAmenityCluster(cat: string) {
