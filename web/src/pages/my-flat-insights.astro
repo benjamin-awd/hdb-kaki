@@ -271,7 +271,7 @@ import LeafletMap from '../components/LeafletMap.astro';
 
       <!-- 04 LEASE & VALUE RUNWAY -->
       <SecHead num="04" title="Lease & value runway">
-        How prices soften as the lease runs down — and the ages that affect CPF & loans.
+        How prices soften as the lease runs down, and the thresholds that affect CPF & loans.
       </SecHead>
 
       <div class="card lease-card">
@@ -282,15 +282,24 @@ import LeafletMap from '../components/LeafletMap.astro';
             ></span
           >
         </div>
-        <div class="decay">
-          <div class="grad"></div>
-          <div class="ticks">
-            <span>99</span><span>80</span><span>60</span><span>40</span><span>20</span><span>0</span
-            >
+        <div class="segbar">
+          <div class="segtrack">
+            <div class="seg s1" style="flex: 39">
+              <span class="lab">Full CPF &amp; HDB loan<small>99-60y</small></span>
+            </div>
+            <div class="seg s2" style="flex: 30">
+              <span class="lab">Bank tenure tightens<small>60-30y</small></span>
+            </div>
+            <div class="seg s3" style="flex: 10">
+              <span class="lab">CPF limited<small>30-20y</small></span>
+            </div>
+            <div class="seg s4" style="flex: 20">
+              <span class="lab">No CPF<small>20-0y</small></span>
+            </div>
           </div>
           <div class="now" id="lease-now"></div>
+          <div class="segcap"><span>99 yrs</span><span>0 yrs</span></div>
         </div>
-        <div class="lease-flags" id="lease-flags"></div>
       </div>
 
       <ChartCard
@@ -723,29 +732,65 @@ import LeafletMap from '../components/LeafletMap.astro';
     color: var(--ink);
     font-family: var(--font-mono);
   }
-  .decay {
+  .segbar {
     position: relative;
-    height: 34px;
+    margin-top: 26px;
+  }
+  .segtrack {
+    display: flex;
+    height: 46px;
     border-radius: 10px;
     overflow: hidden;
   }
-  .decay .grad {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(90deg, #cfe7d7, #f0dfc0 55%, #f2c9c2);
+  .seg {
+    position: relative;
+    display: grid;
+    place-items: center;
+    padding: 0 6px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.15;
+    text-align: center;
+    color: var(--ink-2);
+    border-right: 2px solid var(--paper-2);
   }
-  .decay .now {
+  .seg:last-child {
+    border-right: 0;
+  }
+  .seg.s1 {
+    background: #d3e7d9;
+  }
+  .seg.s2 {
+    background: #e9e4c9;
+  }
+  .seg.s3 {
+    background: #f2dcc4;
+  }
+  .seg.s4 {
+    background: #f2c9c2;
+  }
+  .seg .lab small {
+    display: block;
+    margin-top: 2px;
+    font-weight: 400;
+    font-size: 9.5px;
+    color: var(--ink-3);
+    font-family: var(--font-mono);
+  }
+  .segbar .now {
     position: absolute;
-    top: 0;
-    bottom: 0;
+    top: -6px;
+    height: 58px;
     width: 3px;
     background: var(--ink);
+    z-index: 2;
   }
-  .decay .now::after {
+  .segbar .now::after {
     content: attr(data-label);
     position: absolute;
-    top: -1px;
-    left: 8px;
+    top: -22px;
+    left: 50%;
+    transform: translateX(-50%);
     font-size: 11px;
     font-weight: 600;
     background: var(--ink);
@@ -754,16 +799,22 @@ import LeafletMap from '../components/LeafletMap.astro';
     border-radius: 6px;
     white-space: nowrap;
   }
-  .decay .ticks {
-    position: absolute;
-    inset: 0;
+  .segcap {
     display: flex;
     justify-content: space-between;
-    padding: 0 10px;
-    align-items: center;
+    padding: 0 2px;
+    margin-top: 8px;
     font-size: 10.5px;
-    color: #7a7264;
+    color: var(--ink-3);
     font-family: var(--font-mono);
+  }
+  @media (max-width: 560px) {
+    .seg {
+      font-size: 10px;
+    }
+    .seg .lab small {
+      display: none;
+    }
   }
   /* comps */
   .comp-wrap {
@@ -1154,40 +1205,6 @@ import LeafletMap from '../components/LeafletMap.astro';
     color: var(--ink-3);
   }
   /* lease threshold flags */
-  .lease-flags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin-top: 16px;
-  }
-  .lease-flag {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 10px 14px;
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    background: var(--paper);
-    min-width: 150px;
-  }
-  .lease-flag .lf-k {
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    color: var(--ink-3);
-  }
-  .lease-flag .lf-v {
-    font-size: 13.5px;
-    color: var(--ink);
-  }
-  .lease-flag .lf-v b {
-    font-family: var(--font-mono);
-  }
-  .lease-flag.warn {
-    border-color: var(--red);
-    background: var(--red-wash);
-  }
   @media (max-width: 900px) {
     .form-grid {
       grid-template-columns: 1fr 1fr;
@@ -2090,34 +2107,6 @@ import LeafletMap from '../components/LeafletMap.astro';
     });
   }
 
-  // 04 · CPF / financing thresholds keyed off remaining lease (informational).
-  function renderLeaseFlags(rem: number) {
-    const flags = [
-      {
-        at: 60,
-        k: 'Full CPF & HDB loan',
-        ok: 'Available at your lease',
-        warn: 'Restricted below 60 yrs',
-      },
-      {
-        at: 30,
-        k: 'Bank loan tenure',
-        ok: 'Longer tenures possible',
-        warn: 'Tighter below 30 yrs',
-      },
-      { at: 20, k: 'CPF usage floor', ok: 'CPF can be used', warn: 'Blocked below 20 yrs' },
-    ];
-    $('lease-flags').innerHTML = flags
-      .map((f) => {
-        const ok = rem >= f.at;
-        const yrsTo = rem - f.at;
-        return `<div class="lease-flag ${ok ? '' : 'warn'}">
-        <span class="lf-k">${f.k}</span>
-        <span class="lf-v">${ok ? `${f.ok} · <b>${yrsTo}</b> yrs of headroom` : f.warn}</span></div>`;
-      })
-      .join('');
-  }
-
   // ---- compute valuation + benchmarks + comparables ----
   async function compute() {
     const flat = ($('f-flat') as HTMLSelectElement).value;
@@ -2235,7 +2224,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     $('lease-start').textContent = block.lc ? String(block.lc) : '—';
     const nowEl = $('lease-now') as HTMLElement;
     nowEl.style.left = `${((99 - rem) / 99) * 100}%`;
-    nowEl.setAttribute('data-label', `${rem} yrs left`);
+    nowEl.setAttribute('data-label', `You are here · ${rem}y`);
 
     // comparables table (same street first, then recency)
     const sameStreet = (c: any) => c.street_name === block.street;
@@ -2282,9 +2271,6 @@ import LeafletMap from '../components/LeafletMap.astro';
       $('mt-lo').textContent = moneyShort(loC.price);
       $('mt-lo-s').textContent = `${titleCase(loC.address)} · ${loC.month}`;
     }
-
-    // 04 · lease thresholds (client-side, from remaining lease)
-    renderLeaseFlags(rem);
 
     // 02/04 · trajectory + lease-decay curves came from the same worker round-trip above
     // (they need wider history than the comps window).
