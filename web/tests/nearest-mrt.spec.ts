@@ -2,8 +2,8 @@ import { test, expect } from '@playwright/test';
 
 // Nearest-MRT distance + nearby amenities on My Flat Insights. Resolving a postal draws the
 // flat, its nearest station, and a straight-line dash to it (computed on-device). This asserts
-// the observable end state: a station marker, a line, and the strip's distance lead + "to
-// <Station> MRT" line.
+// the observable end state: a station marker, a line, and the station card's headline (name,
+// distance, walk time) plus its nearby-stations list.
 
 test('shows straight-line distance to the nearest MRT', async ({ page }) => {
   await page.goto('/my-flat-insights/');
@@ -15,12 +15,16 @@ test('shows straight-line distance to the nearest MRT', async ({ page }) => {
   // Wait for the valuation so we know resolveBlock() + compute() have run.
   await expect(page.locator('#f-postal-sub')).toContainText('Punggol', { timeout: 45_000 });
 
-  // The strip reveals once the nearest station resolves.
-  const strip = page.locator('#ins-walk');
-  await expect(strip).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator('#ins-walk-lead')).toContainText(/^\d+(\.\d+)?\s*(m|km)$/);
-  await expect(page.locator('#ins-walk-main')).toContainText(/to .+ (MRT|LRT)/);
-  await expect(page.locator('#ins-walk-sub')).toContainText(/straight-line/);
+  // The station card reveals once the nearest station resolves.
+  const card = page.locator('#ins-walk');
+  await expect(card).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('#sc-name')).not.toBeEmpty();
+  await expect(page.locator('#sc-dist')).toContainText(/^\d+(\.\d+)?$/);
+  await expect(page.locator('#sc-unit')).toContainText(/^(m|km)$/);
+  await expect(page.locator('#sc-walk')).toContainText(/min walk/);
+  // The nearby list carries the nearest station (a line badge + a "~N min" walk time).
+  await expect(page.locator('#sc-nearby .sc-row').first()).toBeVisible();
+  await expect(page.locator('#sc-nearby .sc-row-min').first()).toContainText(/~\d+ min/);
 
   // The station marker (divIcon) and the distance line are both on the map.
   await expect(page.locator('.mrt-pin')).toHaveCount(1);
