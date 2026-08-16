@@ -394,14 +394,18 @@ import LeafletMap from '../components/LeafletMap.astro';
 
       <div class="ins-map-col">
         <div class="amenity-modes" id="ins-amenities" aria-label="Show nearby amenities" hidden>
-          <button type="button" class="am-chip" data-cat="hawker" aria-pressed="false">
+          <button type="button" class="am-chip on" data-cat="hawker" aria-pressed="true">
             <span class="am-dot" style="background: #d98a2b"></span>Food
           </button>
-          <button type="button" class="am-chip" data-cat="supermarket" aria-pressed="false">
+          <button type="button" class="am-chip on" data-cat="supermarket" aria-pressed="true">
             <span class="am-dot" style="background: #2f9e8f"></span>Supermarkets
           </button>
-          <button type="button" class="am-chip" data-cat="mall" aria-pressed="false">
+          <button type="button" class="am-chip on" data-cat="mall" aria-pressed="true">
             <span class="am-dot" style="background: #3b6ea5"></span>Malls
+          </button>
+          <span class="am-sep" aria-hidden="true"></span>
+          <button type="button" class="am-chip" data-layer="comps" aria-pressed="false">
+            <span class="am-dot" style="background: #c9bfae"></span>Recent sales
           </button>
         </div>
         <LeafletMap id="ins-map" minHeight="480px" />
@@ -930,6 +934,13 @@ import LeafletMap from '../components/LeafletMap.astro';
     outline: 2px solid var(--ink);
     outline-offset: 2px;
   }
+  /* Divides the amenity chips from the market-signal (recent sales) chip. */
+  .am-sep {
+    align-self: stretch;
+    width: 1px;
+    background: var(--line);
+    margin: 2px 2px;
+  }
   .am-dot {
     width: 10px;
     height: 10px;
@@ -1173,33 +1184,83 @@ import LeafletMap from '../components/LeafletMap.astro';
     border-radius: 999px;
     border: 1.5px solid var(--paper-2);
     box-shadow: var(--shadow);
+    transition: transform 0.12s ease;
   }
   :global(.am-pin .am-badge svg) {
     display: block;
     width: 12px;
     height: 12px;
   }
-  /* :global — marker clusters are built by leaflet.markercluster at runtime. Override the plugin's
-     default green/amber/orange bubbles with one neutral warm-grey chip and a FIXED mono count, so
-     clusters read as on-brand and stay the same size at every zoom level (the default CSS varies
-     the bubble by size class, which made the count look inconsistent as you zoomed). */
-  :global(.map-real .marker-cluster) {
-    background: rgba(140, 132, 121, 0.3);
+  /* Hover raises and enlarges the badge — a light "focus" cue. */
+  :global(.am-pin:hover) {
+    z-index: 650 !important;
   }
-  :global(.map-real .marker-cluster div) {
-    width: 32px;
-    height: 32px;
-    margin: 4px;
+  :global(.am-pin:hover .am-badge) {
+    transform: scale(1.25);
+  }
+  /* :global — amenity "cloverleaf" cluster (our iconCreateFunction): up to three category circles
+     packed into a small triangle, each with its own count pill, so a mixed cluster shows the whole
+     breakdown (2 food / 2 malls / 1 supermarket) at its true location. A single-category cluster
+     collapses to one circle. Count pills sit on the outward corner so they never hide behind a
+     neighbouring leaf. */
+  :global(.am-clover .am-clover-box) {
+    position: relative;
+    width: 50px;
+    height: 46px;
+  }
+  :global(.am-clover .am-leaf) {
+    position: absolute;
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
     border-radius: 999px;
-    background: rgba(232, 226, 215, 0.95);
-    color: var(--ink);
+    border: 2px solid var(--paper-2);
+    box-shadow: var(--shadow);
+    transition: transform 0.12s ease;
   }
-  :global(.map-real .marker-cluster span) {
+  :global(.am-clover .am-leaf svg) {
+    display: block;
+    width: 16px;
+    height: 16px;
+  }
+  :global(.am-clover:hover) {
+    z-index: 650 !important;
+  }
+  :global(.am-clover:hover .am-leaf) {
+    transform: scale(1.08);
+  }
+  :global(.am-clover .am-leaf-n) {
+    position: absolute;
+    min-width: 15px;
+    height: 15px;
+    padding: 0 3px;
+    border-radius: 999px;
+    background: var(--ink);
+    color: var(--paper);
     font-family: var(--font-mono);
     font-weight: 600;
-    font-size: 12px;
-    line-height: 32px;
+    font-size: 9px;
+    line-height: 12px;
+    text-align: center;
+    border: 1.5px solid var(--paper-2);
     font-feature-settings: 'tnum' 1;
+  }
+  :global(.am-clover .am-leaf-n.tr) {
+    top: -4px;
+    right: -5px;
+  }
+  :global(.am-clover .am-leaf-n.tl) {
+    top: -4px;
+    left: -5px;
+  }
+  :global(.am-clover .am-leaf-n.bl) {
+    bottom: -4px;
+    left: -5px;
+  }
+  :global(.am-clover .am-leaf-n.br) {
+    bottom: -4px;
+    right: -5px;
   }
   /* :global — comparables rows are injected via innerHTML */
   :global(.addr b) {
@@ -1664,7 +1725,12 @@ import LeafletMap from '../components/LeafletMap.astro';
       });
       document.addEventListener('fullscreenchange', () => {
         paint();
-        setTimeout(() => map.invalidateSize(), 120);
+        // Re-fit to the 10-min ring after the container resizes, so fullscreen shows exactly the
+        // short-walk range (and nothing beyond) instead of just revealing more map at the old zoom.
+        setTimeout(() => {
+          map.invalidateSize();
+          fitToReach();
+        }, 120);
       });
       return bar;
     },
@@ -1672,6 +1738,11 @@ import LeafletMap from '../components/LeafletMap.astro';
   map.addControl(new FsControl({ position: 'topleft' }));
 
   const layer = L.layerGroup().addTo(map);
+  // Recent sales (comps) are a market signal, not an amenity, and they crowd the central rings once
+  // the flat/MRT/reach layers are drawn. Keep them in their own layer that's OFF by default — the
+  // pins are always redrawn here on compute() so toggling on is instant, but the layer only joins
+  // the map when the user asks for it.
+  const compsLayer = L.layerGroup();
   // Nearest-MRT walking route lives in its own layer so a re-compute can redraw it without
   // touching the comp pins. Ink, not green: green is reserved for positive market direction, so
   // a neutral path keeps the one red for the flat. Leaflet strokes SVG via the `stroke`
@@ -1683,16 +1754,16 @@ import LeafletMap from '../components/LeafletMap.astro';
   // the marker's edge, not from a dash inside the red dot.
   let flatMarker: L.CircleMarker | null = null;
 
-  // Walking-reach rings (5/10/15 min ≈ 400/800/1200 m) sit under the pins in their own layer so a
+  // Walking-reach rings (5/10 min ≈ 400/800 m) sit under the pins in their own layer so a
   // re-compute redraws them cleanly. Read the editorial red to a concrete string (SVG stroke can't
   // resolve a CSS var); the rings are non-interactive so they never steal a pin's tooltip.
+  // Only two rings: the 15-min ring rarely earns its ink at this zoom and crowds the centre.
   const reachLayer = L.layerGroup().addTo(map);
   const redColor =
     getComputedStyle(document.documentElement).getPropertyValue('--red').trim() || '#fe012b';
   const REACH_RINGS: { meters: number; label: string; fill: number }[] = [
     { meters: 400, label: '5 min', fill: 0.05 },
     { meters: 800, label: '10 min', fill: 0.035 },
-    { meters: 1200, label: '15 min', fill: 0.02 },
   ];
   // Rings around the flat, each labelled at its northern edge. Largest first so inner fills stack.
   function drawReachRings(center: [number, number]) {
@@ -1715,6 +1786,15 @@ import LeafletMap from '../components/LeafletMap.astro';
         icon: L.divIcon({ className: 'reach-label', html: ring.label, iconSize: [46, 16] }),
       }).addTo(reachLayer);
     }
+  }
+  // Frame the map on the 10-minute walking ring around the flat: everything a short walk away fills
+  // the view, nothing beyond it. Reused on first compute and whenever the container resizes
+  // (fullscreen), so the visible range stays "10 minutes" regardless of screen size. Leaflet fits
+  // the bounds to whatever the container is at call time, so the zoom adapts to the screen.
+  function fitToReach() {
+    if (!userLatLng) return;
+    const tenMinM = REACH_RINGS[1]?.meters ?? 800;
+    map.fitBounds(L.latLng(userLatLng[0], userLatLng[1]).toBounds(2 * tenMinM));
   }
 
   // MRT/LRT line colours keyed by code prefix. Used only to tint the single nearest-station
@@ -1839,13 +1919,96 @@ import LeafletMap from '../components/LeafletMap.astro';
   // Amenities cluster: dense towns have 100+ food places within 1 km, so individual pins would be
   // soup. Cluster them (same pattern as Town Analysis) — counts collapse, pins expand on zoom, so
   // everything nearby is reachable rather than truncated to an arbitrary few.
+  //
+  // ONE shared cluster group for all categories. When several categories fall in the same spot they
+  // merge into a single "cloverleaf" bubble — a small triangle of category circles, each with its
+  // own count — instead of stacking separate per-category bubbles that would occlude each other.
+  // This keeps every bubble at its true location (no position-shifting declutter) while still
+  // showing the full mix (2 food / 2 malls / 1 supermarket), and it naturally handles two categories
+  // sharing one building: they stay one cloverleaf until you zoom in far enough to split them.
+  const CAT_ORDER = ['hawker', 'supermarket', 'mall'];
+  // Leaf slots by how many categories are present: [x, y, count-pill corner]. Pills point outward so
+  // they never hide behind a neighbouring leaf. Box is 50×46 with the anchor at its centre.
+  const CLOVER_SLOTS: Record<number, [number, number, string][]> = {
+    1: [[12, 10, 'tr']],
+    2: [
+      [1, 10, 'tl'],
+      [25, 10, 'tr'],
+    ],
+    3: [
+      [12, 0, 'tr'],
+      [1, 22, 'bl'],
+      [25, 22, 'br'],
+    ],
+  };
+  function cloverIcon(counts: Record<string, number>) {
+    const cats = CAT_ORDER.filter((c) => counts[c] > 0);
+    const slots = CLOVER_SLOTS[cats.length] ?? CLOVER_SLOTS[1];
+    const leaves = cats
+      .map((c, i) => {
+        const [x, y, corner] = slots[i];
+        const m = AMENITY_META[c];
+        return (
+          `<span class="am-leaf" style="left:${x}px;top:${y}px;background:${m.color}">` +
+          `<svg viewBox="0 0 24 24" aria-hidden="true">${m.glyph}</svg>` +
+          `<span class="am-leaf-n ${corner}">${counts[c]}</span></span>`
+        );
+      })
+      .join('');
+    return L.divIcon({
+      className: 'am-clover',
+      html: `<span class="am-clover-box">${leaves}</span>`,
+      iconSize: [50, 46],
+      iconAnchor: [25, 23],
+    });
+  }
+  // Tally per category. `amenityN` weights each marker: 1 for a supermarket/mall, but a food block's
+  // eatery count, so food totals read as eateries not blocks.
+  function clusterCounts(cluster: any): Record<string, number> {
+    const counts: Record<string, number> = {};
+    for (const mk of cluster.getAllChildMarkers()) {
+      const c = mk.options?.amenityCat as string | undefined;
+      if (c) counts[c] = (counts[c] ?? 0) + (mk.options?.amenityN ?? 1);
+    }
+    return counts;
+  }
   const amenityLayer = (L as any).markerClusterGroup({
-    maxClusterRadius: 45,
+    // Wider than the default so nearby pins collapse into one count instead of a scatter of raw
+    // dots sitting under half-formed clusters — keeps the centre readable at the default zoom.
+    maxClusterRadius: 70,
     showCoverageOnHover: false,
     chunkedLoading: true,
+    iconCreateFunction: (cluster: any) => cloverIcon(clusterCounts(cluster)),
   });
   amenityLayer.addTo(map);
-  const shownCats = new Set<string>();
+  // Hover a cloverleaf: a sticky tooltip (follows the cursor) spelling the mix out in words, since
+  // the glyph colours alone don't say which is which.
+  // Singular/plural noun per category for the breakdown ("1 supermarket" vs "3 supermarkets"). Food
+  // counts EATERIES (summed from each block's `n`), not blocks, so "2 food places" can't understate
+  // a hawker centre that stacks a dozen stalls — see clusterCounts.
+  const AM_NOUN: Record<string, [string, string]> = {
+    hawker: ['eatery', 'eateries'],
+    supermarket: ['supermarket', 'supermarkets'],
+    mall: ['mall', 'malls'],
+  };
+  amenityLayer.on('clustermouseover', (e: any) => {
+    const counts = clusterCounts(e.layer);
+    const txt = CAT_ORDER.filter((c) => counts[c])
+      .map((c) => `${counts[c]} ${AM_NOUN[c][counts[c] === 1 ? 0 : 1]}`)
+      .join(' · ');
+    e.layer
+      .bindTooltip(txt, {
+        sticky: true,
+        direction: 'top',
+        offset: [0, -8],
+        opacity: 1,
+        className: 'hdb-tip',
+      })
+      .openTooltip();
+  });
+  amenityLayer.on('clustermouseout', (e: any) => e.layer.closeTooltip());
+  // Food/supermarkets/malls are shown by default (chips start engaged in the markup to match).
+  const shownCats = new Set<string>(Object.keys(AMENITY_META));
   // Food entries compile every eatery at a block into one point: `n` counts them and `names` lists
   // a few for the tooltip. Supermarkets/malls are single places (no n/names).
   type Place = { name: string; lat: number; lng: number; n?: number; names?: string[] };
@@ -1912,8 +2075,17 @@ import LeafletMap from '../components/LeafletMap.astro';
         } else {
           title = `<b>${a.name}</b>`;
         }
-        L.marker([a.lat, a.lng], { icon: amenityIcon(cat), keyboard: false })
+        // `amenityCat`/`amenityN` are read by clusterCounts to tally the cloverleaf breakdown; food
+        // blocks carry their eatery count so the cluster total reads as eateries, not blocks.
+        L.marker([a.lat, a.lng], {
+          icon: amenityIcon(cat),
+          keyboard: false,
+          amenityCat: cat,
+          amenityN: a.n ?? 1,
+        } as any)
           .bindTooltip(`${title}<br/>${label} · ${Math.round(d)} m`, {
+            // Sticky so the tooltip tracks the cursor rather than the marker's fixed anchor.
+            sticky: true,
             direction: 'top',
             offset: [0, -8],
             opacity: 1,
@@ -2510,8 +2682,9 @@ import LeafletMap from '../components/LeafletMap.astro';
       leaseInTown ? titleCase(block.town) : null,
     );
 
-    // map: comps (grey) + your block (red)
+    // map: comps (grey, own toggleable layer) + your block (red, always shown)
     layer.clearLayers();
+    compsLayer.clearLayers();
     const pts: [number, number][] = [];
     comps.forEach((c) => {
       if (c.lat == null || c.lng == null) return;
@@ -2527,7 +2700,7 @@ import LeafletMap from '../components/LeafletMap.astro';
           `<b>${titleCase(c.address)}</b><br/>${c.month} · ${c.storey_range}<br/><b>${money(c.price)}</b> · ${fpsf(c.psf)} psf`,
           { direction: 'top', offset: [0, -6], opacity: 1, className: 'hdb-tip' },
         )
-        .addTo(layer);
+        .addTo(compsLayer);
     });
     if (userLatLng) {
       pts.push(userLatLng);
@@ -2546,9 +2719,8 @@ import LeafletMap from '../components/LeafletMap.astro';
     }
     // Default the view to the 10-minute walking ring (800 m) around the flat, so "what's a short
     // walk away" fills the frame. Fall back to the comps bounds when we have no flat location.
-    const tenMinM = REACH_RINGS[1]?.meters ?? 800;
     if (userLatLng) {
-      map.fitBounds(L.latLng(userLatLng[0], userLatLng[1]).toBounds(2 * tenMinM));
+      fitToReach();
     } else if (pts.length) {
       map.fitBounds(L.latLngBounds(pts).pad(0.15));
     }
@@ -2622,7 +2794,7 @@ import LeafletMap from '../components/LeafletMap.astro';
   // Amenity category chips: each toggles its layer of nearby hawker/food, supermarket, or mall
   // pins. Independent (multi-select); toggling only redraws the amenity layer, no re-valuation.
   $('ins-amenities')
-    .querySelectorAll<HTMLButtonElement>('.am-chip')
+    .querySelectorAll<HTMLButtonElement>('.am-chip[data-cat]')
     .forEach((btn) =>
       btn.addEventListener('click', () => {
         const cat = btn.dataset.cat as string;
@@ -2634,6 +2806,18 @@ import LeafletMap from '../components/LeafletMap.astro';
         if (userLatLng) drawAmenities(userLatLng);
       }),
     );
+  // Recent sales: a market-signal layer, off by default. Comps are always redrawn into compsLayer
+  // on compute(), so this just adds/removes that layer from the map — no re-valuation.
+  const compsChip = $('ins-amenities').querySelector<HTMLButtonElement>(
+    '.am-chip[data-layer="comps"]',
+  );
+  compsChip?.addEventListener('click', () => {
+    const on = !map.hasLayer(compsLayer);
+    if (on) compsLayer.addTo(map);
+    else map.removeLayer(compsLayer);
+    compsChip.classList.toggle('on', on);
+    compsChip.setAttribute('aria-pressed', String(on));
+  });
   // Returns panel recomputes locally from the current estimate — no worker round-trip.
   $('r-paid').addEventListener('input', () => {
     formatPaid();
