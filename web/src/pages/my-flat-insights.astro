@@ -1175,18 +1175,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     height: 15px;
   }
   /* :global — amenity pins are Leaflet divIcons: a small category-coloured round badge, sized
-     below the MRT badge so amenities read as secondary. `.am-shift` is the declutter handle the JS
-     translates to spread coincident badges; it must not clip so an offset badge stays visible. */
-  :global(.am-pin .am-shift),
-  :global(.am-cluster .am-shift) {
-    display: block;
-    position: relative;
-    transition: transform 0.12s ease;
-  }
-  :global(.am-cluster .am-shift) {
-    width: 34px;
-    height: 34px;
-  }
+     below the MRT badge so amenities read as secondary. */
   :global(.am-pin .am-badge) {
     display: grid;
     place-items: center;
@@ -1202,80 +1191,76 @@ import LeafletMap from '../components/LeafletMap.astro';
     width: 12px;
     height: 12px;
   }
-  /* Hover raises and enlarges the badge — a light "focus" cue, and the inspection escape hatch for
-     any residual overlap. */
+  /* Hover raises and enlarges the badge — a light "focus" cue. */
   :global(.am-pin:hover) {
     z-index: 650 !important;
   }
   :global(.am-pin:hover .am-badge) {
     transform: scale(1.25);
   }
-  /* :global — marker clusters are built by leaflet.markercluster at runtime. Override the plugin's
-     default green/amber/orange bubbles with one neutral warm-grey chip and a FIXED mono count, so
-     clusters read as on-brand and stay the same size at every zoom level (the default CSS varies
-     the bubble by size class, which made the count look inconsistent as you zoomed). */
-  :global(.map-real .marker-cluster) {
-    background: rgba(140, 132, 121, 0.3);
-  }
-  :global(.map-real .marker-cluster div) {
-    width: 32px;
-    height: 32px;
-    margin: 4px;
-    border-radius: 999px;
-    background: rgba(232, 226, 215, 0.95);
-    color: var(--ink);
-  }
-  :global(.map-real .marker-cluster span) {
-    font-family: var(--font-mono);
-    font-weight: 600;
-    font-size: 12px;
-    line-height: 32px;
-    font-feature-settings: 'tnum' 1;
-  }
-  /* :global — amenity clusters (our iconCreateFunction): a category-coloured glyph badge with the
-     child count in a corner pill, so the cluster reads as an icon rather than a neutral count
-     bubble. Larger than a single am-pin so a cluster still reads as "several". */
-  :global(.am-cluster) {
+  /* :global — amenity "cloverleaf" cluster (our iconCreateFunction): up to three category circles
+     packed into a small triangle, each with its own count pill, so a mixed cluster shows the whole
+     breakdown (2 food / 2 malls / 1 supermarket) at its true location. A single-category cluster
+     collapses to one circle. Count pills sit on the outward corner so they never hide behind a
+     neighbouring leaf. */
+  :global(.am-clover .am-clover-box) {
     position: relative;
+    width: 50px;
+    height: 46px;
   }
-  :global(.am-cluster .am-cluster-badge) {
+  :global(.am-clover .am-leaf) {
+    position: absolute;
     display: grid;
     place-items: center;
-    width: 30px;
-    height: 30px;
+    width: 26px;
+    height: 26px;
     border-radius: 999px;
     border: 2px solid var(--paper-2);
     box-shadow: var(--shadow);
     transition: transform 0.12s ease;
   }
-  :global(.am-cluster:hover) {
+  :global(.am-clover .am-leaf svg) {
+    display: block;
+    width: 16px;
+    height: 16px;
+  }
+  :global(.am-clover:hover) {
     z-index: 650 !important;
   }
-  :global(.am-cluster:hover .am-cluster-badge) {
-    transform: scale(1.16);
+  :global(.am-clover:hover .am-leaf) {
+    transform: scale(1.08);
   }
-  :global(.am-cluster .am-cluster-badge svg) {
-    display: block;
-    width: 18px;
-    height: 18px;
-  }
-  :global(.am-cluster .am-cluster-count) {
+  :global(.am-clover .am-leaf-n) {
     position: absolute;
-    top: -5px;
-    right: -5px;
-    min-width: 17px;
-    height: 17px;
-    padding: 0 4px;
+    min-width: 15px;
+    height: 15px;
+    padding: 0 3px;
     border-radius: 999px;
     background: var(--ink);
     color: var(--paper);
     font-family: var(--font-mono);
     font-weight: 600;
-    font-size: 10px;
-    line-height: 15px;
+    font-size: 9px;
+    line-height: 12px;
     text-align: center;
     border: 1.5px solid var(--paper-2);
     font-feature-settings: 'tnum' 1;
+  }
+  :global(.am-clover .am-leaf-n.tr) {
+    top: -4px;
+    right: -5px;
+  }
+  :global(.am-clover .am-leaf-n.tl) {
+    top: -4px;
+    left: -5px;
+  }
+  :global(.am-clover .am-leaf-n.bl) {
+    bottom: -4px;
+    left: -5px;
+  }
+  :global(.am-clover .am-leaf-n.br) {
+    bottom: -4px;
+    right: -5px;
   }
   /* :global — comparables rows are injected via innerHTML */
   :global(.addr b) {
@@ -1934,111 +1919,84 @@ import LeafletMap from '../components/LeafletMap.astro';
   // Amenities cluster: dense towns have 100+ food places within 1 km, so individual pins would be
   // soup. Cluster them (same pattern as Town Analysis) — counts collapse, pins expand on zoom, so
   // everything nearby is reachable rather than truncated to an arbitrary few.
-  // One cluster group PER category, not one shared group. A shared group merges nearby food +
-  // supermarket + mall into a single bubble that can only show one glyph, hiding the rest; keeping
-  // groups separate means every bubble is a pure category with an exact count (a food "11" is 11
-  // eateries, never "11, mostly food"). Overlap only happens when two categories sit at the same
-  // spot, which is rare.
-  // The inner `.am-shift` span is what the declutter engine (below) translates to spread coincident
-  // markers; the outer element stays where Leaflet positions it, so our offset never fights the
-  // plugin's own transforms. The count pill lives inside `.am-shift` too, so it moves with its badge.
-  function amenityClusterIcon(cat: string, total: number) {
-    const m = AMENITY_META[cat];
-    return L.divIcon({
-      className: 'am-cluster',
-      html:
-        `<span class="am-shift">` +
-        `<span class="am-cluster-badge" style="background:${m.color}">` +
-        `<svg viewBox="0 0 24 24" aria-hidden="true">${m.glyph}</svg></span>` +
-        `<span class="am-cluster-count">${total}</span></span>`,
-      iconSize: [34, 34],
-      iconAnchor: [17, 17],
-    });
-  }
-  function makeAmenityCluster(cat: string) {
-    return (L as any).markerClusterGroup({
-      // Wider than the default so nearby pins collapse into one count instead of a scatter of raw
-      // dots sitting under half-formed clusters — keeps the centre readable at the default zoom.
-      maxClusterRadius: 70,
-      showCoverageOnHover: false,
-      chunkedLoading: true,
-      iconCreateFunction: (cluster: any) => amenityClusterIcon(cat, cluster.getChildCount()),
-    });
-  }
-  const amenityLayers: Record<string, any> = {};
-  for (const cat of Object.keys(AMENITY_META)) {
-    amenityLayers[cat] = makeAmenityCluster(cat).addTo(map);
-  }
-
-  // Collision-aware declutter. Because each category clusters independently, two categories can land
-  // a food+supermarket badge on the same pixel and occlude one another. A fixed per-category nudge
-  // can't fix this (it helps at one zoom and collides at the next), so instead we spread ONLY the
-  // markers that actually overlap at the current zoom: measure every visible badge, union nearby
-  // ones, and fan each collision group onto a small circle via the inner `.am-shift`. Markers that
-  // are already apart (e.g. zoomed in) get no shift, so the map stays honest where it can.
-  const COLLIDE_PX = 30;
-  function declutterAmenities() {
-    const root = map.getContainer();
-    const els = Array.from(root.querySelectorAll<HTMLElement>('.am-cluster, .am-pin'));
-    const shifts = els.map((el) => el.querySelector<HTMLElement>('.am-shift'));
-    shifts.forEach((s) => s && (s.style.transform = ''));
-    const centers = els.map((el) => {
-      const r = el.getBoundingClientRect();
-      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-    });
-    const n = els.length;
-    const parent = Array.from({ length: n }, (_, i) => i);
-    const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
-    for (let i = 0; i < n; i++)
-      for (let j = i + 1; j < n; j++)
-        if (Math.hypot(centers[i].x - centers[j].x, centers[i].y - centers[j].y) < COLLIDE_PX)
-          parent[find(i)] = find(j);
-    const groups: Record<number, number[]> = {};
-    for (let i = 0; i < n; i++) (groups[find(i)] ||= []).push(i);
-    for (const key in groups) {
-      const idxs = groups[key];
-      if (idxs.length < 2) continue;
-      const cx = idxs.reduce((s, i) => s + centers[i].x, 0) / idxs.length;
-      const cy = idxs.reduce((s, i) => s + centers[i].y, 0) / idxs.length;
-      const R = 13 + 3 * idxs.length;
-      idxs.forEach((i, k) => {
-        const ang = (2 * Math.PI * k) / idxs.length - Math.PI / 2;
-        const tx = cx + R * Math.cos(ang) - centers[i].x;
-        const ty = cy + R * Math.sin(ang) - centers[i].y;
-        const s = shifts[i];
-        if (s) s.style.transform = `translate(${tx}px, ${ty}px)`;
-      });
-    }
-  }
-  map.on('zoomend moveend', declutterAmenities);
-  // Hover: raise the cluster, and show a count tooltip — a cheap "what's in here" cue before the
-  // click-to-zoom. markercluster fires cluster events on the group; re-declutter after its spawn
-  // animations so freshly-built icons get spread too.
-  const AM_PLURAL: Record<string, string> = {
-    hawker: 'food places',
-    supermarket: 'supermarkets',
-    mall: 'malls',
+  //
+  // ONE shared cluster group for all categories. When several categories fall in the same spot they
+  // merge into a single "cloverleaf" bubble — a small triangle of category circles, each with its
+  // own count — instead of stacking separate per-category bubbles that would occlude each other.
+  // This keeps every bubble at its true location (no position-shifting declutter) while still
+  // showing the full mix (2 food / 2 malls / 1 supermarket), and it naturally handles two categories
+  // sharing one building: they stay one cloverleaf until you zoom in far enough to split them.
+  const CAT_ORDER = ['hawker', 'supermarket', 'mall'];
+  // Leaf slots by how many categories are present: [x, y, count-pill corner]. Pills point outward so
+  // they never hide behind a neighbouring leaf. Box is 50×46 with the anchor at its centre.
+  const CLOVER_SLOTS: Record<number, [number, number, string][]> = {
+    1: [[12, 10, 'tr']],
+    2: [
+      [1, 10, 'tl'],
+      [25, 10, 'tr'],
+    ],
+    3: [
+      [12, 0, 'tr'],
+      [1, 22, 'bl'],
+      [25, 22, 'br'],
+    ],
   };
-  for (const cat of Object.keys(amenityLayers)) {
-    const group = amenityLayers[cat];
-    group.on('animationend', declutterAmenities);
-    group.on('clustermouseover', (e: any) => {
-      const n = e.layer.getChildCount();
-      e.layer
-        .bindTooltip(`${n} nearby ${AM_PLURAL[cat] ?? 'places'}`, {
-          // Sticky: the tooltip follows the cursor, so it sits on the badge the user is hovering.
-          // A fixed anchor would attach to the cluster's true centroid, which the declutter engine
-          // shifts the badge away from — leaving the tooltip stranded off to the side.
-          sticky: true,
-          direction: 'top',
-          offset: [0, -8],
-          opacity: 1,
-          className: 'hdb-tip',
-        })
-        .openTooltip();
+  function cloverIcon(counts: Record<string, number>) {
+    const cats = CAT_ORDER.filter((c) => counts[c] > 0);
+    const slots = CLOVER_SLOTS[cats.length] ?? CLOVER_SLOTS[1];
+    const leaves = cats
+      .map((c, i) => {
+        const [x, y, corner] = slots[i];
+        const m = AMENITY_META[c];
+        return (
+          `<span class="am-leaf" style="left:${x}px;top:${y}px;background:${m.color}">` +
+          `<svg viewBox="0 0 24 24" aria-hidden="true">${m.glyph}</svg>` +
+          `<span class="am-leaf-n ${corner}">${counts[c]}</span></span>`
+        );
+      })
+      .join('');
+    return L.divIcon({
+      className: 'am-clover',
+      html: `<span class="am-clover-box">${leaves}</span>`,
+      iconSize: [50, 46],
+      iconAnchor: [25, 23],
     });
-    group.on('clustermouseout', (e: any) => e.layer.closeTooltip());
   }
+  function clusterCounts(cluster: any): Record<string, number> {
+    const counts: Record<string, number> = {};
+    for (const mk of cluster.getAllChildMarkers()) {
+      const c = mk.options?.amenityCat as string | undefined;
+      if (c) counts[c] = (counts[c] ?? 0) + 1;
+    }
+    return counts;
+  }
+  const amenityLayer = (L as any).markerClusterGroup({
+    // Wider than the default so nearby pins collapse into one count instead of a scatter of raw
+    // dots sitting under half-formed clusters — keeps the centre readable at the default zoom.
+    maxClusterRadius: 70,
+    showCoverageOnHover: false,
+    chunkedLoading: true,
+    iconCreateFunction: (cluster: any) => cloverIcon(clusterCounts(cluster)),
+  });
+  amenityLayer.addTo(map);
+  // Hover a cloverleaf: a sticky tooltip (follows the cursor) spelling the mix out in words, since
+  // the glyph colours alone don't say which is which.
+  amenityLayer.on('clustermouseover', (e: any) => {
+    const counts = clusterCounts(e.layer);
+    const txt = CAT_ORDER.filter((c) => counts[c])
+      .map((c) => `${counts[c]} ${AMENITY_META[c].label.toLowerCase()}`)
+      .join(' · ');
+    e.layer
+      .bindTooltip(txt, {
+        sticky: true,
+        direction: 'top',
+        offset: [0, -8],
+        opacity: 1,
+        className: 'hdb-tip',
+      })
+      .openTooltip();
+  });
+  amenityLayer.on('clustermouseout', (e: any) => e.layer.closeTooltip());
   const shownCats = new Set<string>();
   // Food entries compile every eatery at a block into one point: `n` counts them and `names` lists
   // a few for the tooltip. Supermarkets/malls are single places (no n/names).
@@ -2069,7 +2027,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     const m = AMENITY_META[cat];
     return L.divIcon({
       className: 'am-pin',
-      html: `<span class="am-shift"><span class="am-badge" style="background:${m.color}"><svg viewBox="0 0 24 24" aria-hidden="true">${m.glyph}</svg></span></span>`,
+      html: `<span class="am-badge" style="background:${m.color}"><svg viewBox="0 0 24 24" aria-hidden="true">${m.glyph}</svg></span>`,
       iconSize: [18, 18],
       iconAnchor: [9, 9],
     });
@@ -2081,7 +2039,7 @@ import LeafletMap from '../components/LeafletMap.astro';
   let amenitySeq = 0;
   async function drawAmenities(from: [number, number]) {
     const seq = ++amenitySeq;
-    Object.values(amenityLayers).forEach((l) => l.clearLayers());
+    amenityLayer.clearLayers();
     if (!shownCats.size) return;
     for (const cat of shownCats) {
       let source: Place[];
@@ -2106,21 +2064,23 @@ import LeafletMap from '../components/LeafletMap.astro';
         } else {
           title = `<b>${a.name}</b>`;
         }
-        L.marker([a.lat, a.lng], { icon: amenityIcon(cat), keyboard: false })
+        // `amenityCat` is read by the cluster's iconCreateFunction to tally the cloverleaf breakdown.
+        L.marker([a.lat, a.lng], {
+          icon: amenityIcon(cat),
+          keyboard: false,
+          amenityCat: cat,
+        } as any)
           .bindTooltip(`${title}<br/>${label} · ${Math.round(d)} m`, {
-            // Sticky so the tooltip tracks the cursor: a decluttered pin's badge is CSS-shifted away
-            // from its true anchor, and a fixed tooltip would sit at the anchor, not the badge.
+            // Sticky so the tooltip tracks the cursor rather than the marker's fixed anchor.
             sticky: true,
             direction: 'top',
             offset: [0, -8],
             opacity: 1,
             className: 'hdb-tip',
           })
-          .addTo(amenityLayers[cat]);
+          .addTo(amenityLayer);
       }
     }
-    // Spread any coincident badges once the new markers are in the DOM.
-    requestAnimationFrame(declutterAmenities);
   }
 
   // Compact distance: metres under 1 km, else one-decimal km (mono figures downstream).
@@ -2759,7 +2719,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     } else {
       routeLayer.clearLayers();
       reachLayer.clearLayers();
-      Object.values(amenityLayers).forEach((l) => l.clearLayers());
+      amenityLayer.clearLayers();
       setStation(null);
     }
 
