@@ -394,13 +394,13 @@ import LeafletMap from '../components/LeafletMap.astro';
 
       <div class="ins-map-col">
         <div class="amenity-modes" id="ins-amenities" aria-label="Show nearby amenities" hidden>
-          <button type="button" class="am-chip" data-cat="hawker" aria-pressed="false">
+          <button type="button" class="am-chip on" data-cat="hawker" aria-pressed="true">
             <span class="am-dot" style="background: #d98a2b"></span>Food
           </button>
-          <button type="button" class="am-chip" data-cat="supermarket" aria-pressed="false">
+          <button type="button" class="am-chip on" data-cat="supermarket" aria-pressed="true">
             <span class="am-dot" style="background: #2f9e8f"></span>Supermarkets
           </button>
-          <button type="button" class="am-chip" data-cat="mall" aria-pressed="false">
+          <button type="button" class="am-chip on" data-cat="mall" aria-pressed="true">
             <span class="am-dot" style="background: #3b6ea5"></span>Malls
           </button>
           <span class="am-sep" aria-hidden="true"></span>
@@ -2007,7 +2007,8 @@ import LeafletMap from '../components/LeafletMap.astro';
       .openTooltip();
   });
   amenityLayer.on('clustermouseout', (e: any) => e.layer.closeTooltip());
-  const shownCats = new Set<string>();
+  // Food/supermarkets/malls are shown by default (chips start engaged in the markup to match).
+  const shownCats = new Set<string>(Object.keys(AMENITY_META));
   // Food entries compile every eatery at a block into one point: `n` counts them and `names` lists
   // a few for the tooltip. Supermarkets/malls are single places (no n/names).
   type Place = { name: string; lat: number; lng: number; n?: number; names?: string[] };
