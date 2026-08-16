@@ -361,7 +361,6 @@ import LeafletMap from '../components/LeafletMap.astro';
                 <span class="sc-walk" id="sc-walk"></span>
               </div>
             </div>
-            <p class="sc-stat" id="sc-stat" hidden></p>
           </div>
           <div class="sc-nearby-wrap" id="sc-nearby-wrap">
             <div class="sc-eyebrow">Nearby stations</div>
@@ -941,18 +940,6 @@ import LeafletMap from '../components/LeafletMap.astro';
     font-size: 12px;
     color: var(--ink-3);
   }
-  /* The comparative percentile line. */
-  .sc-stat {
-    margin: 0;
-    padding-top: 10px;
-    border-top: 1px solid var(--line);
-    font-size: 13px;
-    line-height: 1.45;
-    color: var(--ink-2);
-  }
-  .sc-stat[hidden] {
-    display: none;
-  }
   .sc-nearby-wrap {
     margin-top: 16px;
     padding-top: 14px;
@@ -1508,7 +1495,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     red,
   } from '../lib/echartsTheme';
   import { money, moneyShort, psf as fpsf, titleCase, deltaPill } from '../lib/format';
-  import { nearbyStations, nearestStation, haversineMeters, type Station } from '../lib/onemap';
+  import { nearbyStations, haversineMeters, type Station } from '../lib/onemap';
   import { reformatWithCaret, parsePrice, computeReturns } from '../lib/returns';
 
   const NOW_YEAR = new Date().getFullYear();
@@ -1863,12 +1850,11 @@ import LeafletMap from '../components/LeafletMap.astro';
   const walkMins = (m: number) => Math.max(1, Math.round(m / 80));
 
   // Fill the station card beneath the map: the nearest station as a headline (serif name, line
-  // badges, big distance + walk time), an optional comparative stat line, and the nearby stations
-  // as a list. `nearest = null` hides the whole card.
+  // badges, big distance + walk time) and the next-nearest stations as a list. `nearest = null`
+  // hides the whole card.
   function setStation(
     nearest: { station: Station; meters: number } | null,
     nearby: { station: Station; meters: number }[] = [],
-    stat = '',
   ) {
     const card = $('ins-walk');
     const modes = $('ins-amenities');
@@ -1885,9 +1871,6 @@ import LeafletMap from '../components/LeafletMap.astro';
     $('sc-dist').textContent = dp.v;
     $('sc-unit').textContent = dp.u;
     $('sc-walk').textContent = `approx ${walkMins(nearest.meters)} min walk`;
-    const statEl = $('sc-stat');
-    statEl.textContent = stat;
-    statEl.toggleAttribute('hidden', !stat);
     $('sc-nearby-wrap').toggleAttribute('hidden', nearby.length === 0);
     $('sc-nearby').innerHTML = nearby
       .map(
@@ -1905,11 +1888,7 @@ import LeafletMap from '../components/LeafletMap.astro';
   // block's coordinates — nothing leaves the browser). `mrtSeq` drops results from a compute()
   // that's been superseded.
   let mrtSeq = 0;
-  async function updateNearestMrt(
-    from: [number, number],
-    comps: { lat: number | null; lng: number | null }[] = [],
-    town = '',
-  ) {
+  async function updateNearestMrt(from: [number, number]) {
     const seq = ++mrtSeq;
     routeLayer.clearLayers();
     drawReachRings(from); // synchronous, so draw before the async station load
@@ -1921,7 +1900,9 @@ import LeafletMap from '../components/LeafletMap.astro';
       return;
     }
     if (seq !== mrtSeq) return;
-    const nearby = nearbyStations(from[0], from[1], list, 3);
+    // Pull the four closest so the nearby list can show three *other* stations beneath the
+    // highlighted nearest, without repeating it.
+    const nearby = nearbyStations(from[0], from[1], list, 4);
     const near = nearby[0];
     if (!near) {
       setStation(null);
@@ -1961,7 +1942,6 @@ import LeafletMap from '../components/LeafletMap.astro';
       .addTo(routeLayer);
 
     // Straight (as-the-crow-flies) dashed line from the flat to the nearest station.
-    const meters = near.meters;
     L.polyline([from, to], {
       color: routeColor,
       weight: 4,
@@ -1972,19 +1952,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     }).addTo(routeLayer);
     flatMarker?.bringToFront(); // hide the line's start under the red dot, not inside it
 
-    // How central is this flat? Compare its walk to the nearest MRT against the same for every
-    // recent sale in the town (distance is a property of the block, so flat type doesn't matter).
-    // Only shown once the comp set is big enough to read as a distribution.
-    let stat = '';
-    const dists = comps
-      .filter((c) => c.lat != null && c.lng != null)
-      .map((c) => nearestStation(c.lat as number, c.lng as number, list)?.meters)
-      .filter((d): d is number => d != null);
-    if (town && dists.length >= 8) {
-      const pct = Math.round((dists.filter((d) => d > meters).length / dists.length) * 100);
-      if (pct >= 1) stat = `Closer to an MRT than ${pct}% of recent ${town} sales.`;
-    }
-    setStation(near, nearby, stat);
+    setStation(near, nearby.slice(1));
 
     // Widen the view only if the station pokes outside the comps frame, to avoid a jump.
     const b = L.latLngBounds([from, to]);
@@ -2535,7 +2503,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     setTimeout(() => map.invalidateSize(), 50);
     // Nearest-MRT walking route (async; extends the frame only if the station sits outside it).
     if (userLatLng) {
-      updateNearestMrt(userLatLng, comps, titleCase(block.town));
+      updateNearestMrt(userLatLng);
       drawAmenities(userLatLng);
     } else {
       routeLayer.clearLayers();
