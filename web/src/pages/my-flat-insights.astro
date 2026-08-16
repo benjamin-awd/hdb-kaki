@@ -170,8 +170,9 @@ import LeafletMap from '../components/LeafletMap.astro';
           <div class="vs-row">
             <span class="k"
               >Median PSF (<Term term="comps" end
-                ><strong>Comps</strong> are recent sales of the same flat type nearby — the basis for
-                your estimate.</Term
+                ><strong>Comps</strong> are recent resale sales of the same flat type nearby, from data.gov.sg.
+                They set the base for your estimate, adjusted for storey band but not for exact lease
+                or unit condition.</Term
               >)</span
             ><span class="v" id="vs-psf">—</span>
           </div>
@@ -187,15 +188,14 @@ import LeafletMap from '../components/LeafletMap.astro';
           </div>
           <div class="conf">
             <Term term="Confidence" end
-              >Based on how many comparable sales we found nearby — more comps, more reliable.</Term
+              >Based on how many comparable sales we found nearby. More comps means a more reliable
+              estimate.</Term
             >
             <span class="bars" id="conf-bars"></span>
             <span id="conf-label">—</span>
           </div>
           <p class="disclaimer">
-            Indicative estimate for guidance only — not a valuation for HDB, bank or CPF purposes.
-            Adjusted for storey band; not for exact lease or unit condition. Based on registered
-            resale transactions from data.gov.sg.
+            Indicative guide only. Not an official valuation for HDB, bank or CPF purposes.
           </p>
         </div>
       </div>
@@ -285,8 +285,8 @@ import LeafletMap from '../components/LeafletMap.astro';
       <div class="split" style="grid-template-columns:1.4fr 1fr;margin-top:18px">
         <ChartCard title="Where you sit in the market">
           <Info slot="titleTip" label="What does percentile mean?"
-            >The share of nearby sales priced below your estimate — e.g. 70th percentile beats about
-            70% of them.</Info
+            >The share of nearby sales priced below your estimate. For example, 70th percentile
+            beats about 70% of them.</Info
           >
           <span class="pill" id="pctile-pill" slot="head">—</span>
           <div id="dist-chart" style="width:100%;height:210px"></div>
@@ -322,7 +322,7 @@ import LeafletMap from '../components/LeafletMap.astro';
 
       <!-- 04 LEASE & VALUE RUNWAY -->
       <SecHead num="04" title="Lease & value runway">
-        How prices soften as the lease runs down — and the ages that affect CPF & loans.
+        How prices soften as the lease runs down, and the ages that affect CPF & loans.
       </SecHead>
 
       <div class="card lease-card">
@@ -1889,7 +1889,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     // Postal → block identity (arg_max latest / mode) + flat-type list, resolved in the worker.
     const meta = await qResolveBlock(postal);
     if (!meta) {
-      resolveError('No transactions found for that postal code — try another.');
+      resolveError('No transactions found for that postal code. Try another.');
       return false;
     }
     resolvedPostal = postal;
@@ -2239,7 +2239,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     $('vs-area').textContent = `${area.toLocaleString()} sqft`;
     $('vs-storey').textContent = useStorey
       ? `${storeyAdjPct >= 0 ? '+' : ''}${storeyAdjPct.toFixed(1)}% · ${storey}`
-      : 'n/a — too few';
+      : 'n/a, too few';
     $('conf-label').textContent = confLabel;
     $('conf-bars').innerHTML = [0, 1, 2, 3]
       .map((i) => `<i class="${i < confBars ? 'on' : ''}"></i>`)
