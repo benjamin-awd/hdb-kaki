@@ -42,6 +42,17 @@ export function nearbyStations(
     .slice(0, Math.max(0, k));
 }
 
+// Every station within `meters` straight-line of (lat, lng), nearest first. Used to show all
+// MRTs in a walk/short-ride radius (not just the k nearest) on the insights map.
+export function stationsWithin(
+  lat: number,
+  lng: number,
+  stations: Station[],
+  meters: number,
+): { station: Station; meters: number }[] {
+  return nearbyStations(lat, lng, stations, stations.length).filter((s) => s.meters <= meters);
+}
+
 // The station closest to (lat, lng), with its straight-line distance in metres — the k=1
 // case of nearbyStations.
 export function nearestStation(

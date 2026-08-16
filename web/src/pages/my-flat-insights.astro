@@ -1595,7 +1595,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     red,
   } from '../lib/echartsTheme';
   import { money, moneyShort, psf as fpsf, titleCase, deltaPill } from '../lib/format';
-  import { nearbyStations, haversineMeters, type Station } from '../lib/onemap';
+  import { nearbyStations, stationsWithin, haversineMeters, type Station } from '../lib/onemap';
   import { reformatWithCaret, parsePrice, computeReturns } from '../lib/returns';
 
   const NOW_YEAR = new Date().getFullYear();
@@ -2018,9 +2018,12 @@ import LeafletMap from '../components/LeafletMap.astro';
       return;
     }
     if (seq !== mrtSeq) return;
-    // Pull the four closest so the nearby list can show three *other* stations beneath the
-    // highlighted nearest, without repeating it.
-    const nearby = nearbyStations(from[0], from[1], list, 4);
+    // Every station within a short radius, nearest first: the closest is highlighted, the rest
+    // fill the nearby list and show as secondary pins. Fall back to the single nearest so a flat
+    // with no station within the radius still gets one.
+    const NEARBY_RADIUS_M = 3000;
+    const within = stationsWithin(from[0], from[1], list, NEARBY_RADIUS_M);
+    const nearby = within.length ? within : nearbyStations(from[0], from[1], list, 1);
     const near = nearby[0];
     if (!near) {
       setStation(null);
@@ -2029,11 +2032,10 @@ import LeafletMap from '../components/LeafletMap.astro';
     const to: [number, number] = [near.station.lat, near.station.lng];
     const kind = stationKind(near.station.codes);
 
-    // Draw the corridor(s) the nearby stations sit on, under the markers + line. Best-effort:
-    // the line geometry is optional, so a fetch miss just leaves the stations on their own.
-    const prefixes = new Set(
-      nearby.flatMap((n) => n.station.codes.split(' / ').map((c) => c.replace(/\d.*$/, ''))),
-    );
+    // Draw only the corridor(s) the nearest station sits on, under the markers + line. Widening
+    // this to every nearby station would draw whole lines (e.g. the full NS line for a Jurong
+    // East 2.5 km away) shooting off-map, so keep it to the highlighted station's own line(s).
+    const prefixes = new Set(near.station.codes.split(' / ').map((c) => c.replace(/\d.*$/, '')));
     try {
       const lines = await loadLines();
       if (seq !== mrtSeq) return;
@@ -2094,9 +2096,14 @@ import LeafletMap from '../components/LeafletMap.astro';
 
     setStation(near, nearby.slice(1));
 
-    // Widen the view only if the station pokes outside the comps frame, to avoid a jump.
-    const b = L.latLngBounds([from, to]);
-    if (!map.getBounds().contains(b)) map.fitBounds(map.getBounds().extend(b), { maxZoom: 16 });
+    // Frame the flat and every station shown, so the within-radius pins are actually visible.
+    // Only refit when something falls outside the current view, to avoid a jump; maxZoom keeps
+    // a flat with just one close station from zooming in too far.
+    const b = L.latLngBounds([
+      from,
+      ...nearby.map((n) => [n.station.lat, n.station.lng] as [number, number]),
+    ]);
+    if (!map.getBounds().contains(b)) map.fitBounds(b, { maxZoom: 16, padding: [24, 24] });
   }
 
   // The resolved line carries validation errors only — the matched block/town is shown
