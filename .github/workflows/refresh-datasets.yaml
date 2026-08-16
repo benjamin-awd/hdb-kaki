@@ -19,8 +19,9 @@ name: Refresh generated datasets
 # | Dataset                       | Script                 | Source                            | Cadence |
 # |-------------------------------|------------------------|-----------------------------------|---------|
 # | sg-towns/outline/subzones     | build_town_geojson.py  | URA Master Plan (data.gov.sg)     | monthly |
-# | mrt-stations.json + lines     | build_mrt_stations.py, | LTA train-station CSV mirror      | monthly |
-# |                               | build_mrt_lines.py     |                                   |         |
+# | mrt-stations.json + lines     | geocode_stations.py,   | OneMap search (operational) +     | monthly |
+# |                               | build_mrt_stations.py, | rail_stations.FUTURE_STATIONS     |         |
+# |                               | build_mrt_lines.py     | (announced lines, hand-maintained)|         |
 # | amenities.json                | build_amenities.py     | NEA (data.gov.sg) + OpenStreetMap | monthly |
 # | food.json                     | build_food.py          | SFA + OneMap geocode + NEA        | weekly  |
 #
@@ -64,11 +65,17 @@ jobs:
             paths: web/public/geo/sg-towns.geojson web/public/geo/sg-outline.geojson web/public/geo/sg-subzones.geojson
             message: "chore: refresh town boundary GeoJSON from URA Master Plan"
           - name: MRT stations & lines
+            # geocode_stations.py refreshes the operational-station coordinates from OneMap
+            # (token-free search; it keeps the last cached point for any station OneMap fails
+            # to return, so a throttle never drops a station) and commits that cache. The two
+            # build scripts then re-emit the web JSONs, merging in the announced future lines
+            # from rail_stations.FUTURE_STATIONS.
             run: |
+              uv run --no-project webapp/update/geocode_stations.py
               uv run --no-project webapp/update/build_mrt_stations.py
               uv run --no-project webapp/update/build_mrt_lines.py
-            paths: web/public/geo/mrt-stations.json web/public/geo/mrt-lines.geojson
-            message: "chore: refresh MRT stations & lines from LTA data"
+            paths: web/public/geo/mrt-stations.json web/public/geo/mrt-lines.geojson webapp/update/operational_coords.json
+            message: "chore: refresh MRT stations & lines (OneMap + announced future lines)"
           - name: nearby amenities
             run: uv run --no-project webapp/update/build_amenities.py
             paths: web/public/geo/amenities.json

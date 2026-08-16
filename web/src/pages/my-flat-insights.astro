@@ -1174,6 +1174,23 @@ import LeafletMap from '../components/LeafletMap.astro';
     width: 15px;
     height: 15px;
   }
+  /* :global — the next-nearest stations: the same train badge, smaller and dimmer so the
+     highlighted nearest still reads first. */
+  :global(.mrt-pin-sec .mrt-badge) {
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 7px;
+    border: 1.5px solid var(--paper-2);
+    box-shadow: var(--shadow);
+    opacity: 0.8;
+  }
+  :global(.mrt-pin-sec .mrt-badge svg) {
+    display: block;
+    width: 11px;
+    height: 11px;
+  }
   /* :global — amenity pins are Leaflet divIcons: a small category-coloured round badge, sized
      below the MRT badge so amenities read as secondary. */
   :global(.am-pin .am-badge) {
@@ -1639,7 +1656,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     red,
   } from '../lib/echartsTheme';
   import { money, moneyShort, psf as fpsf, titleCase, deltaPill } from '../lib/format';
-  import { nearbyStations, haversineMeters, type Station } from '../lib/onemap';
+  import { nearbyStations, stationsWithin, haversineMeters, type Station } from '../lib/onemap';
   import { reformatWithCaret, parsePrice, computeReturns } from '../lib/returns';
 
   const NOW_YEAR = new Date().getFullYear();
@@ -1808,6 +1825,12 @@ import LeafletMap from '../components/LeafletMap.astro';
     CE: '#f79500',
     DT: '#0055b8',
     TE: '#9d5b25',
+    CR: '#97c616', // Cross Island Line (Lime), incl. Punggol Extension
+    CP: '#97c616',
+    JS: '#0099aa', // Jurong Region Line (Teal), all three branches
+    JW: '#0099aa',
+    JE: '#0099aa',
+    DE: '#0055b8', // Downtown Line western extension (Sungei Kadut)
   };
   const lineColor = (codes: string) => {
     const prefix = codes.split(' / ')[0].replace(/\d.*$/, '');
@@ -1823,6 +1846,12 @@ import LeafletMap from '../components/LeafletMap.astro';
     CE: 'Circle Line',
     DT: 'Downtown Line',
     TE: 'Thomson-East Coast Line',
+    CR: 'Cross Island Line',
+    CP: 'Cross Island Line',
+    JS: 'Jurong Region Line',
+    JW: 'Jurong Region Line',
+    JE: 'Jurong Region Line',
+    DE: 'Downtown Line',
     BP: 'Bukit Panjang LRT',
     SE: 'Sengkang LRT',
     SW: 'Sengkang LRT',
@@ -1847,9 +1876,12 @@ import LeafletMap from '../components/LeafletMap.astro';
       .join('');
   // A recognisable MRT station icon (train glyph) tinted by its line, in place of a plain dot.
   // The body is white; windows and wheels are cut in the line colour via currentColor.
-  const mrtIcon = (codes: string) =>
+  // `secondary` renders the smaller, dimmer badge used for the next-nearest stations, so the
+  // highlighted nearest still reads first. It gets its own class (`.mrt-pin-sec`) so the pin
+  // count for the nearest stays unambiguous.
+  const mrtIcon = (codes: string, secondary = false) =>
     L.divIcon({
-      className: 'mrt-pin',
+      className: secondary ? 'mrt-pin-sec' : 'mrt-pin',
       html:
         `<span class="mrt-badge" style="background:${lineColor(codes)};color:${lineColor(codes)}">` +
         '<svg viewBox="0 0 24 24" aria-hidden="true">' +
@@ -1860,8 +1892,8 @@ import LeafletMap from '../components/LeafletMap.astro';
         '<circle cx="14.8" cy="11.4" r="1.05" fill="currentColor"/>' +
         '<path d="M8.4 14.5 6.8 17.4M15.6 14.5 17.2 17.4" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>' +
         '</svg></span>',
-      iconSize: [22, 22],
-      iconAnchor: [11, 11],
+      iconSize: secondary ? [16, 16] : [22, 22],
+      iconAnchor: secondary ? [8, 8] : [11, 11],
     });
   // Call a stop "LRT" only when every line code is an LRT prefix; interchanges that also
   // carry a heavy-rail code (e.g. Bukit Panjang BP6/DT1) read as "MRT".
@@ -2125,14 +2157,17 @@ import LeafletMap from '../components/LeafletMap.astro';
     $('sc-badges').innerHTML = codeBadges(nearest.station.codes);
     $('sc-dist').textContent = dp.v;
     $('sc-unit').textContent = dp.u;
-    $('sc-walk').textContent = `approx ${walkMins(nearest.meters)} min walk`;
+    $('sc-walk').textContent =
+      `approx ${walkMins(nearest.meters)} min walk` +
+      (nearest.station.opening ? ` · opens ${nearest.station.opening}` : '');
     $('sc-nearby-wrap').toggleAttribute('hidden', nearby.length === 0);
     $('sc-nearby').innerHTML = nearby
       .map(
         (n) =>
           `<li class="sc-row"><span class="sc-badges">${codeBadges(n.station.codes)}</span>` +
           `<div class="sc-row-main"><span class="sc-row-name">${titleCase(n.station.name)}</span>` +
-          `<span class="sc-row-line">${lineName(n.station.codes)}</span></div>` +
+          `<span class="sc-row-line">${lineName(n.station.codes)}` +
+          `${n.station.opening ? ` · opens ${n.station.opening}` : ''}</span></div>` +
           `<div class="sc-row-fig"><span class="sc-row-dist">${fmtDist(n.meters)}</span>` +
           `<span class="sc-row-min">~${walkMins(n.meters)} min</span></div></li>`,
       )
@@ -2155,9 +2190,12 @@ import LeafletMap from '../components/LeafletMap.astro';
       return;
     }
     if (seq !== mrtSeq) return;
-    // Pull the four closest so the nearby list can show three *other* stations beneath the
-    // highlighted nearest, without repeating it.
-    const nearby = nearbyStations(from[0], from[1], list, 4);
+    // Every station within a short radius, nearest first: the closest is highlighted, the rest
+    // fill the nearby list and show as secondary pins. Fall back to the single nearest so a flat
+    // with no station within the radius still gets one.
+    const NEARBY_RADIUS_M = 3000;
+    const within = stationsWithin(from[0], from[1], list, NEARBY_RADIUS_M);
+    const nearby = within.length ? within : nearbyStations(from[0], from[1], list, 1);
     const near = nearby[0];
     if (!near) {
       setStation(null);
@@ -2166,9 +2204,12 @@ import LeafletMap from '../components/LeafletMap.astro';
     const to: [number, number] = [near.station.lat, near.station.lng];
     const kind = stationKind(near.station.codes);
 
-    // Draw the corridor(s) the nearest station sits on, under the marker + line. Best-effort:
-    // the line geometry is optional, so a fetch miss just leaves the station on its own.
-    const prefixes = new Set(near.station.codes.split(' / ').map((c) => c.replace(/\d.*$/, '')));
+    // Draw the corridor(s) every shown station sits on (Downtown, Jurong Region, etc.), under
+    // the markers + line. Lines that run past the framed radius are just clipped by the map
+    // viewport, so this shows each pin on its own line without a full network diagram.
+    const prefixes = new Set(
+      nearby.flatMap((n) => n.station.codes.split(' / ').map((c) => c.replace(/\d.*$/, ''))),
+    );
     try {
       const lines = await loadLines();
       if (seq !== mrtSeq) return;
@@ -2187,13 +2228,33 @@ import LeafletMap from '../components/LeafletMap.astro';
       /* line geometry unavailable — the station marker alone still reads */
     }
 
-    L.marker(to, { icon: mrtIcon(near.station.codes), keyboard: false })
-      .bindTooltip(`<b>${near.station.name} ${kind}</b><br/>${near.station.codes}`, {
-        direction: 'top',
-        offset: [0, -8],
-        opacity: 1,
-        className: 'hdb-tip',
+    // The next-nearest stations as smaller, dimmer pins, so the whole corridor's stations read
+    // at a glance. Drawn first (and with a lower z-index) so the highlighted nearest sits on top.
+    for (const n of nearby.slice(1)) {
+      L.marker([n.station.lat, n.station.lng], {
+        icon: mrtIcon(n.station.codes, true),
+        keyboard: false,
+        zIndexOffset: -100,
       })
+        .bindTooltip(
+          `<b>${n.station.name} ${stationKind(n.station.codes)}</b><br/>${n.station.codes}` +
+            (n.station.opening ? `<br/>opens ${n.station.opening}` : ''),
+          { direction: 'top', offset: [0, -6], opacity: 1, className: 'hdb-tip' },
+        )
+        .addTo(routeLayer);
+    }
+
+    L.marker(to, { icon: mrtIcon(near.station.codes), keyboard: false, zIndexOffset: 100 })
+      .bindTooltip(
+        `<b>${near.station.name} ${kind}</b><br/>${near.station.codes}` +
+          (near.station.opening ? `<br/>opens ${near.station.opening}` : ''),
+        {
+          direction: 'top',
+          offset: [0, -8],
+          opacity: 1,
+          className: 'hdb-tip',
+        },
+      )
       .addTo(routeLayer);
 
     // Straight (as-the-crow-flies) dashed line from the flat to the nearest station.
@@ -2207,11 +2268,18 @@ import LeafletMap from '../components/LeafletMap.astro';
     }).addTo(routeLayer);
     flatMarker?.bringToFront(); // hide the line's start under the red dot, not inside it
 
-    setStation(near, nearby.slice(1));
+    // The map shows every station in range, but the card stays focused on the three closest
+    // MRTs (the highlighted nearest plus the next two).
+    setStation(near, nearby.slice(1, 3));
 
-    // Widen the view only if the station pokes outside the comps frame, to avoid a jump.
-    const b = L.latLngBounds([from, to]);
-    if (!map.getBounds().contains(b)) map.fitBounds(map.getBounds().extend(b), { maxZoom: 16 });
+    // Frame the flat and every station shown, so the within-radius pins are actually visible.
+    // Only refit when something falls outside the current view, to avoid a jump; maxZoom keeps
+    // a flat with just one close station from zooming in too far.
+    const b = L.latLngBounds([
+      from,
+      ...nearby.map((n) => [n.station.lat, n.station.lng] as [number, number]),
+    ]);
+    if (!map.getBounds().contains(b)) map.fitBounds(b, { maxZoom: 16, padding: [24, 24] });
   }
 
   // The resolved line carries validation errors only — the matched block/town is shown

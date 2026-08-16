@@ -11,30 +11,27 @@ stations strung together in code order (NS1 → NS2 → … ), tagged with the l
 The page loads this once and draws only the line(s) the nearest station sits on, so the map
 shows the corridor without turning into a full network diagram.
 
-Source: the same LTA train-station CSV as build_mrt_stations.py (Open Data Licence, via the
-``datadoubleconfirm`` mirror). The geometry is therefore *schematic* — straight segments between
-consecutive stations, not the true curved track — which reads fine at town zoom. Stations change
-rarely, so the output is committed and this runs on demand, not in the daily ETL:
+Source of truth: ``webapp/update/rail_stations.py`` (RAIL_STATIONS) — the same committed table
+as build_mrt_stations.py. An interchange entry (codes "CC15 / NS17") contributes its point to
+every line it names, so corridors are stitched from the merged station list. Geometry is
+*schematic* — straight segments between consecutive stations, not the true curved track — which
+reads fine at town zoom.
+
+Stations change rarely, so the output is committed and this runs on demand, not in the daily ETL:
 
     uv run python webapp/update/build_mrt_lines.py
-
-Caveat: the mirror predates the full Thomson-East Coast Line build-out (see build_mrt_stations.py).
-For true track geometry, swap the source for LTA/OneMap rail-line polylines and re-emit here.
 """
 
 from __future__ import annotations
 
-import csv
-import io
 import json
 import re
-import urllib.request
 from pathlib import Path
+
+from rail_stations import RAIL_STATIONS
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "web" / "public" / "geo" / "mrt-lines.geojson"
-
-SRC_CSV = "https://raw.githubusercontent.com/hxchua/datadoubleconfirm/master/datasets/mrtsg.csv"
 
 # Line colours, keyed by station-code prefix. Heavy-rail lines carry their official hue; every
 # LRT prefix collapses to ink-2 — matching the frontend's lineColor() so lines and station icons
@@ -47,7 +44,13 @@ LINE_COLORS: dict[str, str] = {
     "CC": "#f79500",
     "CE": "#f79500",
     "DT": "#0055b8",
+    "DE": "#0055b8",  # Downtown Line western extension (Sungei Kadut)
     "TE": "#9d5b25",
+    "CR": "#97c616",  # Cross Island Line (Lime)
+    "CP": "#97c616",  # Cross Island Line — Punggol Extension
+    "JS": "#0099aa",  # Jurong Region Line (Teal)
+    "JW": "#0099aa",  # Jurong Region Line — west branch
+    "JE": "#0099aa",  # Jurong Region Line — east branch
     "BP": "#5b544a",
     "STC": "#5b544a",
     "SW": "#5b544a",
@@ -57,32 +60,25 @@ LINE_COLORS: dict[str, str] = {
     "PE": "#5b544a",
 }
 
-_CODE = re.compile(r"^([A-Z]+)(\d*)$")
-
-
-def _fetch_csv(url: str, timeout: int = 30) -> str:
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (hdb-kaki build)"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read().decode("utf-8")
+_CODE = re.compile(r"^([A-Z]+)(\d*)")
 
 
 def build() -> None:
-    rows = list(csv.DictReader(io.StringIO(_fetch_csv(SRC_CSV))))
-
     # Group stops by line prefix; keep each stop's running number so we can order the corridor.
+    # Interchanges (codes "CC15 / NS17") add their single point to every line they name.
     # Numberless hub codes (STC, PTC) sort first at 0.
     lines: dict[str, list[tuple[int, float, float]]] = {}
-    for row in rows:
-        code = (row.get("STN_NO") or "").strip()
-        m = _CODE.match(code)
-        if not m:
-            continue
-        prefix, num = m.group(1), m.group(2)
-        if prefix not in LINE_COLORS:
-            continue
-        lines.setdefault(prefix, []).append(
-            (int(num) if num else 0, float(row["Longitude"]), float(row["Latitude"]))
-        )
+    for s in RAIL_STATIONS:
+        for code in re.split(r"\s*/\s*", s["codes"]):
+            m = _CODE.match(code.strip())
+            if not m:
+                continue
+            prefix, num = m.group(1), m.group(2)
+            if prefix not in LINE_COLORS:
+                continue
+            lines.setdefault(prefix, []).append(
+                (int(num) if num else 0, float(s["lng"]), float(s["lat"]))
+            )
 
     features = []
     for prefix, stops in sorted(lines.items()):
