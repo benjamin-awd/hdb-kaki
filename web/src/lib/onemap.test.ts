@@ -1,5 +1,11 @@
 import { test, expect, describe } from 'bun:test';
-import { haversineMeters, nearbyStations, nearestStation, type Station } from './onemap';
+import {
+  haversineMeters,
+  nearbyStations,
+  nearestStation,
+  stationsWithin,
+  type Station,
+} from './onemap';
 
 describe('haversineMeters', () => {
   test('is zero for identical points', () => {
@@ -63,5 +69,30 @@ describe('nearbyStations', () => {
   test('agrees with nearestStation on the closest', () => {
     const first = nearbyStations(1.3505, 103.848, stations)[0];
     expect(first.station.name).toBe(nearestStation(1.3505, 103.848, stations)!.station.name);
+  });
+});
+
+describe('stationsWithin', () => {
+  const stations: Station[] = [
+    { name: 'Bishan', codes: 'CC15 / NS17', lat: 1.35107, lng: 103.84864 },
+    { name: 'Ang Mo Kio', codes: 'NS16', lat: 1.36993, lng: 103.84955 },
+    { name: 'Jurong East', codes: 'EW24 / NS1', lat: 1.33315, lng: 103.74231 },
+  ];
+
+  test('keeps only stations inside the radius, nearest first', () => {
+    // From near Bishan: Bishan (~0) and Ang Mo Kio (~2.1 km) are within 3 km; Jurong East is ~11 km.
+    const within = stationsWithin(1.3505, 103.848, stations, 3000);
+    expect(within.map((n) => n.station.name)).toEqual(['Bishan', 'Ang Mo Kio']);
+    expect(within.every((n) => n.meters <= 3000)).toBe(true);
+  });
+
+  test('a tiny radius returns just the station underfoot', () => {
+    expect(stationsWithin(1.35107, 103.84864, stations, 100).map((n) => n.station.name)).toEqual([
+      'Bishan',
+    ]);
+  });
+
+  test('a radius with nothing in range returns empty', () => {
+    expect(stationsWithin(1.29, 103.85, stations, 200)).toEqual([]);
   });
 });
