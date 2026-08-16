@@ -403,6 +403,10 @@ import LeafletMap from '../components/LeafletMap.astro';
           <button type="button" class="am-chip" data-cat="mall" aria-pressed="false">
             <span class="am-dot" style="background: #3b6ea5"></span>Malls
           </button>
+          <span class="am-sep" aria-hidden="true"></span>
+          <button type="button" class="am-chip" data-layer="comps" aria-pressed="false">
+            <span class="am-dot" style="background: #c9bfae"></span>Recent sales
+          </button>
         </div>
         <LeafletMap id="ins-map" minHeight="480px" />
         <div class="station-card" id="ins-walk" hidden>
@@ -929,6 +933,13 @@ import LeafletMap from '../components/LeafletMap.astro';
   .am-chip:focus-visible {
     outline: 2px solid var(--ink);
     outline-offset: 2px;
+  }
+  /* Divides the amenity chips from the market-signal (recent sales) chip. */
+  .am-sep {
+    align-self: stretch;
+    width: 1px;
+    background: var(--line);
+    margin: 2px 2px;
   }
   .am-dot {
     width: 10px;
@@ -1672,6 +1683,11 @@ import LeafletMap from '../components/LeafletMap.astro';
   map.addControl(new FsControl({ position: 'topleft' }));
 
   const layer = L.layerGroup().addTo(map);
+  // Recent sales (comps) are a market signal, not an amenity, and they crowd the central rings once
+  // the flat/MRT/reach layers are drawn. Keep them in their own layer that's OFF by default — the
+  // pins are always redrawn here on compute() so toggling on is instant, but the layer only joins
+  // the map when the user asks for it.
+  const compsLayer = L.layerGroup();
   // Nearest-MRT walking route lives in its own layer so a re-compute can redraw it without
   // touching the comp pins. Ink, not green: green is reserved for positive market direction, so
   // a neutral path keeps the one red for the flat. Leaflet strokes SVG via the `stroke`
@@ -1683,16 +1699,16 @@ import LeafletMap from '../components/LeafletMap.astro';
   // the marker's edge, not from a dash inside the red dot.
   let flatMarker: L.CircleMarker | null = null;
 
-  // Walking-reach rings (5/10/15 min ≈ 400/800/1200 m) sit under the pins in their own layer so a
+  // Walking-reach rings (5/10 min ≈ 400/800 m) sit under the pins in their own layer so a
   // re-compute redraws them cleanly. Read the editorial red to a concrete string (SVG stroke can't
   // resolve a CSS var); the rings are non-interactive so they never steal a pin's tooltip.
+  // Only two rings: the 15-min ring rarely earns its ink at this zoom and crowds the centre.
   const reachLayer = L.layerGroup().addTo(map);
   const redColor =
     getComputedStyle(document.documentElement).getPropertyValue('--red').trim() || '#fe012b';
   const REACH_RINGS: { meters: number; label: string; fill: number }[] = [
     { meters: 400, label: '5 min', fill: 0.05 },
     { meters: 800, label: '10 min', fill: 0.035 },
-    { meters: 1200, label: '15 min', fill: 0.02 },
   ];
   // Rings around the flat, each labelled at its northern edge. Largest first so inner fills stack.
   function drawReachRings(center: [number, number]) {
@@ -1840,7 +1856,9 @@ import LeafletMap from '../components/LeafletMap.astro';
   // soup. Cluster them (same pattern as Town Analysis) — counts collapse, pins expand on zoom, so
   // everything nearby is reachable rather than truncated to an arbitrary few.
   const amenityLayer = (L as any).markerClusterGroup({
-    maxClusterRadius: 45,
+    // Wider than the default so nearby pins collapse into one count instead of a scatter of raw
+    // dots sitting under half-formed clusters — keeps the centre readable at the default zoom.
+    maxClusterRadius: 70,
     showCoverageOnHover: false,
     chunkedLoading: true,
   });
@@ -2510,8 +2528,9 @@ import LeafletMap from '../components/LeafletMap.astro';
       leaseInTown ? titleCase(block.town) : null,
     );
 
-    // map: comps (grey) + your block (red)
+    // map: comps (grey, own toggleable layer) + your block (red, always shown)
     layer.clearLayers();
+    compsLayer.clearLayers();
     const pts: [number, number][] = [];
     comps.forEach((c) => {
       if (c.lat == null || c.lng == null) return;
@@ -2527,7 +2546,7 @@ import LeafletMap from '../components/LeafletMap.astro';
           `<b>${titleCase(c.address)}</b><br/>${c.month} · ${c.storey_range}<br/><b>${money(c.price)}</b> · ${fpsf(c.psf)} psf`,
           { direction: 'top', offset: [0, -6], opacity: 1, className: 'hdb-tip' },
         )
-        .addTo(layer);
+        .addTo(compsLayer);
     });
     if (userLatLng) {
       pts.push(userLatLng);
@@ -2622,7 +2641,7 @@ import LeafletMap from '../components/LeafletMap.astro';
   // Amenity category chips: each toggles its layer of nearby hawker/food, supermarket, or mall
   // pins. Independent (multi-select); toggling only redraws the amenity layer, no re-valuation.
   $('ins-amenities')
-    .querySelectorAll<HTMLButtonElement>('.am-chip')
+    .querySelectorAll<HTMLButtonElement>('.am-chip[data-cat]')
     .forEach((btn) =>
       btn.addEventListener('click', () => {
         const cat = btn.dataset.cat as string;
@@ -2634,6 +2653,18 @@ import LeafletMap from '../components/LeafletMap.astro';
         if (userLatLng) drawAmenities(userLatLng);
       }),
     );
+  // Recent sales: a market-signal layer, off by default. Comps are always redrawn into compsLayer
+  // on compute(), so this just adds/removes that layer from the map — no re-valuation.
+  const compsChip = $('ins-amenities').querySelector<HTMLButtonElement>(
+    '.am-chip[data-layer="comps"]',
+  );
+  compsChip?.addEventListener('click', () => {
+    const on = !map.hasLayer(compsLayer);
+    if (on) compsLayer.addTo(map);
+    else map.removeLayer(compsLayer);
+    compsChip.classList.toggle('on', on);
+    compsChip.setAttribute('aria-pressed', String(on));
+  });
   // Returns panel recomputes locally from the current estimate — no worker round-trip.
   $('r-paid').addEventListener('input', () => {
     formatPaid();
