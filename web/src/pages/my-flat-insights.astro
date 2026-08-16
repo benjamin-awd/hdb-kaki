@@ -396,12 +396,26 @@ import LeafletMap from '../components/LeafletMap.astro';
           </button>
         </div>
         <LeafletMap id="ins-map" minHeight="480px" />
-        <div class="walk-strip" id="ins-walk" hidden>
-          <div class="walk-lead"><span id="ins-walk-lead"></span></div>
-          <div class="walk-copy">
-            <span class="walk-main" id="ins-walk-main"></span>
-            <span class="walk-sub" id="ins-walk-sub"></span>
-            <div class="walk-near" id="ins-walk-near"></div>
+        <div class="station-card" id="ins-walk" hidden>
+          <div class="sc-head">
+            <div class="sc-eyebrow">Nearest station</div>
+            <div class="sc-nearest">
+              <div class="sc-nearest-l">
+                <span class="sc-name" id="sc-name"></span>
+                <span class="sc-badges" id="sc-badges"></span>
+              </div>
+              <div class="sc-nearest-r">
+                <div class="sc-fig">
+                  <span class="sc-dist" id="sc-dist"></span><span class="sc-unit" id="sc-unit"
+                  ></span>
+                </div>
+                <span class="sc-walk" id="sc-walk"></span>
+              </div>
+            </div>
+          </div>
+          <div class="sc-nearby-wrap" id="sc-nearby-wrap">
+            <div class="sc-eyebrow">Nearby stations</div>
+            <ul class="sc-nearby" id="sc-nearby"></ul>
           </div>
         </div>
         <p class="map-src">
@@ -901,68 +915,170 @@ import LeafletMap from '../components/LeafletMap.astro';
     height: 100%;
     border-radius: 0;
   }
-  .walk-strip {
-    display: flex;
-    align-items: center;
-    gap: 15px;
-    padding: 14px 18px;
+  /* Nearest + nearby stations, as a broadsheet-style card beneath the map. */
+  .station-card {
     background: var(--paper-2);
     border: 1px solid var(--line);
     border-radius: var(--radius);
+    padding: 16px 18px;
   }
-  /* Serif minutes lead ("8 min"), ruled off from the copy — a broadsheet figure, not an emoji. */
-  .walk-lead {
-    flex: none;
-    padding-right: 15px;
-    border-right: 1px solid var(--line);
+  .sc-head {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  /* Small-caps section label ("NEAREST STATION" / "NEARBY STATIONS"). */
+  .sc-eyebrow {
+    font-family: var(--font-sans);
+    font-weight: 700;
+    font-size: 10.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .sc-nearest {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .sc-nearest-l {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    min-width: 0;
+  }
+  /* Broadsheet serif station name — the card's headline. */
+  .sc-name {
     font-family: var(--font-newsreader);
     font-weight: 600;
     font-size: 26px;
-    line-height: 1;
-    letter-spacing: -0.02em;
+    line-height: 1.05;
+    letter-spacing: -0.01em;
     color: var(--ink);
-    white-space: nowrap;
   }
-  .walk-copy {
+  .sc-nearest-r {
+    flex: none;
     display: flex;
     flex-direction: column;
-    gap: 3px;
-    min-width: 0;
+    align-items: flex-end;
+    gap: 4px;
+    text-align: right;
   }
-  .walk-main {
-    font-weight: 600;
-    font-size: 14px;
+  /* Large distance figure with a small trailing unit ("450 m"). */
+  .sc-fig {
+    display: flex;
+    align-items: baseline;
+    gap: 3px;
+    font-family: var(--font-newsreader);
     color: var(--ink);
   }
-  .walk-sub {
+  .sc-dist {
+    font-weight: 600;
+    font-size: 34px;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    font-feature-settings: 'tnum' 1;
+  }
+  .sc-unit {
+    font-size: 14px;
+    color: var(--ink-2);
+  }
+  .sc-walk {
     font-family: var(--font-mono);
     font-feature-settings: 'tnum' 1;
     font-size: 12px;
     color: var(--ink-3);
   }
-  .walk-near {
+  .sc-nearby-wrap {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
     display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-top: 6px;
+    flex-direction: column;
+    gap: 10px;
   }
-  .walk-near:empty {
+  .sc-nearby-wrap[hidden] {
     display: none;
   }
-  .near-chip {
-    font-size: 12px;
-    color: var(--ink-2);
-    background: var(--paper);
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    padding: 3px 9px;
+  .sc-nearby {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  /* :global — the line badges and every nearby row are built via innerHTML in setStation(), so
+     they never carry Astro's scope attribute. These class names are unique to this card, so
+     going global doesn't leak. Tinted line badge (NS16) is reused for the nearest headline too. */
+  :global(.sc-badges) {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  :global(.sc-badge) {
+    font-family: var(--font-sans);
+    font-weight: 700;
+    font-size: 11px;
+    line-height: 1;
+    letter-spacing: 0.01em;
+    color: #fff;
+    padding: 4px 6px;
+    border-radius: 5px;
     white-space: nowrap;
   }
-  .near-chip .near-d {
+  :global(.sc-row) {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 0;
+    border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  }
+  :global(.sc-row:first-child) {
+    border-top: 0;
+    padding-top: 2px;
+  }
+  :global(.sc-row .sc-badges) {
+    flex: none;
+    width: 40px;
+  }
+  :global(.sc-row-main) {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+    flex: 1;
+  }
+  :global(.sc-row-name) {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--ink);
+  }
+  :global(.sc-row-line) {
+    font-size: 11.5px;
+    color: var(--ink-3);
+  }
+  :global(.sc-row-fig) {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 1px;
+    text-align: right;
+  }
+  :global(.sc-row-dist) {
     font-family: var(--font-mono);
     font-feature-settings: 'tnum' 1;
     font-weight: 600;
+    font-size: 13.5px;
     color: var(--ink);
+  }
+  :global(.sc-row-min) {
+    font-family: var(--font-mono);
+    font-feature-settings: 'tnum' 1;
+    font-size: 11px;
+    color: var(--ink-3);
   }
   /* :global — reach-ring labels are Leaflet divIcons injected outside Astro's scope. A paper
      halo keeps the figure legible wherever the ring crosses the basemap. */
@@ -1600,6 +1716,38 @@ import LeafletMap from '../components/LeafletMap.astro';
     const prefix = codes.split(' / ')[0].replace(/\d.*$/, '');
     return LINE_COLORS[prefix] ?? '#5b544a'; // LRT / unknown → ink-2
   };
+  // Human-readable line names keyed by code prefix, for the station card's nearby list.
+  const LINE_NAMES: Record<string, string> = {
+    NS: 'North-South Line',
+    EW: 'East-West Line',
+    CG: 'East-West Line',
+    NE: 'North East Line',
+    CC: 'Circle Line',
+    CE: 'Circle Line',
+    DT: 'Downtown Line',
+    TE: 'Thomson-East Coast Line',
+    BP: 'Bukit Panjang LRT',
+    SE: 'Sengkang LRT',
+    SW: 'Sengkang LRT',
+    STC: 'Sengkang LRT',
+    PE: 'Punggol LRT',
+    PW: 'Punggol LRT',
+    PTC: 'Punggol LRT',
+  };
+  // Line name(s) for a codes string ("CC15 / NS17" → "Circle Line · North-South Line"),
+  // de-duplicated so an interchange on the same line doesn't repeat.
+  const lineName = (codes: string) => {
+    const names = codes
+      .split(' / ')
+      .map((c) => LINE_NAMES[c.replace(/\d.*$/, '')] ?? stationKind(c));
+    return [...new Set(names)].join(' · ');
+  };
+  // One tinted rounded badge per code (interchanges get one badge per line, e.g. NS17 + CC15).
+  const codeBadges = (codes: string) =>
+    codes
+      .split(' / ')
+      .map((c) => `<span class="sc-badge" style="background:${lineColor(c)}">${c}</span>`)
+      .join('');
   // A recognisable MRT station icon (train glyph) tinted by its line, in place of a plain dot.
   // The body is white; windows and wheels are cut in the line colour via currentColor.
   const mrtIcon = (codes: string) =>
@@ -1761,32 +1909,43 @@ import LeafletMap from '../components/LeafletMap.astro';
 
   // Compact distance: metres under 1 km, else one-decimal km (mono figures downstream).
   const fmtDist = (m: number) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`);
+  // Same split into a big figure + its unit, for the card's headline distance.
+  const distParts = (m: number) =>
+    m < 1000 ? { v: String(Math.round(m)), u: 'm' } : { v: (m / 1000).toFixed(1), u: 'km' };
+  // Rough on-foot minutes at ~80 m/min, floored at 1.
+  const walkMins = (m: number) => Math.max(1, Math.round(m / 80));
 
-  // Fill the strip beneath the map: a serif minutes lead, the "walk to <station>" line, a mono
-  // sub-line, and up to two next-nearest stations as chips. Empty `lead` hides the whole strip.
-  function setWalk(
-    lead: string,
-    main = '',
-    sub = '',
+  // Fill the station card beneath the map: the nearest station as a headline (serif name, line
+  // badges, big distance + walk time) and the next-nearest stations as a list. `nearest = null`
+  // hides the whole card.
+  function setStation(
+    nearest: { station: Station; meters: number } | null,
     nearby: { station: Station; meters: number }[] = [],
   ) {
-    const strip = $('ins-walk');
+    const card = $('ins-walk');
     const modes = $('ins-amenities');
-    if (!lead) {
-      strip.setAttribute('hidden', '');
+    if (!nearest) {
+      card.setAttribute('hidden', '');
       modes.setAttribute('hidden', '');
       return;
     }
-    strip.removeAttribute('hidden');
+    card.removeAttribute('hidden');
     modes.removeAttribute('hidden');
-    $('ins-walk-lead').textContent = lead;
-    $('ins-walk-main').textContent = main;
-    $('ins-walk-sub').textContent = sub;
-    $('ins-walk-near').innerHTML = nearby
+    const dp = distParts(nearest.meters);
+    $('sc-name').textContent = titleCase(nearest.station.name);
+    $('sc-badges').innerHTML = codeBadges(nearest.station.codes);
+    $('sc-dist').textContent = dp.v;
+    $('sc-unit').textContent = dp.u;
+    $('sc-walk').textContent = `approx ${walkMins(nearest.meters)} min walk`;
+    $('sc-nearby-wrap').toggleAttribute('hidden', nearby.length === 0);
+    $('sc-nearby').innerHTML = nearby
       .map(
         (n) =>
-          `<span class="near-chip">${titleCase(n.station.name)} ${stationKind(n.station.codes)}` +
-          ` · <span class="near-d">${fmtDist(n.meters)}</span></span>`,
+          `<li class="sc-row"><span class="sc-badges">${codeBadges(n.station.codes)}</span>` +
+          `<div class="sc-row-main"><span class="sc-row-name">${titleCase(n.station.name)}</span>` +
+          `<span class="sc-row-line">${lineName(n.station.codes)}</span></div>` +
+          `<div class="sc-row-fig"><span class="sc-row-dist">${fmtDist(n.meters)}</span>` +
+          `<span class="sc-row-min">~${walkMins(n.meters)} min</span></div></li>`,
       )
       .join('');
   }
@@ -1803,17 +1962,18 @@ import LeafletMap from '../components/LeafletMap.astro';
     try {
       list = await loadStations();
     } catch {
-      setWalk('', '');
+      setStation(null);
       return;
     }
     if (seq !== mrtSeq) return;
-    const nearby = nearbyStations(from[0], from[1], list, 3);
+    // Pull the four closest so the nearby list can show three *other* stations beneath the
+    // highlighted nearest, without repeating it.
+    const nearby = nearbyStations(from[0], from[1], list, 4);
     const near = nearby[0];
     if (!near) {
-      setWalk('', '');
+      setStation(null);
       return;
     }
-    const others = nearby.slice(1);
     const to: [number, number] = [near.station.lat, near.station.lng];
     const kind = stationKind(near.station.codes);
 
@@ -1848,7 +2008,6 @@ import LeafletMap from '../components/LeafletMap.astro';
       .addTo(routeLayer);
 
     // Straight (as-the-crow-flies) dashed line from the flat to the nearest station.
-    const meters = near.meters;
     L.polyline([from, to], {
       color: routeColor,
       weight: 4,
@@ -1859,13 +2018,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     }).addTo(routeLayer);
     flatMarker?.bringToFront(); // hide the line's start under the red dot, not inside it
 
-    const mins = Math.max(1, Math.round(meters / 80)); // rough pace, ~80 m/min
-    setWalk(
-      fmtDist(meters),
-      `to ${titleCase(near.station.name)} ${kind}`,
-      `straight-line · ≈ ${mins} min walk · ${near.station.codes}`,
-      others,
-    );
+    setStation(near, nearby.slice(1));
 
     // Widen the view only if the station pokes outside the comps frame, to avoid a jump.
     const b = L.latLngBounds([from, to]);
@@ -2422,7 +2575,7 @@ import LeafletMap from '../components/LeafletMap.astro';
       routeLayer.clearLayers();
       reachLayer.clearLayers();
       amenityLayer.clearLayers();
-      setWalk('', '');
+      setStation(null);
     }
 
     // Export state: keep the comps for the CSV, refresh the print summary, and track the
