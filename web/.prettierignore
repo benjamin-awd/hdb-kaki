@@ -1,6 +1,9 @@
 # Build output and generated/vendored assets
 dist/
 .astro/
+.wrangler/
+test-results/
+.impeccable/
 src/assets/fonts/
 bun.lock
 

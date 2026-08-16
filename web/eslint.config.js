@@ -5,9 +5,17 @@ import prettier from 'eslint-config-prettier';
 import globals from 'globals';
 
 export default tseslint.config(
-  // Never lint build output, vendored assets, or the config surface itself.
+  // Never lint build output, vendored assets, generated local dirs, or the config surface itself.
   {
-    ignores: ['dist/', '.astro/', 'public/duckdb/', 'src/assets/fonts/', '*.config.*'],
+    ignores: [
+      'dist/',
+      '.astro/',
+      '.wrangler/',
+      'test-results/',
+      'public/duckdb/',
+      'src/assets/fonts/',
+      '*.config.*',
+    ],
   },
 
   js.configs.recommended,
