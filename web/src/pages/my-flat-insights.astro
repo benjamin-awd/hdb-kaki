@@ -2026,8 +2026,12 @@ import LeafletMap from '../components/LeafletMap.astro';
       const n = e.layer.getChildCount();
       e.layer
         .bindTooltip(`${n} nearby ${AM_PLURAL[cat] ?? 'places'}`, {
+          // Sticky: the tooltip follows the cursor, so it sits on the badge the user is hovering.
+          // A fixed anchor would attach to the cluster's true centroid, which the declutter engine
+          // shifts the badge away from — leaving the tooltip stranded off to the side.
+          sticky: true,
           direction: 'top',
-          offset: [0, -18],
+          offset: [0, -8],
           opacity: 1,
           className: 'hdb-tip',
         })
@@ -2104,6 +2108,9 @@ import LeafletMap from '../components/LeafletMap.astro';
         }
         L.marker([a.lat, a.lng], { icon: amenityIcon(cat), keyboard: false })
           .bindTooltip(`${title}<br/>${label} · ${Math.round(d)} m`, {
+            // Sticky so the tooltip tracks the cursor: a decluttered pin's badge is CSS-shifted away
+            // from its true anchor, and a fixed tooltip would sit at the anchor, not the badge.
+            sticky: true,
             direction: 'top',
             offset: [0, -8],
             opacity: 1,
