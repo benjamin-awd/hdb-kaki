@@ -46,14 +46,17 @@ if [ ! -e "$WT" ]; then
   fi
 fi
 
-# Symlink gitignored paths into the worktree:
-#   - generated data, so the web app renders real data
-#   - .claude/skills, so project-scoped skills (e.g. /impeccable) resolve; they
-#     are gitignored, so a fresh worktree checkout would otherwise omit them
-for rel in web/public/data web/public/duckdb .claude/skills; do
+# Symlink gitignored paths from the main checkout so each worktree behaves like it:
+#   web/public/data, web/public/duckdb — generated data, so the web app renders real data
+#   web/.dev.vars                       — OneMap creds for build_food.py's geocoding, so it can
+#                                         be run from any worktree without re-entering them
+#   .claude/skills                      — project-scoped skills (e.g. /impeccable) resolve;
+#                                         gitignored, so a fresh worktree would otherwise omit them
+# Each source is optional: skipped if the main checkout doesn't have it yet.
+for rel in web/public/data web/public/duckdb web/.dev.vars .claude/skills; do
   src="$MAIN/$rel"
   dst="$WT/$rel"
-  [ -e "$src" ] || continue      # source not generated yet; skip
+  [ -e "$src" ] || continue      # source not present yet; skip
   [ -e "$dst" ] && continue      # already present in the worktree
   mkdir -p "$(dirname "$dst")"
   ln -s "$src" "$dst"
