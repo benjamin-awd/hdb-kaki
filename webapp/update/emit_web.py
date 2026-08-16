@@ -206,6 +206,8 @@ def emit_overview(df: pl.DataFrame) -> None:
                 "floor_area_sqft",
                 "resale_price",
                 "psf",
+                "storey_range",
+                "postal",  # deep-links the row to my-flat-insights (?postal=)
             ]
         )
         .to_dicts()
