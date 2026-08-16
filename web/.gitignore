@@ -13,6 +13,10 @@ public/data
 # scripts/compress-duckdb.mjs on every build. Regenerated, so not committed.
 public/duckdb
 
+# Local Worker secrets for `wrangler dev` (OneMap routing creds). Never commit real values;
+# see .dev.vars.example. Production uses `wrangler secret put`.
+.dev.vars
+
 # Playwright E2E output.
 test-results/
 playwright-report/
