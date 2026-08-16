@@ -85,8 +85,8 @@ import LeafletMap from '../components/LeafletMap.astro';
 
     <!-- 02 · RECORD SALES -->
     <SecHead num="02" title="Record sales">
-      The most expensive sales on record — a town's own peaks, or the record per town across
-      Singapore. These are outliers — big units, high floors, prime blocks — shown with context, not
+      The most expensive sales on record: a town's own peaks, or the record per town across
+      Singapore. These are outliers (big units, high floors, prime blocks) shown with context, not
       typical prices.
     </SecHead>
     <div class="controls" style="margin-bottom:16px">
@@ -195,6 +195,19 @@ import LeafletMap from '../components/LeafletMap.astro';
     border-radius: 12px;
     background: var(--paper);
     padding: 12px 16px;
+  }
+  /* Rows that deep-link into My Flat Insights render as anchors; strip link chrome and
+     add a hover lift so the whole row reads as clickable. */
+  :global(a.rec) {
+    color: inherit;
+    text-decoration: none;
+    transition:
+      border-color 0.15s ease,
+      box-shadow 0.15s ease;
+  }
+  :global(a.rec:hover) {
+    border-color: var(--red-ink);
+    box-shadow: var(--shadow);
   }
   :global(.rec .rank) {
     font-family: var(--font-mono);
@@ -322,6 +335,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     med: number;
     flat: string;
     psf: number;
+    postal: number;
   };
   let currentRows: Row[] = [];
   let currentTown = DEFAULT_TOWN;
@@ -553,13 +567,22 @@ import LeafletMap from '../components/LeafletMap.astro';
         // global mode the town is the identifier and the flat type rides a badge in ctx.
         const lead = townMode ? titleCase(r.flat) : titleCase(r.town);
         const badge = townMode ? '' : `<span class="ftype">${r.flat}</span>`;
-        return `
-      <div class="rec${rank === 1 ? ' top' : ''}">
+        const cls = `rec${rank === 1 ? ' top' : ''}`;
+        const inner = `
         <span class="rank">${rank}</span>
         <span class="town">${lead}</span>
         <span class="ctx">${badge}${titleCase(r.address)} · storey ${r.storey.toLowerCase()} · ${Math.round(r.area).toLocaleString()} sqft · ${fpsf(r.psf)} psf · sold ${r.month}</span>
-        <span class="price">${moneyShort(r.price)}<small>${titleCase(r.flat)} median ${moneyShort(r.med)}</small></span>
-      </div>`;
+        <span class="price">${moneyShort(r.price)}<small>${titleCase(r.flat)} median ${moneyShort(r.med)}</small></span>`;
+        // Deep-link the row to My Flat Insights, pre-filled with this exact flat. Fall back to
+        // a plain row when the record lacks a postal (nothing to resolve the block from).
+        if (!r.postal) return `<div class="${cls}">${inner}</div>`;
+        const q = new URLSearchParams({
+          postal: String(r.postal),
+          flat: r.flat,
+          storey: r.storey,
+          area: String(Math.round(r.area)),
+        });
+        return `<a class="${cls}" href="/my-flat-insights?${q}">${inner}</a>`;
       })
       .join('');
     const noun = townMode ? 'sales' : 'towns';
