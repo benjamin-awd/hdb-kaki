@@ -2,7 +2,15 @@
 // straight-line distance to it. All client-side — nothing leaves the browser.
 
 export type LatLng = [number, number];
-export type Station = { name: string; codes: string; lat: number; lng: number };
+// `opening` is set only for not-yet-open stations (the year service is expected to start);
+// the UI still ranks them as "nearest" but labels them so they aren't read as running today.
+export type Station = {
+  name: string;
+  codes: string;
+  lat: number;
+  lng: number;
+  opening?: number | string; // year, or a phrase like "TBA" / "mid-2030s" when LTA hasn't fixed one
+};
 
 // Great-circle distance in metres, used to rank stations and report distance to the nearest.
 export function haversineMeters(a: LatLng, b: LatLng): number {
@@ -32,6 +40,17 @@ export function nearbyStations(
     }))
     .sort((a, b) => a.meters - b.meters)
     .slice(0, Math.max(0, k));
+}
+
+// Every station within `meters` straight-line of (lat, lng), nearest first. Used to show all
+// MRTs in a walk/short-ride radius (not just the k nearest) on the insights map.
+export function stationsWithin(
+  lat: number,
+  lng: number,
+  stations: Station[],
+  meters: number,
+): { station: Station; meters: number }[] {
+  return nearbyStations(lat, lng, stations, stations.length).filter((s) => s.meters <= meters);
 }
 
 // The station closest to (lat, lng), with its straight-line distance in metres — the k=1
