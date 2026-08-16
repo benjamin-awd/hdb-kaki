@@ -2,7 +2,15 @@
 // straight-line distance to it. All client-side — nothing leaves the browser.
 
 export type LatLng = [number, number];
-export type Station = { name: string; codes: string; lat: number; lng: number };
+// `opening` is set only for not-yet-open stations (the year service is expected to start);
+// the UI still ranks them as "nearest" but labels them so they aren't read as running today.
+export type Station = {
+  name: string;
+  codes: string;
+  lat: number;
+  lng: number;
+  opening?: number | string; // year, or a phrase like "TBA" / "mid-2030s" when LTA hasn't fixed one
+};
 
 // Great-circle distance in metres, used to rank stations and report distance to the nearest.
 export function haversineMeters(a: LatLng, b: LatLng): number {
