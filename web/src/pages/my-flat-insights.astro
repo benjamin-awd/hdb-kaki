@@ -309,25 +309,53 @@ import LeafletMap from '../components/LeafletMap.astro';
         Recent sales of the same flat type in your town, same street first.
       </SecHead>
 
-      <div class="split">
-        <div class="card comp-wrap">
-          <DataTable
-            headers={[
-              { label: 'Address' },
-              { label: 'Storey' },
-              { label: 'Area', align: 'r' },
-              { label: 'Lease', align: 'r' },
-              { label: 'Price', align: 'r' },
-              { label: 'PSF', align: 'r' },
-              { label: 'Sold', align: 'r' },
-            ]}
-            bodyId="comp-body"
-            loadingText="Enter a postal code…"
-            stack
-          />
-          <div class="comp-foot"><span id="comp-foot">&nbsp;</span></div>
+      <div class="card comp-wrap">
+        <DataTable
+          headers={[
+            { label: 'Address' },
+            { label: 'Storey' },
+            { label: 'Area', align: 'r' },
+            { label: 'Lease', align: 'r' },
+            { label: 'Price', align: 'r' },
+            { label: 'PSF', align: 'r' },
+            { label: 'Sold', align: 'r' },
+          ]}
+          bodyId="comp-body"
+          loadingText="Enter a postal code…"
+          stack
+        />
+        <div class="comp-foot"><span id="comp-foot">&nbsp;</span></div>
+      </div>
+
+      <!-- 06 GETTING AROUND -->
+      <SecHead num="06" title="Getting around">
+        Straight-line distance to the nearest MRT, plus nearby food, supermarkets, and malls.
+      </SecHead>
+
+      <div class="ins-map-col">
+        <div class="amenity-modes" id="ins-amenities" aria-label="Show nearby amenities" hidden>
+          <button type="button" class="am-chip" data-cat="hawker" aria-pressed="false">
+            <span class="am-dot" style="background: #d98a2b"></span>Food
+          </button>
+          <button type="button" class="am-chip" data-cat="supermarket" aria-pressed="false">
+            <span class="am-dot" style="background: #2f9e8f"></span>Supermarkets
+          </button>
+          <button type="button" class="am-chip" data-cat="mall" aria-pressed="false">
+            <span class="am-dot" style="background: #3b6ea5"></span>Malls
+          </button>
         </div>
-        <LeafletMap id="ins-map" minHeight="340px" />
+        <LeafletMap id="ins-map" minHeight="480px" />
+        <div class="walk-strip" id="ins-walk" hidden>
+          <div class="walk-lead"><span id="ins-walk-lead"></span></div>
+          <div class="walk-copy">
+            <span class="walk-main" id="ins-walk-main"></span>
+            <span class="walk-sub" id="ins-walk-sub"></span>
+            <div class="walk-near" id="ins-walk-near"></div>
+          </div>
+        </div>
+        <p class="map-src">
+          Amenities from OpenStreetMap, NEA &amp; SFA (data.gov.sg). Distances are straight-line.
+        </p>
       </div>
     </div>
   </section>
@@ -743,6 +771,218 @@ import LeafletMap from '../components/LeafletMap.astro';
     overflow-y: hidden;
     -webkit-overflow-scrolling: touch;
   }
+  /* §06 map column: the Leaflet map with amenity chips above and the "walk to MRT" strip below. */
+  .ins-map-col {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+  }
+  /* Amenity category filters — multi-select chips; the coloured dot keys the pins on the map. */
+  .amenity-modes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-self: flex-start;
+  }
+  /* Off/disabled: greyed and flat — muted text, no lift, desaturated dot. */
+  .am-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--font-sans);
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--ink-3);
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 6px 13px;
+    cursor: pointer;
+    transition:
+      color 0.12s,
+      background 0.12s,
+      box-shadow 0.12s;
+  }
+  /* Engaged: raised paper pill, ink text, dot in its category colour. */
+  .am-chip.on {
+    color: var(--ink);
+    background: var(--paper-2);
+    box-shadow: var(--shadow);
+  }
+  .am-chip:focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+  }
+  .am-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    flex: none;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.7);
+    filter: grayscale(1) opacity(0.45); /* greyed while the chip is off */
+    transition: filter 0.12s;
+  }
+  .am-chip.on .am-dot {
+    filter: none; /* full category colour when engaged */
+  }
+  .map-src {
+    font-size: 11.5px;
+    color: var(--ink-3);
+    margin: 0;
+  }
+  /* :global — the fullscreen control is a Leaflet control built at runtime. Flex-centre the icon
+     in Leaflet's 30px control button so it sits square, like the zoom +/- above it. */
+  :global(.fs-ctrl a) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  :global(.fs-ctrl a svg) {
+    width: 18px;
+    height: 18px;
+    color: var(--ink);
+  }
+  /* When the map container itself goes fullscreen, fill the screen (its min-height would leave it
+     small otherwise). */
+  :global(.map-real:fullscreen) {
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
+  }
+  .walk-strip {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 14px 18px;
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+  }
+  /* Serif minutes lead ("8 min"), ruled off from the copy — a broadsheet figure, not an emoji. */
+  .walk-lead {
+    flex: none;
+    padding-right: 15px;
+    border-right: 1px solid var(--line);
+    font-family: var(--font-newsreader);
+    font-weight: 600;
+    font-size: 26px;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  .walk-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+  .walk-main {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--ink);
+  }
+  .walk-sub {
+    font-family: var(--font-mono);
+    font-feature-settings: 'tnum' 1;
+    font-size: 12px;
+    color: var(--ink-3);
+  }
+  .walk-near {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .walk-near:empty {
+    display: none;
+  }
+  .near-chip {
+    font-size: 12px;
+    color: var(--ink-2);
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 3px 9px;
+    white-space: nowrap;
+  }
+  .near-chip .near-d {
+    font-family: var(--font-mono);
+    font-feature-settings: 'tnum' 1;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  /* :global — reach-ring labels are Leaflet divIcons injected outside Astro's scope. A paper
+     halo keeps the figure legible wherever the ring crosses the basemap. */
+  :global(.reach-label) {
+    font-family: var(--font-mono);
+    font-feature-settings: 'tnum' 1;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 16px;
+    text-align: center;
+    color: var(--red-ink);
+    white-space: nowrap;
+    pointer-events: none;
+    text-shadow:
+      0 0 3px var(--paper),
+      0 1px 2px var(--paper);
+  }
+  /* :global — the station marker is a Leaflet divIcon injected outside Astro's scope. A rounded
+     train badge, tinted by its MRT/LRT line (set inline), reading against the paper basemap. */
+  :global(.mrt-pin .mrt-badge) {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 7px;
+    border: 2px solid var(--paper-2);
+    box-shadow: var(--shadow);
+  }
+  :global(.mrt-pin .mrt-badge svg) {
+    display: block;
+    width: 15px;
+    height: 15px;
+  }
+  /* :global — amenity pins are Leaflet divIcons: a small category-coloured round badge, sized
+     below the MRT badge so amenities read as secondary. */
+  :global(.am-pin .am-badge) {
+    display: grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    border: 1.5px solid var(--paper-2);
+    box-shadow: var(--shadow);
+  }
+  :global(.am-pin .am-badge svg) {
+    display: block;
+    width: 12px;
+    height: 12px;
+  }
+  /* :global — marker clusters are built by leaflet.markercluster at runtime. Override the plugin's
+     default green/amber/orange bubbles with one neutral warm-grey chip and a FIXED mono count, so
+     clusters read as on-brand and stay the same size at every zoom level (the default CSS varies
+     the bubble by size class, which made the count look inconsistent as you zoomed). */
+  :global(.map-real .marker-cluster) {
+    background: rgba(140, 132, 121, 0.3);
+  }
+  :global(.map-real .marker-cluster div) {
+    width: 32px;
+    height: 32px;
+    margin: 4px;
+    border-radius: 999px;
+    background: rgba(232, 226, 215, 0.95);
+    color: var(--ink);
+  }
+  :global(.map-real .marker-cluster span) {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    font-size: 12px;
+    line-height: 32px;
+    font-feature-settings: 'tnum' 1;
+  }
   /* :global — comparables rows are injected via innerHTML */
   :global(.addr b) {
     font-weight: 600;
@@ -1102,7 +1342,10 @@ import LeafletMap from '../components/LeafletMap.astro';
 
 <script>
   import 'leaflet/dist/leaflet.css';
+  import 'leaflet.markercluster/dist/MarkerCluster.css';
+  import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
   import L from 'leaflet';
+  import 'leaflet.markercluster';
   // The valuation reads resale.parquet via the hyparquet data worker: postal lookups, comps
   // and benchmarks are computed off the main thread and only the summaries cross back.
   import { byId as $ } from '../lib/dom';
@@ -1136,6 +1379,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     red,
   } from '../lib/echartsTheme';
   import { money, moneyShort, psf as fpsf, titleCase, deltaPill } from '../lib/format';
+  import { nearbyStations, haversineMeters, type Station } from '../lib/onemap';
   import { reformatWithCaret, parsePrice, computeReturns } from '../lib/returns';
 
   const NOW_YEAR = new Date().getFullYear();
@@ -1192,7 +1436,375 @@ import LeafletMap from '../components/LeafletMap.astro';
     maxZoom: 19,
     subdomains: 'abcd',
   }).addTo(map);
+
+  // Fullscreen toggle — a small Leaflet control using the native Fullscreen API (no plugin). Sits
+  // under the zoom control; expands the map container, then invalidateSize so Leaflet re-renders.
+  const FsControl = L.Control.extend({
+    onAdd() {
+      const bar = L.DomUtil.create('div', 'leaflet-bar fs-ctrl');
+      const btn = L.DomUtil.create('a', '', bar) as HTMLAnchorElement;
+      btn.href = '#';
+      btn.title = 'Toggle fullscreen';
+      btn.setAttribute('role', 'button');
+      btn.setAttribute('aria-label', 'Toggle fullscreen');
+      const paint = () => {
+        // Corner brackets: outward-pointing to enter fullscreen, inward to exit.
+        const d = document.fullscreenElement
+          ? 'M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5'
+          : 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5';
+        btn.innerHTML =
+          `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}" fill="none" ` +
+          'stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      };
+      paint();
+      L.DomEvent.on(btn, 'click', (e) => {
+        L.DomEvent.stop(e);
+        const el = map.getContainer();
+        if (document.fullscreenElement) document.exitFullscreen?.();
+        else el.requestFullscreen?.();
+      });
+      document.addEventListener('fullscreenchange', () => {
+        paint();
+        setTimeout(() => map.invalidateSize(), 120);
+      });
+      return bar;
+    },
+  });
+  map.addControl(new FsControl({ position: 'topleft' }));
+
   const layer = L.layerGroup().addTo(map);
+  // Nearest-MRT walking route lives in its own layer so a re-compute can redraw it without
+  // touching the comp pins. Ink, not green: green is reserved for positive market direction, so
+  // a neutral path keeps the one red for the flat. Leaflet strokes SVG via the `stroke`
+  // attribute (no CSS var), so read the ink token to a concrete string once.
+  const routeLayer = L.layerGroup().addTo(map);
+  const routeColor =
+    getComputedStyle(document.documentElement).getPropertyValue('--ink').trim() || '#181410';
+  // The flat marker (drawn in compute) is raised above the route so the line reads as starting at
+  // the marker's edge, not from a dash inside the red dot.
+  let flatMarker: L.CircleMarker | null = null;
+
+  // Walking-reach rings (5/10/15 min ≈ 400/800/1200 m) sit under the pins in their own layer so a
+  // re-compute redraws them cleanly. Read the editorial red to a concrete string (SVG stroke can't
+  // resolve a CSS var); the rings are non-interactive so they never steal a pin's tooltip.
+  const reachLayer = L.layerGroup().addTo(map);
+  const redColor =
+    getComputedStyle(document.documentElement).getPropertyValue('--red').trim() || '#fe012b';
+  const REACH_RINGS: { meters: number; label: string; fill: number }[] = [
+    { meters: 400, label: '5 min', fill: 0.05 },
+    { meters: 800, label: '10 min', fill: 0.035 },
+    { meters: 1200, label: '15 min', fill: 0.02 },
+  ];
+  // Rings around the flat, each labelled at its northern edge. Largest first so inner fills stack.
+  function drawReachRings(center: [number, number]) {
+    reachLayer.clearLayers();
+    for (const ring of [...REACH_RINGS].reverse()) {
+      L.circle(center, {
+        radius: ring.meters,
+        interactive: false,
+        color: redColor,
+        weight: 1,
+        opacity: 0.4,
+        dashArray: '3 5',
+        fillColor: redColor,
+        fillOpacity: ring.fill,
+      }).addTo(reachLayer);
+      // metres → degrees latitude (1° lat ≈ 111_320 m) places the label at the ring's top edge
+      L.marker([center[0] + ring.meters / 111_320, center[1]], {
+        interactive: false,
+        keyboard: false,
+        icon: L.divIcon({ className: 'reach-label', html: ring.label, iconSize: [46, 16] }),
+      }).addTo(reachLayer);
+    }
+  }
+
+  // MRT/LRT line colours keyed by code prefix. Used only to tint the single nearest-station
+  // icon (never whole-map lines), so the map still reads as one red flat + one green route.
+  const LINE_COLORS: Record<string, string> = {
+    NS: '#d42e12',
+    EW: '#009645',
+    CG: '#009645',
+    NE: '#9f4c9c',
+    CC: '#f79500',
+    CE: '#f79500',
+    DT: '#0055b8',
+    TE: '#9d5b25',
+  };
+  const lineColor = (codes: string) => {
+    const prefix = codes.split(' / ')[0].replace(/\d.*$/, '');
+    return LINE_COLORS[prefix] ?? '#5b544a'; // LRT / unknown → ink-2
+  };
+  // A recognisable MRT station icon (train glyph) tinted by its line, in place of a plain dot.
+  // The body is white; windows and wheels are cut in the line colour via currentColor.
+  const mrtIcon = (codes: string) =>
+    L.divIcon({
+      className: 'mrt-pin',
+      html:
+        `<span class="mrt-badge" style="background:${lineColor(codes)};color:${lineColor(codes)}">` +
+        '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+        '<rect x="6" y="3.5" width="12" height="11" rx="3" fill="#fff"/>' +
+        '<rect x="7.6" y="5.6" width="3.2" height="2.6" rx="0.6" fill="currentColor"/>' +
+        '<rect x="13.2" y="5.6" width="3.2" height="2.6" rx="0.6" fill="currentColor"/>' +
+        '<circle cx="9.2" cy="11.4" r="1.05" fill="currentColor"/>' +
+        '<circle cx="14.8" cy="11.4" r="1.05" fill="currentColor"/>' +
+        '<path d="M8.4 14.5 6.8 17.4M15.6 14.5 17.2 17.4" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>' +
+        '</svg></span>',
+      iconSize: [22, 22],
+      iconAnchor: [11, 11],
+    });
+  // Call a stop "LRT" only when every line code is an LRT prefix; interchanges that also
+  // carry a heavy-rail code (e.g. Bukit Panjang BP6/DT1) read as "MRT".
+  const LRT_PREFIXES = ['BP', 'STC', 'SW', 'SE', 'PTC', 'PW', 'PE'];
+  const stationKind = (codes: string) =>
+    codes.split(' / ').every((c) => LRT_PREFIXES.some((p) => c.startsWith(p))) ? 'LRT' : 'MRT';
+
+  // Stations are loaded once (lazy) and cached; the nearest to the flat is picked client-side.
+  let stations: Station[] | null = null;
+  async function loadStations(): Promise<Station[]> {
+    if (stations) return stations;
+    stations = (await fetch(`${import.meta.env.BASE_URL}geo/mrt-stations.json`).then((r) =>
+      r.json(),
+    )) as Station[];
+    return stations;
+  }
+
+  // Rail-line geometry (schematic, one LineString per line, tagged with its brand colour). Loaded
+  // lazily like the stations; the map draws only the line(s) the nearest station sits on.
+  let mrtLines: GeoJSON.FeatureCollection | null = null;
+  async function loadLines(): Promise<GeoJSON.FeatureCollection> {
+    if (mrtLines) return mrtLines;
+    mrtLines = (await fetch(`${import.meta.env.BASE_URL}geo/mrt-lines.geojson`).then((r) =>
+      r.json(),
+    )) as GeoJSON.FeatureCollection;
+    return mrtLines;
+  }
+
+  // ---- nearby amenities (hawker/food, supermarkets, malls) ----
+  type Amenity = { type: string; name: string; lat: number; lng: number };
+  // Category colours come from the chart palette (muted teal/amber/blue), never the brand red.
+  const AMENITY_META: Record<string, { color: string; label: string; glyph: string }> = {
+    hawker: {
+      color: '#d98a2b',
+      label: 'Food',
+      glyph:
+        '<path d="M5 11h14a7 7 0 0 1-14 0Z" fill="#fff"/>' +
+        '<path d="M14 3.5 17 8.5" stroke="#fff" stroke-width="1.6" stroke-linecap="round"/>',
+    },
+    supermarket: {
+      color: '#2f9e8f',
+      label: 'Supermarkets',
+      glyph:
+        '<path d="M4 5h2l1.8 8.5h9L18.5 8H7" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>' +
+        '<circle cx="9.5" cy="18" r="1.3" fill="#fff"/><circle cx="16" cy="18" r="1.3" fill="#fff"/>',
+    },
+    mall: {
+      color: '#3b6ea5',
+      label: 'Malls',
+      glyph:
+        '<path d="M6.5 8.5h11l-1 11h-9Z" fill="none" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/>' +
+        '<path d="M9 8.5a3 3 0 0 1 6 0" fill="none" stroke="#fff" stroke-width="1.8"/>',
+    },
+  };
+  // Amenities cluster: dense towns have 100+ food places within 1 km, so individual pins would be
+  // soup. Cluster them (same pattern as Town Analysis) — counts collapse, pins expand on zoom, so
+  // everything nearby is reachable rather than truncated to an arbitrary few.
+  const amenityLayer = (L as any).markerClusterGroup({
+    maxClusterRadius: 45,
+    showCoverageOnHover: false,
+    chunkedLoading: true,
+  });
+  amenityLayer.addTo(map);
+  const shownCats = new Set<string>();
+  // Food entries compile every eatery at a block into one point: `n` counts them and `names` lists
+  // a few for the tooltip. Supermarkets/malls are single places (no n/names).
+  type Place = { name: string; lat: number; lng: number; n?: number; names?: string[] };
+  let amenities: Amenity[] | null = null;
+  async function loadAmenities(): Promise<Amenity[]> {
+    if (amenities) return amenities;
+    amenities = (await fetch(`${import.meta.env.BASE_URL}geo/amenities.json`).then((r) =>
+      r.json(),
+    )) as Amenity[];
+    return amenities;
+  }
+  // Food is a comprehensive SFA + NEA layer in its own file; supermarkets/malls stay in
+  // amenities.json. Both reduce to {name, lat, lng} for drawing.
+  let food: Place[] | null = null;
+  async function loadFood(): Promise<Place[]> {
+    if (food) return food;
+    food = (await fetch(`${import.meta.env.BASE_URL}geo/food.json`).then((r) =>
+      r.json(),
+    )) as Place[];
+    return food;
+  }
+  async function placesFor(cat: string): Promise<Place[]> {
+    if (cat === 'hawker') return loadFood();
+    return (await loadAmenities()).filter((a) => a.type === cat);
+  }
+  function amenityIcon(cat: string) {
+    const m = AMENITY_META[cat];
+    return L.divIcon({
+      className: 'am-pin',
+      html: `<span class="am-badge" style="background:${m.color}"><svg viewBox="0 0 24 24" aria-hidden="true">${m.glyph}</svg></span>`,
+      iconSize: [18, 18],
+      iconAnchor: [9, 9],
+    });
+  }
+  // Draw the selected amenity categories near the flat — everything within a walkable ~800 m,
+  // clustered so dense areas stay legible (no arbitrary cap, so nothing nearby is hidden).
+  // `amenitySeq` drops results from a compute() that's since been superseded.
+  const AMENITY_RADIUS = 800;
+  let amenitySeq = 0;
+  async function drawAmenities(from: [number, number]) {
+    const seq = ++amenitySeq;
+    amenityLayer.clearLayers();
+    if (!shownCats.size) return;
+    for (const cat of shownCats) {
+      let source: Place[];
+      try {
+        source = await placesFor(cat);
+      } catch {
+        continue;
+      }
+      if (seq !== amenitySeq) return;
+      const near = source
+        .map((a) => ({ a, d: haversineMeters(from, [a.lat, a.lng]) }))
+        .filter((x) => x.d <= AMENITY_RADIUS)
+        .sort((x, y) => x.d - y.d);
+      const label = AMENITY_META[cat].label;
+      for (const { a, d } of near) {
+        // Food pins compile a whole block: title with the count and list a few names.
+        let title: string;
+        if (a.n && a.n > 1) {
+          const listed = (a.names ?? [a.name]).join(', ');
+          const extra = a.n - (a.names?.length ?? 1);
+          title = `<b>${a.n} eateries</b><br/>${listed}${extra > 0 ? `, +${extra} more` : ''}`;
+        } else {
+          title = `<b>${a.name}</b>`;
+        }
+        L.marker([a.lat, a.lng], { icon: amenityIcon(cat), keyboard: false })
+          .bindTooltip(`${title}<br/>${label} · ${Math.round(d)} m`, {
+            direction: 'top',
+            offset: [0, -8],
+            opacity: 1,
+            className: 'hdb-tip',
+          })
+          .addTo(amenityLayer);
+      }
+    }
+  }
+
+  // Compact distance: metres under 1 km, else one-decimal km (mono figures downstream).
+  const fmtDist = (m: number) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`);
+
+  // Fill the strip beneath the map: a serif minutes lead, the "walk to <station>" line, a mono
+  // sub-line, and up to two next-nearest stations as chips. Empty `lead` hides the whole strip.
+  function setWalk(
+    lead: string,
+    main = '',
+    sub = '',
+    nearby: { station: Station; meters: number }[] = [],
+  ) {
+    const strip = $('ins-walk');
+    const modes = $('ins-amenities');
+    if (!lead) {
+      strip.setAttribute('hidden', '');
+      modes.setAttribute('hidden', '');
+      return;
+    }
+    strip.removeAttribute('hidden');
+    modes.removeAttribute('hidden');
+    $('ins-walk-lead').textContent = lead;
+    $('ins-walk-main').textContent = main;
+    $('ins-walk-sub').textContent = sub;
+    $('ins-walk-near').innerHTML = nearby
+      .map(
+        (n) =>
+          `<span class="near-chip">${titleCase(n.station.name)} ${stationKind(n.station.codes)}` +
+          ` · <span class="near-d">${fmtDist(n.meters)}</span></span>`,
+      )
+      .join('');
+  }
+
+  // Draw the nearest MRT and the straight-line distance to it (computed on-device from the
+  // block's coordinates — nothing leaves the browser). `mrtSeq` drops results from a compute()
+  // that's been superseded.
+  let mrtSeq = 0;
+  async function updateNearestMrt(from: [number, number]) {
+    const seq = ++mrtSeq;
+    routeLayer.clearLayers();
+    drawReachRings(from); // synchronous, so draw before the async station load
+    let list: Station[];
+    try {
+      list = await loadStations();
+    } catch {
+      setWalk('', '');
+      return;
+    }
+    if (seq !== mrtSeq) return;
+    const nearby = nearbyStations(from[0], from[1], list, 3);
+    const near = nearby[0];
+    if (!near) {
+      setWalk('', '');
+      return;
+    }
+    const others = nearby.slice(1);
+    const to: [number, number] = [near.station.lat, near.station.lng];
+    const kind = stationKind(near.station.codes);
+
+    // Draw the corridor(s) the nearest station sits on, under the marker + line. Best-effort:
+    // the line geometry is optional, so a fetch miss just leaves the station on its own.
+    const prefixes = new Set(near.station.codes.split(' / ').map((c) => c.replace(/\d.*$/, '')));
+    try {
+      const lines = await loadLines();
+      if (seq !== mrtSeq) return;
+      L.geoJSON(lines, {
+        interactive: false,
+        filter: (f) => prefixes.has(f.properties?.line),
+        style: (f) => ({
+          color: f?.properties?.color,
+          weight: 3,
+          opacity: 0.65,
+          lineCap: 'round',
+          lineJoin: 'round',
+        }),
+      }).addTo(routeLayer);
+    } catch {
+      /* line geometry unavailable — the station marker alone still reads */
+    }
+
+    L.marker(to, { icon: mrtIcon(near.station.codes), keyboard: false })
+      .bindTooltip(`<b>${near.station.name} ${kind}</b><br/>${near.station.codes}`, {
+        direction: 'top',
+        offset: [0, -8],
+        opacity: 1,
+        className: 'hdb-tip',
+      })
+      .addTo(routeLayer);
+
+    // Straight (as-the-crow-flies) dashed line from the flat to the nearest station.
+    const meters = near.meters;
+    L.polyline([from, to], {
+      color: routeColor,
+      weight: 4,
+      opacity: 0.9,
+      lineCap: 'round',
+      lineJoin: 'round',
+      dashArray: '3 8',
+    }).addTo(routeLayer);
+    flatMarker?.bringToFront(); // hide the line's start under the red dot, not inside it
+
+    const mins = Math.max(1, Math.round(meters / 80)); // rough pace, ~80 m/min
+    setWalk(
+      fmtDist(meters),
+      `to ${titleCase(near.station.name)} ${kind}`,
+      `straight-line · ≈ ${mins} min walk · ${near.station.codes}`,
+      others,
+    );
+
+    // Widen the view only if the station pokes outside the comps frame, to avoid a jump.
+    const b = L.latLngBounds([from, to]);
+    if (!map.getBounds().contains(b)) map.fitBounds(map.getBounds().extend(b), { maxZoom: 16 });
+  }
 
   // The resolved line carries validation errors only — the matched block/town is shown
   // inline under the postal code, so a success message there would just be redundant.
@@ -1714,7 +2326,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     });
     if (userLatLng) {
       pts.push(userLatLng);
-      L.circleMarker(userLatLng, {
+      flatMarker = L.circleMarker(userLatLng, {
         radius: 9,
         weight: 2.5,
         color: '#fff',
@@ -1727,8 +2339,25 @@ import LeafletMap from '../components/LeafletMap.astro';
         )
         .addTo(layer);
     }
-    if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.15));
+    // Default the view to the 10-minute walking ring (800 m) around the flat, so "what's a short
+    // walk away" fills the frame. Fall back to the comps bounds when we have no flat location.
+    const tenMinM = REACH_RINGS[1]?.meters ?? 800;
+    if (userLatLng) {
+      map.fitBounds(L.latLng(userLatLng[0], userLatLng[1]).toBounds(2 * tenMinM));
+    } else if (pts.length) {
+      map.fitBounds(L.latLngBounds(pts).pad(0.15));
+    }
     setTimeout(() => map.invalidateSize(), 50);
+    // Nearest-MRT walking route (async; extends the frame only if the station sits outside it).
+    if (userLatLng) {
+      updateNearestMrt(userLatLng);
+      drawAmenities(userLatLng);
+    } else {
+      routeLayer.clearLayers();
+      reachLayer.clearLayers();
+      amenityLayer.clearLayers();
+      setWalk('', '');
+    }
 
     // Export state: keep the comps for the CSV, refresh the print summary, and track the
     // computed view in the URL so copy-link / bookmarks reproduce it.
@@ -1785,6 +2414,21 @@ import LeafletMap from '../components/LeafletMap.astro';
     compute();
   });
   ['f-storey', 'f-area'].forEach((id) => $(id).addEventListener('change', compute));
+  // Amenity category chips: each toggles its layer of nearby hawker/food, supermarket, or mall
+  // pins. Independent (multi-select); toggling only redraws the amenity layer, no re-valuation.
+  $('ins-amenities')
+    .querySelectorAll<HTMLButtonElement>('.am-chip')
+    .forEach((btn) =>
+      btn.addEventListener('click', () => {
+        const cat = btn.dataset.cat as string;
+        const on = !shownCats.has(cat);
+        if (on) shownCats.add(cat);
+        else shownCats.delete(cat);
+        btn.classList.toggle('on', on);
+        btn.setAttribute('aria-pressed', String(on));
+        if (userLatLng) drawAmenities(userLatLng);
+      }),
+    );
   // Returns panel recomputes locally from the current estimate — no worker round-trip.
   $('r-paid').addEventListener('input', () => {
     formatPaid();

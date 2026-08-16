@@ -1,7 +1,8 @@
-# Cloudflare config for the HDB Kaki site — assets-only, no Worker script.
-# Astro builds to ./dist, which the Workers static-assets runtime serves directly from
-# Cloudflare's edge; the `_headers` file in ./dist drives per-asset caching. The site is
-# pure static assets (the in-browser data worker is just a hashed /_astro/*.js chunk).
+# Cloudflare config for the HDB Kaki site. Astro builds to ./dist, which the Workers
+# static-assets runtime serves directly from Cloudflare's edge; the `_headers` file in
+# ./dist drives per-asset caching. The site is a pure-assets deploy (no Worker script) —
+# the in-browser data worker is just a hashed JS chunk, and MRT distances are computed
+# client-side, so there is no server code.
 # Deploy locally or from CI with:  wrangler deploy
 # Name is the first URL label: https://app.hdb-kaki.workers.dev
 name = "app"
