@@ -236,6 +236,8 @@ export interface RecentRow {
   floor_area_sqft: number;
   resale_price: number;
   psf: number;
+  storey_range: string;
+  postal: number; // deep-links the row to my-flat-insights (?postal=)
 }
 export interface ScatterRow {
   month: string;
@@ -380,6 +382,8 @@ export function recentQuery(
     floor_area_sqft: c.floor_area_sqft[i],
     resale_price: c.resale_price[i],
     psf: Number.isNaN(c.psf[i]) ? 0 : c.psf[i],
+    storey_range: c.storey_range[i],
+    postal: c.postal[i],
   }));
   return { rows, total: idx.length };
 }
