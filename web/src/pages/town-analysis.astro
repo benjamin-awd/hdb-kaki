@@ -209,6 +209,16 @@ import LeafletMap from '../components/LeafletMap.astro';
     border-color: var(--red-ink);
     box-shadow: var(--shadow);
   }
+  /* Address deep-link inside the data table: inherit the cell's colour, reveal red-ink
+     underline on hover so it reads as clickable without shouting in the dense table. */
+  :global(.addr-link) {
+    color: inherit;
+    text-decoration: none;
+  }
+  :global(.addr-link:hover) {
+    color: var(--red-ink);
+    text-decoration: underline;
+  }
   :global(.rec .rank) {
     font-family: var(--font-mono);
     font-size: 13px;
@@ -323,6 +333,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     storey: string;
     psf: number;
     lease: number;
+    postal: number;
     band?: string;
   };
   type Rec = {
@@ -514,7 +525,14 @@ import LeafletMap from '../components/LeafletMap.astro';
       .map((r) => {
         const pill = r.band === 'below' ? 'up' : r.band === 'above' ? 'down' : 'flat';
         const lbl = r.band![0].toUpperCase() + r.band!.slice(1);
-        return `<tr><td class="num-cell" data-role="meta">${r.month}</td><td data-role="title">${titleCase(r.address)}</td>
+        // Deep-link the address into My Flat Insights, pre-filled with this flat (postal +
+        // the page's current flat type + this sale's storey band). Plain text when the row
+        // lacks a postal to resolve the block from.
+        const addr = titleCase(r.address);
+        const addrCell = r.postal
+          ? `<a class="addr-link" href="/my-flat-insights?${new URLSearchParams({ postal: String(r.postal), flat, storey: r.storey })}">${addr}</a>`
+          : addr;
+        return `<tr><td class="num-cell" data-role="meta">${r.month}</td><td data-role="title">${addrCell}</td>
         <td class="r price" data-role="primary">${money(r.price)}</td><td class="r num-cell" data-role="meta" data-suffix="psf">${fpsf(r.psf)}</td>
         <td class="r num-cell" data-role="meta">${r.lease} yrs</td><td data-role="meta"><span class="pill ${pill}">${lbl}</span></td><td class="tbreak" aria-hidden="true"></td></tr>`;
       })

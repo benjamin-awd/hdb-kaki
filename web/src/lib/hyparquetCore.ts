@@ -259,6 +259,7 @@ export interface TownMapRow {
   storey: string;
   psf: number;
   lease: number;
+  postal: number; // deep-links the table row to my-flat-insights (?postal=)
 }
 export interface TownRecord {
   town: string;
@@ -461,6 +462,7 @@ export function townMapQuery(
     storey: c.storey_range[i],
     psf: Number.isNaN(c.psf[i]) ? 0 : c.psf[i],
     lease: c.remaining_lease_years[i],
+    postal: c.postal[i],
   }));
 }
 
