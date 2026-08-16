@@ -1,0 +1,9 @@
+# OneMap credentials used ONLY at build time by webapp/update/build_food.py to geocode SFA food
+# postals (authenticated OneMap Search — the account's quota is a reliable bucket the anonymous
+# per-IP throttle is not). The site itself has no server code and makes no OneMap calls at runtime.
+#
+# Copy to `.dev.vars` (gitignored) and fill in a real OneMap account, then run:
+#   uv run python webapp/update/build_food.py
+# Register at https://www.onemap.gov.sg/apidocs/register
+ONEMAP_EMAIL=you@example.com
+ONEMAP_PASSWORD=your-onemap-password
