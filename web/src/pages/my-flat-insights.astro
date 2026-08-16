@@ -1163,6 +1163,23 @@ import LeafletMap from '../components/LeafletMap.astro';
     width: 15px;
     height: 15px;
   }
+  /* :global — the next-nearest stations: the same train badge, smaller and dimmer so the
+     highlighted nearest still reads first. */
+  :global(.mrt-pin-sec .mrt-badge) {
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 5px;
+    border: 1.5px solid var(--paper-2);
+    box-shadow: var(--shadow);
+    opacity: 0.8;
+  }
+  :global(.mrt-pin-sec .mrt-badge svg) {
+    display: block;
+    width: 11px;
+    height: 11px;
+  }
   /* :global — amenity pins are Leaflet divIcons: a small category-coloured round badge, sized
      below the MRT badge so amenities read as secondary. */
   :global(.am-pin .am-badge) {
@@ -1779,9 +1796,12 @@ import LeafletMap from '../components/LeafletMap.astro';
       .join('');
   // A recognisable MRT station icon (train glyph) tinted by its line, in place of a plain dot.
   // The body is white; windows and wheels are cut in the line colour via currentColor.
-  const mrtIcon = (codes: string) =>
+  // `secondary` renders the smaller, dimmer badge used for the next-nearest stations, so the
+  // highlighted nearest still reads first. It gets its own class (`.mrt-pin-sec`) so the pin
+  // count for the nearest stays unambiguous.
+  const mrtIcon = (codes: string, secondary = false) =>
     L.divIcon({
-      className: 'mrt-pin',
+      className: secondary ? 'mrt-pin-sec' : 'mrt-pin',
       html:
         `<span class="mrt-badge" style="background:${lineColor(codes)};color:${lineColor(codes)}">` +
         '<svg viewBox="0 0 24 24" aria-hidden="true">' +
@@ -1792,8 +1812,8 @@ import LeafletMap from '../components/LeafletMap.astro';
         '<circle cx="14.8" cy="11.4" r="1.05" fill="currentColor"/>' +
         '<path d="M8.4 14.5 6.8 17.4M15.6 14.5 17.2 17.4" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>' +
         '</svg></span>',
-      iconSize: [22, 22],
-      iconAnchor: [11, 11],
+      iconSize: secondary ? [16, 16] : [22, 22],
+      iconAnchor: secondary ? [8, 8] : [11, 11],
     });
   // Call a stop "LRT" only when every line code is an LRT prefix; interchanges that also
   // carry a heavy-rail code (e.g. Bukit Panjang BP6/DT1) read as "MRT".
@@ -2009,9 +2029,11 @@ import LeafletMap from '../components/LeafletMap.astro';
     const to: [number, number] = [near.station.lat, near.station.lng];
     const kind = stationKind(near.station.codes);
 
-    // Draw the corridor(s) the nearest station sits on, under the marker + line. Best-effort:
-    // the line geometry is optional, so a fetch miss just leaves the station on its own.
-    const prefixes = new Set(near.station.codes.split(' / ').map((c) => c.replace(/\d.*$/, '')));
+    // Draw the corridor(s) the nearby stations sit on, under the markers + line. Best-effort:
+    // the line geometry is optional, so a fetch miss just leaves the stations on their own.
+    const prefixes = new Set(
+      nearby.flatMap((n) => n.station.codes.split(' / ').map((c) => c.replace(/\d.*$/, ''))),
+    );
     try {
       const lines = await loadLines();
       if (seq !== mrtSeq) return;
@@ -2030,7 +2052,23 @@ import LeafletMap from '../components/LeafletMap.astro';
       /* line geometry unavailable — the station marker alone still reads */
     }
 
-    L.marker(to, { icon: mrtIcon(near.station.codes), keyboard: false })
+    // The next-nearest stations as smaller, dimmer pins, so the whole corridor's stations read
+    // at a glance. Drawn first (and with a lower z-index) so the highlighted nearest sits on top.
+    for (const n of nearby.slice(1)) {
+      L.marker([n.station.lat, n.station.lng], {
+        icon: mrtIcon(n.station.codes, true),
+        keyboard: false,
+        zIndexOffset: -100,
+      })
+        .bindTooltip(
+          `<b>${n.station.name} ${stationKind(n.station.codes)}</b><br/>${n.station.codes}` +
+            (n.station.opening ? `<br/>opens ${n.station.opening}` : ''),
+          { direction: 'top', offset: [0, -6], opacity: 1, className: 'hdb-tip' },
+        )
+        .addTo(routeLayer);
+    }
+
+    L.marker(to, { icon: mrtIcon(near.station.codes), keyboard: false, zIndexOffset: 100 })
       .bindTooltip(
         `<b>${near.station.name} ${kind}</b><br/>${near.station.codes}` +
           (near.station.opening ? `<br/>opens ${near.station.opening}` : ''),
