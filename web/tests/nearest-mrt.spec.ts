@@ -26,8 +26,10 @@ test('shows straight-line distance to the nearest MRT', async ({ page }) => {
   await expect(page.locator('#sc-nearby .sc-row').first()).toBeVisible();
   await expect(page.locator('#sc-nearby .sc-row-min').first()).toContainText(/~\d+ min/);
 
-  // The station marker (divIcon) and the distance line are both on the map.
+  // The nearest station marker (divIcon) and the distance line are both on the map, and the
+  // next-nearest stations show as smaller secondary pins.
   await expect(page.locator('.mrt-pin')).toHaveCount(1);
+  await expect(page.locator('.mrt-pin-sec').first()).toBeVisible();
   await expect(page.locator('.leaflet-overlay-pane svg path')).not.toHaveCount(0);
 
   // Toggling an amenity category draws its nearby pins on the map.
