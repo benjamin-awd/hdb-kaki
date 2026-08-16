@@ -1728,6 +1728,12 @@ import LeafletMap from '../components/LeafletMap.astro';
     CE: '#f79500',
     DT: '#0055b8',
     TE: '#9d5b25',
+    CR: '#97c616', // Cross Island Line (Lime), incl. Punggol Extension
+    CP: '#97c616',
+    JS: '#0099aa', // Jurong Region Line (Teal), all three branches
+    JW: '#0099aa',
+    JE: '#0099aa',
+    DE: '#0055b8', // Downtown Line western extension (Sungei Kadut)
   };
   const lineColor = (codes: string) => {
     const prefix = codes.split(' / ')[0].replace(/\d.*$/, '');
@@ -1743,6 +1749,12 @@ import LeafletMap from '../components/LeafletMap.astro';
     CE: 'Circle Line',
     DT: 'Downtown Line',
     TE: 'Thomson-East Coast Line',
+    CR: 'Cross Island Line',
+    CP: 'Cross Island Line',
+    JS: 'Jurong Region Line',
+    JW: 'Jurong Region Line',
+    JE: 'Jurong Region Line',
+    DE: 'Downtown Line',
     BP: 'Bukit Panjang LRT',
     SE: 'Sengkang LRT',
     SW: 'Sengkang LRT',
@@ -1953,14 +1965,17 @@ import LeafletMap from '../components/LeafletMap.astro';
     $('sc-badges').innerHTML = codeBadges(nearest.station.codes);
     $('sc-dist').textContent = dp.v;
     $('sc-unit').textContent = dp.u;
-    $('sc-walk').textContent = `approx ${walkMins(nearest.meters)} min walk`;
+    $('sc-walk').textContent =
+      `approx ${walkMins(nearest.meters)} min walk` +
+      (nearest.station.opening ? ` · opens ${nearest.station.opening}` : '');
     $('sc-nearby-wrap').toggleAttribute('hidden', nearby.length === 0);
     $('sc-nearby').innerHTML = nearby
       .map(
         (n) =>
           `<li class="sc-row"><span class="sc-badges">${codeBadges(n.station.codes)}</span>` +
           `<div class="sc-row-main"><span class="sc-row-name">${titleCase(n.station.name)}</span>` +
-          `<span class="sc-row-line">${lineName(n.station.codes)}</span></div>` +
+          `<span class="sc-row-line">${lineName(n.station.codes)}` +
+          `${n.station.opening ? ` · opens ${n.station.opening}` : ''}</span></div>` +
           `<div class="sc-row-fig"><span class="sc-row-dist">${fmtDist(n.meters)}</span>` +
           `<span class="sc-row-min">~${walkMins(n.meters)} min</span></div></li>`,
       )
@@ -2016,12 +2031,16 @@ import LeafletMap from '../components/LeafletMap.astro';
     }
 
     L.marker(to, { icon: mrtIcon(near.station.codes), keyboard: false })
-      .bindTooltip(`<b>${near.station.name} ${kind}</b><br/>${near.station.codes}`, {
-        direction: 'top',
-        offset: [0, -8],
-        opacity: 1,
-        className: 'hdb-tip',
-      })
+      .bindTooltip(
+        `<b>${near.station.name} ${kind}</b><br/>${near.station.codes}` +
+          (near.station.opening ? `<br/>opens ${near.station.opening}` : ''),
+        {
+          direction: 'top',
+          offset: [0, -8],
+          opacity: 1,
+          className: 'hdb-tip',
+        },
+      )
       .addTo(routeLayer);
 
     // Straight (as-the-crow-flies) dashed line from the flat to the nearest station.

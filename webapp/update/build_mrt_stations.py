@@ -5,82 +5,59 @@ physical station (interchanges collapsed to a single point, line codes merged):
 
     [{"name": "Bishan", "codes": "CC15 / NS17", "lat": 1.35102, "lng": 103.84882}, ...]
 
+Future (not-yet-open) stations carry an extra ``"opening"`` year; the page still
+picks them as "nearest" but labels them so they aren't mistaken for a running station:
+
+    {"name": "Mayflower", "codes": "TE6", "lat": 1.37146, "lng": 103.83657}
+    {"name": "Aviation Park", "codes": "CR2", "lat": 1.3846, "lng": 103.988, "opening": 2030}
+
 The page loads this once, picks the station nearest the resolved flat by great-circle
 distance, and then asks the OneMap routing proxy for the actual walking path to it.
 
-Source: LTA train-station coordinates (Open Data Licence), via the widely-mirrored
-``datadoubleconfirm`` CSV. Like the boundary GeoJSONs (build_town_geojson.py), stations
-change rarely, so the output is committed and this runs on demand, not in the daily ETL:
+Source of truth: ``webapp/update/rail_stations.py`` (RAIL_STATIONS) — a committed,
+hand-maintained table covering the whole current network plus every announced future
+line (Cross Island, Jurong Region, Circle Line 6, TEL/DTL/NSL build-out). Operational
+coordinates were geocoded from OneMap (the authoritative LTA source); future-station
+coordinates are best-available planning locations. This replaces the old
+``datadoubleconfirm`` CSV mirror, which predated the Thomson-East Coast Line build-out
+and so silently dropped Mayflower and most of the brown line.
+
+Stations change rarely, so the output is committed and this runs on demand, not in the
+daily ETL. When a line opens or a station is confirmed, edit RAIL_STATIONS and re-run:
 
     uv run python webapp/update/build_mrt_stations.py
-
-Caveat: this mirror predates the full Thomson-East Coast Line build-out, so a handful of
-the newest stations may be missing. When a OneMap token is available, refresh from the
-authoritative OneMap Themes service instead (queryName=trainstation) and re-emit here.
 """
 
 from __future__ import annotations
 
-import csv
-import io
 import json
-import urllib.request
 from pathlib import Path
+
+from rail_stations import RAIL_STATIONS
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "web" / "public" / "geo" / "mrt-stations.json"
 
-SRC_CSV = "https://raw.githubusercontent.com/hxchua/datadoubleconfirm/master/datasets/mrtsg.csv"
-
-
-def _clean_name(raw: str) -> str:
-    """ "ADMIRALTY MRT STATION" -> "Admiralty"; keep interchange base names stable."""
-    name = raw.strip().upper()
-    for suffix in (" MRT STATION", " LRT STATION", " MRT", " LRT"):
-        if name.endswith(suffix):
-            name = name[: -len(suffix)]
-            break
-    return name.title()
-
-
-def _fetch_csv(url: str, timeout: int = 30) -> str:
-    req = urllib.request.Request(
-        url, headers={"User-Agent": "Mozilla/5.0 (hdb-kaki build)"}
-    )
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read().decode("utf-8")
-
 
 def build() -> None:
-    rows = list(csv.DictReader(io.StringIO(_fetch_csv(SRC_CSV))))
-
-    # Group per physical station: interchanges appear once per line code (Jurong East =
-    # EW24 + NS1) at ~the same point. Merge codes and average the coordinates.
-    grouped: dict[str, dict] = {}
-    for row in rows:
-        name = _clean_name(row["STN_NAME"])
-        lat, lng = float(row["Latitude"]), float(row["Longitude"])
-        g = grouped.setdefault(name, {"codes": set(), "lats": [], "lngs": []})
-        if row.get("STN_NO"):
-            g["codes"].add(row["STN_NO"].strip())
-        g["lats"].append(lat)
-        g["lngs"].append(lng)
-
-    stations = [
-        {
-            "name": name,
-            "codes": " / ".join(sorted(g["codes"])),
-            "lat": round(sum(g["lats"]) / len(g["lats"]), 5),
-            "lng": round(sum(g["lngs"]) / len(g["lngs"]), 5),
+    stations = []
+    for s in sorted(RAIL_STATIONS, key=lambda s: s["name"]):
+        entry = {
+            "name": s["name"],
+            "codes": s["codes"],
+            "lat": round(s["lat"], 5),
+            "lng": round(s["lng"], 5),
         }
-        for name, g in sorted(grouped.items())
-    ]
+        if s.get("opening") is not None:
+            entry["opening"] = s["opening"]  # year (int) or a phrase like "TBA"
+        stations.append(entry)
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(stations, separators=(",", ":")))
+    future = sum(1 for s in stations if "opening" in s)
     print(
         f"Wrote {OUT.relative_to(ROOT)} ({OUT.stat().st_size / 1024:.1f} KB, "
-        f"{len(stations)} stations)"
+        f"{len(stations)} stations, {future} future)"
     )
 
 
