@@ -3,6 +3,7 @@ import time
 from argparse import ArgumentParser
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from difflib import SequenceMatcher
 from functools import lru_cache
 from pathlib import Path
 
@@ -31,7 +32,7 @@ def extract_hdb_data(year_month, max_retries=5):
             return result["result"]["records"]
         if result.get("code") == 24:
             print(result)
-            wait = 10 * (2 ** attempt)
+            wait = 10 * (2**attempt)
             print(f"Rate limited for {year_month}, retrying in {wait}s...")
             time.sleep(wait)
         else:
@@ -70,6 +71,62 @@ def fetch_osm_postal(query_address, session: requests.Session):
     return response[0]["address"].get("postcode", None)
 
 
+# HDB street abbreviations vs the spelled-out forms OneMap returns in ROAD_NAME, so the
+# road-name similarity below is not thrown off by "DR" vs "DRIVE" etc.
+_ROAD_ABBREV = {
+    "RD": "ROAD",
+    "AVE": "AVENUE",
+    "ST": "STREET",
+    "DR": "DRIVE",
+    "CL": "CLOSE",
+    "CRES": "CRESCENT",
+    "CTRL": "CENTRAL",
+    "GDNS": "GARDENS",
+    "HTS": "HEIGHTS",
+    "JLN": "JALAN",
+    "LOR": "LORONG",
+    "BT": "BUKIT",
+    "UPP": "UPPER",
+    "TG": "TANJONG",
+    "KG": "KAMPONG",
+    "TER": "TERRACE",
+    "PL": "PLACE",
+    "PK": "PARK",
+    "NTH": "NORTH",
+    "STH": "SOUTH",
+    "CTR": "CENTRE",
+}
+
+
+def _norm_road(name: str) -> str:
+    return " ".join(_ROAD_ABBREV.get(tok, tok) for tok in str(name).upper().split())
+
+
+def _best_onemap_match(results: list[dict], query_address: str) -> dict:
+    """Pick the OneMap result that actually matches the queried block+street.
+
+    OneMap's elastic search returns several hits and the top one is often wrong: a null
+    postal (a business tenant), or the right block number on a *different* road (e.g. blindly
+    taking result[0] for "11 HOLLAND DR" gives Holland Grove Drive, not Holland Drive). Prefer
+    hits with a real 6-digit postal, then an exact block-number match, then the closest road
+    name. Falls back to result[0] only when nothing scores."""
+    block, _, street = query_address.partition(" ")
+    block = block.upper()
+    street = _norm_road(street)
+
+    def has_postal(r: dict) -> bool:
+        return str(r.get("POSTAL", "")).isdigit() and len(str(r.get("POSTAL"))) == 6
+
+    def score(r: dict) -> tuple:
+        return (
+            has_postal(r),
+            str(r.get("BLK_NO", "")).upper() == block,
+            SequenceMatcher(None, _norm_road(r.get("ROAD_NAME", "")), street).ratio(),
+        )
+
+    return max(results, key=score)
+
+
 def fetch_map_data(query_address, session: requests.Session, max_retries=5):
     query_string = (
         "https://www.onemap.gov.sg/api/common/elastic/search?&searchVal="
@@ -82,7 +139,7 @@ def fetch_map_data(query_address, session: requests.Session, max_retries=5):
             resp = session.get(query_string)
         except requests.exceptions.ConnectionError:
             if attempt < max_retries - 1:
-                time.sleep(2 ** attempt)
+                time.sleep(2**attempt)
                 continue
             else:
                 raise RuntimeError(
@@ -92,11 +149,14 @@ def fetch_map_data(query_address, session: requests.Session, max_retries=5):
             time.sleep(10 * (attempt + 1))
             continue
         try:
-            response = resp.json()["results"][0]
+            results = resp.json()["results"]
+            if not results:
+                raise IndexError
+            response = _best_onemap_match(results, query_address)
             break
         except (requests.exceptions.JSONDecodeError, KeyError, IndexError):
             if attempt < max_retries - 1:
-                time.sleep(2 ** attempt)
+                time.sleep(2**attempt)
             else:
                 raise RuntimeError(
                     f"Failed to fetch map data for '{query_address}' after {max_retries} attempts "
@@ -209,7 +269,9 @@ def process_month(month: str, data_dir: Path, should_process: bool = False):
         print(f"Data size not updated {month}, skip processing...")
         return False
 
-    property_coords = pd.DataFrame(columns=["address", "postal", "latitude", "longitude"])
+    property_coords = pd.DataFrame(
+        columns=["address", "postal", "latitude", "longitude"]
+    )
     new_addresses = new_data.drop_duplicates(subset="address")
 
     if not existing_data.empty:
@@ -230,21 +292,21 @@ def process_month(month: str, data_dir: Path, should_process: bool = False):
                 f"Updating missing latitude and longitude for existing addresses in {month}"
             )
             addresses_to_update = existing_data[missing_lat_lon]
-            new_addresses = pd.concat([new_addresses, addresses_to_update]).drop_duplicates(
-                subset="address"
-            )
+            new_addresses = pd.concat(
+                [new_addresses, addresses_to_update]
+            ).drop_duplicates(subset="address")
 
     if not new_addresses.empty:
         print(f"Fetching latitude and longitude for new addresses in {month}")
         new_map_data = get_map_results(new_addresses)
-        property_coords = pd.concat(
-            [property_coords, new_map_data]
-        )
+        property_coords = pd.concat([property_coords, new_map_data])
 
     # 3. Merge Coordinates
     # Remove existing coord cols from new_data if present to avoid overlap
     new_data = new_data.drop(
-        columns=[c for c in ["postal", "latitude", "longitude"] if c in new_data.columns]
+        columns=[
+            c for c in ["postal", "latitude", "longitude"] if c in new_data.columns
+        ]
     )
     merged_df = new_data.merge(property_coords, on="address", how="left")
 
