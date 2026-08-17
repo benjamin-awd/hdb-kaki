@@ -62,8 +62,37 @@ LINE_COLORS: dict[str, str] = {
 
 _CODE = re.compile(r"^([A-Z]+)(\d*)")
 
+# Loop LRT services are closed rings through their interchange hub, not open polylines: the
+# corridor runs hub → stop 1 → … → stop N → hub. The hub is a different code prefix (PTC/STC),
+# so it never joins the loop's own stop list — stitch it onto both ends here. Prefix → hub code.
+LOOP_HUBS: dict[str, str] = {
+    "PW": "PTC",  # Punggol West Loop, through Punggol
+    "PE": "PTC",  # Punggol East Loop, through Punggol
+    "SW": "STC",  # Sengkang West Loop, through Sengkang
+    "SE": "STC",  # Sengkang East Loop, through Sengkang
+}
+
+# Bukit Panjang LRT is a lollipop, not a line: a BP1→BP6 trunk, then a one-way loop
+# BP6→BP7→…→BP13 that rejoins the trunk at BP6 (Bukit Panjang). Numeric order already walks the
+# trunk and up the loop; appending the junction's point closes the ring. (BP14 Ten Mile Junction
+# closed in 2019 and is no longer in the dataset.)
+LOOP_BACK: dict[str, str] = {"BP": "BP6"}
+
+
+def _point_by_code() -> dict[str, tuple[float, float]]:
+    """Map every station code to its (lng, lat), so loop hubs can be stitched into corridors."""
+    pts: dict[str, tuple[float, float]] = {}
+    for s in RAIL_STATIONS:
+        for code in re.split(r"\s*/\s*", s["codes"]):
+            code = code.strip()
+            if code:
+                pts[code] = (float(s["lng"]), float(s["lat"]))
+    return pts
+
 
 def build() -> None:
+    points = _point_by_code()
+
     # Group stops by line prefix; keep each stop's running number so we can order the corridor.
     # Interchanges (codes "CC15 / NS17") add their single point to every line they name.
     # Numberless hub codes (STC, PTC) sort first at 0.
@@ -85,7 +114,17 @@ def build() -> None:
         ordered = sorted(stops, key=lambda s: s[0])
         if len(ordered) < 2:
             continue  # a single stop makes no line
-        coords = [[round(lng, 5), round(lat, 5)] for _, lng, lat in ordered]
+        pts = [(lng, lat) for _, lng, lat in ordered]
+
+        # Close loop services back through their interchange hub (PTC/STC).
+        hub = LOOP_HUBS.get(prefix)
+        if hub and hub in points:
+            pts = [points[hub], *pts, points[hub]]
+        # Rejoin a lollipop loop (Bukit Panjang) at its junction station.
+        elif prefix in LOOP_BACK and LOOP_BACK[prefix] in points:
+            pts.append(points[LOOP_BACK[prefix]])
+
+        coords = [[round(lng, 5), round(lat, 5)] for lng, lat in pts]
         features.append(
             {
                 "type": "Feature",
