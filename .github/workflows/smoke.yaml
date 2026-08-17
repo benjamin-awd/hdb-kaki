@@ -1,0 +1,70 @@
+name: Smoke test (production)
+
+# Post-deploy health check for the LIVE site (https://app.hdb-kaki.workers.dev). Unlike
+# test.yaml — which builds and boots a local `wrangler dev` to run the full E2E suite
+# pre-merge — this drives the already-deployed production URL with a small Chromium-only
+# Playwright suite (web/tests-smoke/, config web/playwright.smoke.config.ts). No data
+# download or site build: it needs neither, because it exercises whatever is live.
+#
+# Why this exists: the site is rebuilt and redeployed DAILY against fresh ETL data that
+# no PR ever sees (see deploy.yaml), so a bad data edge case — or a Cloudflare/edge or
+# third-party outage — can break production with no red pre-merge check. This suite is
+# the heartbeat that catches that.
+#
+# Triggers:
+#   - after every PRODUCTION "Deploy web" run (push to main / post-ETL), so a deploy that
+#     broke prod reds immediately. PR preview uploads are skipped (head_branch guard) —
+#     they never touch production.
+#   - daily on a schedule, to catch prod drifting broken on a day with no deploy.
+#   - manually (optionally against another URL via the run's SMOKE_BASE_URL, e.g. a preview).
+#
+# A failure reds the run; GitHub's default Actions failure notification emails the actor.
+
+on:
+  workflow_run:
+    workflows: ["Deploy web"]
+    types: [completed]
+  schedule:
+    - cron: "0 1 * * *" # daily 01:00 UTC / 09:00 SGT — a failure is seen during the day
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    # Only after a SUCCESSFUL production deploy (main), never a PR preview upload; the
+    # schedule/manual runs always proceed.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        working-directory: web
+        run: bun install --frozen-lockfile
+
+      - name: Install Playwright browser
+        working-directory: web
+        run: bunx playwright install --with-deps chromium
+
+      - name: Smoke-test production
+        working-directory: web
+        env:
+          SMOKE_BASE_URL: https://app.hdb-kaki.workers.dev
+        run: bun run test:smoke
+
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-report
+          path: web/playwright-report/
+          retention-days: 7
