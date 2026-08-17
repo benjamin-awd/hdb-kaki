@@ -294,6 +294,48 @@ describe('resolveBlockQuery', () => {
   test('unknown postal → null', () => {
     expect(resolveBlockQuery(cols(rows), 999999)).toBeNull();
   });
+
+  test('mixed-postal: lc follows the latest transaction, not the postal mode', () => {
+    // A postal that accidentally mixes two physical blocks: four older rows for one
+    // block (commence 1973) and one recent resale of another (commence 2016). The mode
+    // of lease_commence_date is 1973, but the address resolves to the latest row — so
+    // lc must come from that same latest row to stay consistent with the address.
+    const mixed = [
+      row({
+        postal: 163028,
+        month: '2017-12',
+        address: '28 Tiong Bahru Rd',
+        lease_commence_date: 1973,
+      }),
+      row({
+        postal: 163028,
+        month: '2018-07',
+        address: '28 Tiong Bahru Rd',
+        lease_commence_date: 1973,
+      }),
+      row({
+        postal: 163028,
+        month: '2023-08',
+        address: '28 Tiong Bahru Rd',
+        lease_commence_date: 1973,
+      }),
+      row({
+        postal: 163028,
+        month: '2023-10',
+        address: '28 Tiong Bahru Rd',
+        lease_commence_date: 1973,
+      }),
+      row({
+        postal: 163028,
+        month: '2026-08',
+        address: '9B Boon Tiong Rd',
+        lease_commence_date: 2016,
+      }),
+    ];
+    const m = resolveBlockQuery(cols(mixed), 163028)!;
+    expect(m.address).toBe('9B Boon Tiong Rd'); // latest month 2026-08
+    expect(m.lc).toBe(2016); // same latest row, not mode(→1973)
+  });
 });
 
 describe('storeysAreaQuery', () => {

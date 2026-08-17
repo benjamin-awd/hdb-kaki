@@ -534,7 +534,12 @@ export function townRecordsQuery(
 }
 
 /** my-flat-insights postal lookup: block identity via arg_max(latest) + mode, plus the flat
- * types seen at that postal (count DESC). Returns null when the postal has no transactions. */
+ * types seen at that postal (count DESC). Returns null when the postal has no transactions.
+ *
+ * `lease_commence_date` is read off the latest transaction (like address/town/lat/lng) rather
+ * than the postal-wide mode: a postal can occasionally mix two physical blocks (e.g. a
+ * mis-postalled resale), and taking the mode would pair a recent block's address with an
+ * older block's commence year — showing a wrong remaining-lease next to the right address. */
 export function resolveBlockQuery(c: Columns, postal: number): BlockMeta | null {
   const idx: number[] = [];
   for (let i = 0; i < c.n; i++) if (c.postal[i] === postal) idx.push(i);
@@ -547,7 +552,7 @@ export function resolveBlockQuery(c: Columns, postal: number): BlockMeta | null 
     street: latest((i) => c.street_name[i]) ?? '',
     address: latest((i) => c.address[i]) ?? '',
     model: mode(idx, (i) => c.flat_model[i]) ?? '',
-    lc: Number(mode(idx, (i) => c.lease_commence_date[i]) ?? 0),
+    lc: Number(latest((i) => c.lease_commence_date[i]) ?? 0),
     lat: lat == null || Number.isNaN(lat) ? null : lat,
     lng: lng == null || Number.isNaN(lng) ? null : lng,
     flats: [...groupBy(idx, (i) => c.flat_type[i])]
