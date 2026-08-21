@@ -21,6 +21,13 @@ on:
       - ".github/workflows/validate.yaml"
   workflow_dispatch:
 
+concurrency:
+  # Supersede an in-flight run when a newer commit lands on the same ref, so
+  # rapid pushes to a PR (or main) don't stack redundant full pipelines. Grouped
+  # per workflow (github.workflow) so the web workflows never cancel each other.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
