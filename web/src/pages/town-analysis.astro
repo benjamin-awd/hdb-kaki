@@ -314,7 +314,7 @@ import LeafletMap from '../components/LeafletMap.astro';
   import { createHyparquet } from '../lib/hyparquetClient';
   import { createUrlState, selectBinding, chipBinding, stateBinding } from '../lib/urlState';
   import { downloadCsv } from '../lib/csv';
-  import { createExpander } from '../lib/expandTable';
+  import { createLoadMore } from '../lib/expandTable';
   import { areaToTown } from '../lib/subzones';
 
   const { townMap, townRecords, streets, warmWhenIdle } = createHyparquet();
@@ -522,14 +522,14 @@ import LeafletMap from '../components/LeafletMap.astro';
       $('amt-' + k).textContent = counts[k].toLocaleString();
     });
 
-    // table — capped at 12 by default, expandable via the footer "Show all" toggle.
+    // table — shows 12 rows, then 12 more per "Show N more" click (see townTable).
     townTable.render();
   }
 
-  // Data table below the map. Renders up to `limit` of currentRows; the expander owns the
-  // 12-row cap and its "Show all N / Show fewer" toggle. Row HTML is per-row (no adjacency),
-  // so slicing currentRows is enough.
-  const townTable = createExpander('expand-town', 12, (limit) => {
+  // Data table below the map. A town+flat's 24-month slice can run to hundreds of rows, so it
+  // loads 12 at a time rather than dumping everything — keeps the footer download reachable.
+  // Renders up to `limit` of currentRows; row HTML is per-row (no adjacency), so slicing is enough.
+  const townTable = createLoadMore('expand-town', 12, (limit) => {
     const rows = currentRows;
     const flat = currentFlat;
     const shown = Math.min(limit, rows.length);
