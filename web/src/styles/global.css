@@ -757,10 +757,21 @@ table.comp tbody tr:hover {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
   padding: 14px 16px;
   border-top: 1px solid var(--line);
   font-size: 13px;
   color: var(--ink-3);
+}
+/* Right-hand cluster of a table footer: the expand toggle sits beside the download
+   button (see createExpander in lib/expandTable.ts). Wraps under the count on narrow
+   cards so neither action is clipped. */
+.tbl-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 /* ---------- responsive ---------- */
