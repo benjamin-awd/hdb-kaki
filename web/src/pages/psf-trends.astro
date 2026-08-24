@@ -122,7 +122,10 @@ import DataTable from '../components/DataTable.astro';
         ]}
         bodyId="tbody-psf"
       />
-      <div class="tbl-foot"><span id="psf-foot">&nbsp;</span></div>
+      <div class="tbl-foot">
+        <span id="psf-foot">&nbsp;</span>
+        <div class="tbl-actions"><a class="ghost" href="#" id="expand-psf" hidden></a></div>
+      </div>
     </div>
   </main>
 </Base>
@@ -249,6 +252,7 @@ import DataTable from '../components/DataTable.astro';
   import { createHyparquet } from '../lib/hyparquetClient';
   import type { PsfSpec, ScatterRow, Monthly } from '../lib/hyparquetClient';
   import { createUrlState, selectBinding, chipBinding, stateBinding } from '../lib/urlState';
+  import { createExpander } from '../lib/expandTable';
 
   const { psfScatter, streets, warmWhenIdle } = createHyparquet();
 
@@ -350,8 +354,22 @@ import DataTable from '../components/DataTable.astro';
   // Ask the worker for the current filter's scatter sample + per-month medians, then paint.
   async function loadRender() {
     const { sample, monthly } = await psfScatter(specFromUI());
+    // New filter → collapse the table back to the 8-month preview (a regression-type re-fit
+    // calls paintChart directly and keeps the current expand state).
+    psfTable.reset();
     paintChart(sample, monthly);
   }
+
+  // Fitted-PSF table: capped at 8 months by default, expandable to the full series. paintChart
+  // builds every month's row (the MoM pill needs the adjacent month) into psfRows; the
+  // expander slices it and owns the "Show all N / Show fewer" toggle.
+  let psfRows: string[] = [];
+  const psfTable = createExpander('expand-psf', 8, (limit) => {
+    const shown = Math.min(limit, psfRows.length);
+    $('tbody-psf').innerHTML = psfRows.slice(0, shown).join('');
+    $('psf-foot').textContent = `Showing ${shown} of ${psfRows.length} months`;
+    return psfRows.length;
+  });
 
   // Render the chart, stats and table from already-fetched data. Pure client-side, so
   // toggling the regression type re-fits the same data without a new query.
@@ -691,23 +709,21 @@ import DataTable from '../components/DataTable.astro';
             : 'weak fit';
     }
 
-    // table (latest 8, desc)
+    // table (desc) — build every month's row now (the MoM pill needs the next month down),
+    // then let psfTable slice to the 8-row preview or the full series.
     const desc = [...pts].reverse();
-    $('tbody-psf').innerHTML = desc
-      .slice(0, 8)
-      .map((p, i) => {
-        const f = fitted.get(p.idx) ?? p.med;
-        const nxt = desc[i + 1];
-        let mom = '';
-        if (nxt) {
-          const fn = fitted.get(nxt.idx) ?? nxt.med;
-          const { cls, text } = deltaPill(((f - fn) / fn) * 100, { threshold: 0.5 });
-          mom = `<span class="pill ${cls}">${text}</span>`;
-        }
-        return `<tr><td class="num-cell">${p.month}</td><td class="r price">${fpsf(f)}</td><td class="r">${mom}</td></tr>`;
-      })
-      .join('');
-    $('psf-foot').textContent = `Showing ${Math.min(8, pts.length)} of ${pts.length} months`;
+    psfRows = desc.map((p, i) => {
+      const f = fitted.get(p.idx) ?? p.med;
+      const nxt = desc[i + 1];
+      let mom = '';
+      if (nxt) {
+        const fn = fitted.get(nxt.idx) ?? nxt.med;
+        const { cls, text } = deltaPill(((f - fn) / fn) * 100, { threshold: 0.5 });
+        mom = `<span class="pill ${cls}">${text}</span>`;
+      }
+      return `<tr><td class="num-cell">${p.month}</td><td class="r price">${fpsf(f)}</td><td class="r">${mom}</td></tr>`;
+    });
+    psfTable.render();
   }
 
   document.querySelectorAll<HTMLButtonElement>('#reg-toggle .chip').forEach((btn) => {
