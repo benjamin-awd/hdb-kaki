@@ -384,7 +384,10 @@ import LeafletMap from '../components/LeafletMap.astro';
           loadingText="Enter a postal code…"
           stack
         />
-        <div class="comp-foot"><span id="comp-foot">&nbsp;</span></div>
+        <div class="comp-foot">
+          <span id="comp-foot">&nbsp;</span>
+          <div class="tbl-actions"><a class="ghost" href="#" id="expand-comp" hidden></a></div>
+        </div>
       </div>
 
       <!-- 06 GETTING AROUND -->
@@ -1629,6 +1632,7 @@ import LeafletMap from '../components/LeafletMap.astro';
   import { createHyparquet } from '../lib/hyparquetClient';
   import { createUrlState, selectBinding, inputBinding } from '../lib/urlState';
   import { downloadCsv } from '../lib/csv';
+  import { createExpander } from '../lib/expandTable';
 
   // The valuation runs in the hyparquet Web Worker: the 236k-row scans (postal lookup,
   // comps, benchmarks, trajectory, lease curves) stay off the main thread; only small
@@ -2579,6 +2583,19 @@ import LeafletMap from '../components/LeafletMap.astro';
   }
 
   // ---- compute valuation + benchmarks + comparables ----
+  // Comparables table: capped at 8 comps by default, expandable to every comp in the sample.
+  // compute() stashes the "your flat" row, the full comp rows, and the footer suffix; the
+  // expander slices the comp rows and owns the "Show all N / Show fewer" toggle.
+  let compYouRow = '';
+  let compRowsHtml: string[] = [];
+  let compFootSuffix = '';
+  const compTable = createExpander('expand-comp', 8, (limit) => {
+    const shown = Math.min(limit, compRowsHtml.length);
+    $('comp-body').innerHTML = compYouRow + compRowsHtml.slice(0, shown).join('');
+    $('comp-foot').textContent = `Showing ${shown} of ${compRowsHtml.length} ${compFootSuffix}`;
+    return compRowsHtml.length;
+  });
+
   async function compute() {
     const flat = ($('f-flat') as HTMLSelectElement).value;
     const storey = ($('f-storey') as HTMLSelectElement).value;
@@ -2705,19 +2722,19 @@ import LeafletMap from '../components/LeafletMap.astro';
     const youRow = `<tr class="you"><td class="addr" data-role="title"><b>${titleCase(block.address)}</b><span class="badge">YOUR FLAT</span><br><span class="st">Estimated</span></td>
       <td data-role="meta">${storey}</td><td class="r" data-role="meta" data-suffix="sqft">${area.toLocaleString()}</td><td class="r" data-role="meta">${rem} yr</td>
       <td class="r price" data-role="primary">${money(estimate)}</td><td class="r psf" data-role="meta" data-suffix="psf">${fpsf(medPsf)}</td><td class="r" data-role="meta">—</td><td class="tbreak" aria-hidden="true"></td></tr>`;
-    const rows = sorted
-      .slice(0, 8)
-      .map(
-        (
-          c,
-        ) => `<tr><td class="addr" data-role="title"><b>${titleCase(c.address)}</b><br><span class="st">${titleCase(c.street_name)}</span></td>
+    // Comparables table — capped at 8 by default, expandable via the footer toggle. The
+    // "your flat" row always leads; compTable slices only the comps below it.
+    compYouRow = youRow;
+    compRowsHtml = sorted.map(
+      (
+        c,
+      ) => `<tr><td class="addr" data-role="title"><b>${titleCase(c.address)}</b><br><span class="st">${titleCase(c.street_name)}</span></td>
       <td data-role="meta">${c.storey_range}</td><td class="r" data-role="meta" data-suffix="sqft">${c.area.toLocaleString()}</td><td class="r" data-role="meta">${c.lease} yr</td>
       <td class="r price" data-role="primary">${money(c.price)}</td><td class="r psf" data-role="meta" data-suffix="psf">${fpsf(c.psf)}</td><td class="r" data-role="meta">${c.month}</td><td class="tbreak" aria-hidden="true"></td></tr>`,
-      )
-      .join('');
-    $('comp-body').innerHTML = youRow + rows;
-    $('comp-foot').textContent =
-      `Showing ${Math.min(8, comps.length)} of ${comps.length} comparable sales · last ${months} months · ${titleCase(block.town)}`;
+    );
+    compFootSuffix = `comparable sales · last ${months} months · ${titleCase(block.town)}`;
+    compTable.reset();
+    compTable.render();
 
     // ---- new insight sections: trajectory, distribution, market tiles, lease, storey ----
     // 03 · distribution + market texture tiles (derived from comps already fetched)

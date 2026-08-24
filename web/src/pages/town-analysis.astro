@@ -126,9 +126,11 @@ import LeafletMap from '../components/LeafletMap.astro';
         stack
       />
       <div class="tbl-foot">
-        <span id="town-foot">&nbsp;</span><a class="ghost" href="#" id="dl-town"
-          >Download data in view (CSV) ↓</a
-        >
+        <span id="town-foot">&nbsp;</span>
+        <div class="tbl-actions">
+          <a class="ghost" href="#" id="expand-town" hidden></a>
+          <a class="ghost" href="#" id="dl-town">Download (CSV) ↓</a>
+        </div>
       </div>
     </div>
   </main>
@@ -312,6 +314,7 @@ import LeafletMap from '../components/LeafletMap.astro';
   import { createHyparquet } from '../lib/hyparquetClient';
   import { createUrlState, selectBinding, chipBinding, stateBinding } from '../lib/urlState';
   import { downloadCsv } from '../lib/csv';
+  import { createExpander } from '../lib/expandTable';
   import { areaToTown } from '../lib/subzones';
 
   const { townMap, townRecords, streets, warmWhenIdle } = createHyparquet();
@@ -519,9 +522,19 @@ import LeafletMap from '../components/LeafletMap.astro';
       $('amt-' + k).textContent = counts[k].toLocaleString();
     });
 
-    // table (top 12)
+    // table — capped at 12 by default, expandable via the footer "Show all" toggle.
+    townTable.render();
+  }
+
+  // Data table below the map. Renders up to `limit` of currentRows; the expander owns the
+  // 12-row cap and its "Show all N / Show fewer" toggle. Row HTML is per-row (no adjacency),
+  // so slicing currentRows is enough.
+  const townTable = createExpander('expand-town', 12, (limit) => {
+    const rows = currentRows;
+    const flat = currentFlat;
+    const shown = Math.min(limit, rows.length);
     $('tbody-town').innerHTML = rows
-      .slice(0, 12)
+      .slice(0, shown)
       .map((r) => {
         const pill = r.band === 'below' ? 'up' : r.band === 'above' ? 'down' : 'flat';
         const lbl = r.band![0].toUpperCase() + r.band!.slice(1);
@@ -538,8 +551,9 @@ import LeafletMap from '../components/LeafletMap.astro';
       })
       .join('');
     $('town-foot').textContent =
-      `Showing ${Math.min(12, rows.length)} of ${rows.length.toLocaleString()} sales in view`;
-  }
+      `Showing ${shown.toLocaleString()} of ${rows.length.toLocaleString()} sales in view`;
+    return rows.length;
+  });
 
   // Fetch rows for the current town/flat from the in-memory parquet, then paint. Mirrors
   // the SQL the default snapshot was precomputed from (see webapp/update/emit_web.py).
@@ -555,6 +569,9 @@ import LeafletMap from '../components/LeafletMap.astro';
     // the map to that subzone (see paintMap's `focus`).
     const geom = sub && sub !== SUB_ALL ? subzoneGeom.get(sub) : null;
     if (geom) rows = rows.filter((r) => pointInGeom(r.lng, r.lat, geom));
+    // Fresh query → collapse the table back to the 12-row preview (a threshold-only re-band
+    // calls paintMap directly and keeps the current expand state).
+    townTable.reset();
     paintMap(rows, town, flat, geom ? sub : undefined, geom ? geomBounds(geom) : null);
   }
 
