@@ -5,6 +5,7 @@ import Term from '../components/Term.astro';
 import SecHead from '../components/SecHead.astro';
 import ChartCard from '../components/ChartCard.astro';
 import DataTable from '../components/DataTable.astro';
+import Pager from '../components/Pager.astro';
 import LeafletMap from '../components/LeafletMap.astro';
 ---
 
@@ -384,7 +385,10 @@ import LeafletMap from '../components/LeafletMap.astro';
           loadingText="Enter a postal code…"
           stack
         />
-        <div class="comp-foot"><span id="comp-foot">&nbsp;</span></div>
+        <div class="comp-foot">
+          <span id="comp-foot">&nbsp;</span>
+          <Pager prevId="comp-prev" nextId="comp-next" />
+        </div>
       </div>
 
       <!-- 06 GETTING AROUND -->
@@ -2579,6 +2583,29 @@ import LeafletMap from '../components/LeafletMap.astro';
   }
 
   // ---- compute valuation + benchmarks + comparables ----
+  // Comparables table: paged 8 at a time with the shared <Pager> (matches the town-analysis
+  // and Recent-transactions tables). The "your flat" row is pinned atop every page as the
+  // reference; compute() stashes it, the full comp rows, and the footer suffix, and paging is
+  // pure client-side slicing over the comps already fetched.
+  const COMP_PAGE = 8;
+  let compPage = 0;
+  let compYouRow = '';
+  let compRowsHtml: string[] = [];
+  let compFootSuffix = '';
+  function renderComps() {
+    const total = compRowsHtml.length;
+    const pages = Math.max(1, Math.ceil(total / COMP_PAGE));
+    if (compPage >= pages) compPage = pages - 1; // clamp when a smaller comp set lands
+    const start = total ? compPage * COMP_PAGE : 0;
+    const end = Math.min(start + COMP_PAGE, total);
+    $('comp-body').innerHTML = compYouRow + compRowsHtml.slice(start, end).join('');
+    $('comp-foot').textContent = total
+      ? `Showing ${start + 1}–${end} of ${total} ${compFootSuffix}`
+      : `No ${compFootSuffix}`;
+    ($('comp-prev') as HTMLButtonElement).disabled = compPage === 0;
+    ($('comp-next') as HTMLButtonElement).disabled = end >= total;
+  }
+
   async function compute() {
     const flat = ($('f-flat') as HTMLSelectElement).value;
     const storey = ($('f-storey') as HTMLSelectElement).value;
@@ -2705,19 +2732,19 @@ import LeafletMap from '../components/LeafletMap.astro';
     const youRow = `<tr class="you"><td class="addr" data-role="title"><b>${titleCase(block.address)}</b><span class="badge">YOUR FLAT</span><br><span class="st">Estimated</span></td>
       <td data-role="meta">${storey}</td><td class="r" data-role="meta" data-suffix="sqft">${area.toLocaleString()}</td><td class="r" data-role="meta">${rem} yr</td>
       <td class="r price" data-role="primary">${money(estimate)}</td><td class="r psf" data-role="meta" data-suffix="psf">${fpsf(medPsf)}</td><td class="r" data-role="meta">—</td><td class="tbreak" aria-hidden="true"></td></tr>`;
-    const rows = sorted
-      .slice(0, 8)
-      .map(
-        (
-          c,
-        ) => `<tr><td class="addr" data-role="title"><b>${titleCase(c.address)}</b><br><span class="st">${titleCase(c.street_name)}</span></td>
+    // Comparables table — paged 8 at a time (see renderComps). The "your flat" row always
+    // leads each page; renderComps pages only the comps below it.
+    compYouRow = youRow;
+    compRowsHtml = sorted.map(
+      (
+        c,
+      ) => `<tr><td class="addr" data-role="title"><b>${titleCase(c.address)}</b><br><span class="st">${titleCase(c.street_name)}</span></td>
       <td data-role="meta">${c.storey_range}</td><td class="r" data-role="meta" data-suffix="sqft">${c.area.toLocaleString()}</td><td class="r" data-role="meta">${c.lease} yr</td>
       <td class="r price" data-role="primary">${money(c.price)}</td><td class="r psf" data-role="meta" data-suffix="psf">${fpsf(c.psf)}</td><td class="r" data-role="meta">${c.month}</td><td class="tbreak" aria-hidden="true"></td></tr>`,
-      )
-      .join('');
-    $('comp-body').innerHTML = youRow + rows;
-    $('comp-foot').textContent =
-      `Showing ${Math.min(8, comps.length)} of ${comps.length} comparable sales · last ${months} months · ${titleCase(block.town)}`;
+    );
+    compFootSuffix = `comparable sales · last ${months} months · ${titleCase(block.town)}`;
+    compPage = 0; // new valuation → back to the first page
+    renderComps();
 
     // ---- new insight sections: trajectory, distribution, market tiles, lease, storey ----
     // 03 · distribution + market texture tiles (derived from comps already fetched)
@@ -2956,6 +2983,21 @@ import LeafletMap from '../components/LeafletMap.astro';
         Math.round(c.psf),
       ]),
     );
+  });
+
+  // Comparables pager — client-side paging over the comps already fetched (the pinned "your
+  // flat" row rides atop every page, so it's not counted in the paging).
+  $('comp-prev').addEventListener('click', () => {
+    if (compPage > 0) {
+      compPage--;
+      renderComps();
+    }
+  });
+  $('comp-next').addEventListener('click', () => {
+    if ((compPage + 1) * COMP_PAGE < compRowsHtml.length) {
+      compPage++;
+      renderComps();
+    }
   });
 
   $('print-btn').addEventListener('click', () => window.print());

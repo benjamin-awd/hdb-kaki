@@ -126,15 +126,37 @@ import LeafletMap from '../components/LeafletMap.astro';
         stack
       />
       <div class="tbl-foot">
-        <span id="town-foot">&nbsp;</span><a class="ghost" href="#" id="dl-town"
-          >Download data in view (CSV) ↓</a
-        >
+        <span id="town-foot">&nbsp;</span>
+        <Pager prevId="tbl-prev" nextId="tbl-next" />
       </div>
     </div>
+    <!-- Download sits below the card as a quiet link: the paged footer is the pager, and the
+         wording makes clear it exports every sale in view, not just the current page. -->
+    <a class="dl-below" href="#" id="dl-town">Download all sales (CSV) ↓</a>
   </main>
 </Base>
 
 <style>
+  /* Quiet "download the whole set" link under the data-table card (the footer holds the pager). */
+  .dl-below {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 14px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink-3);
+    text-decoration: none;
+    border-bottom: 1px dashed var(--line);
+    padding-bottom: 1px;
+    transition:
+      color 0.2s ease,
+      border-color 0.2s ease;
+  }
+  .dl-below:hover {
+    color: var(--red-ink);
+    border-color: var(--red-ink);
+  }
   .cap {
     font-size: 12px;
     font-weight: 600;
@@ -519,9 +541,26 @@ import LeafletMap from '../components/LeafletMap.astro';
       $('amt-' + k).textContent = counts[k].toLocaleString();
     });
 
-    // table (top 12)
+    // table — one page at a time (see renderTownTable + the Prev/Next pager).
+    renderTownTable();
+  }
+
+  // Data table below the map. A town+flat's 24-month slice can run to hundreds of rows, so it's
+  // paged 12 at a time with the shared <Pager> (mirrors the landing page's Recent transactions);
+  // the whole set is already in currentRows, so paging is pure client-side slicing. Row HTML is
+  // per-row (no adjacency), so slicing is enough.
+  const TOWN_PAGE = 12;
+  let townPage = 0;
+  function renderTownTable() {
+    const rows = currentRows;
+    const flat = currentFlat;
+    const total = rows.length;
+    const pages = Math.max(1, Math.ceil(total / TOWN_PAGE));
+    if (townPage >= pages) townPage = pages - 1; // clamp when a smaller result set lands
+    const start = total ? townPage * TOWN_PAGE : 0;
+    const end = Math.min(start + TOWN_PAGE, total);
     $('tbody-town').innerHTML = rows
-      .slice(0, 12)
+      .slice(start, end)
       .map((r) => {
         const pill = r.band === 'below' ? 'up' : r.band === 'above' ? 'down' : 'flat';
         const lbl = r.band![0].toUpperCase() + r.band!.slice(1);
@@ -537,8 +576,13 @@ import LeafletMap from '../components/LeafletMap.astro';
         <td class="r num-cell" data-role="meta">${r.lease} yrs</td><td data-role="meta"><span class="pill ${pill}">${lbl}</span></td><td class="tbreak" aria-hidden="true"></td></tr>`;
       })
       .join('');
-    $('town-foot').textContent =
-      `Showing ${Math.min(12, rows.length)} of ${rows.length.toLocaleString()} sales in view`;
+    $('town-foot').textContent = total
+      ? `Showing ${(start + 1).toLocaleString()}–${end.toLocaleString()} of ${total.toLocaleString()} sales in view`
+      : 'No sales in view';
+    ($('tbl-prev') as HTMLButtonElement).disabled = townPage === 0;
+    ($('tbl-next') as HTMLButtonElement).disabled = end >= total;
+    // The download grabs the whole result set, not just this page — say so.
+    $('dl-town').textContent = `Download all ${total.toLocaleString()} sales (CSV) ↓`;
   }
 
   // Fetch rows for the current town/flat from the in-memory parquet, then paint. Mirrors
@@ -555,6 +599,9 @@ import LeafletMap from '../components/LeafletMap.astro';
     // the map to that subzone (see paintMap's `focus`).
     const geom = sub && sub !== SUB_ALL ? subzoneGeom.get(sub) : null;
     if (geom) rows = rows.filter((r) => pointInGeom(r.lng, r.lat, geom));
+    // Fresh query → jump back to the first page (a threshold-only re-band calls paintMap
+    // directly and keeps the current page).
+    townPage = 0;
     paintMap(rows, town, flat, geom ? sub : undefined, geom ? geomBounds(geom) : null);
   }
 
@@ -634,7 +681,21 @@ import LeafletMap from '../components/LeafletMap.astro';
     }
   }
 
-  // ---- CSV download ----
+  // ---- data-table pager (client-side: the whole result set is already in currentRows) ----
+  $('tbl-prev').addEventListener('click', () => {
+    if (townPage > 0) {
+      townPage--;
+      renderTownTable();
+    }
+  });
+  $('tbl-next').addEventListener('click', () => {
+    if ((townPage + 1) * TOWN_PAGE < currentRows.length) {
+      townPage++;
+      renderTownTable();
+    }
+  });
+
+  // ---- CSV download (always the full result set in view, not just the current page) ----
   $('dl-town').addEventListener('click', (e) => {
     e.preventDefault();
     downloadCsv(
