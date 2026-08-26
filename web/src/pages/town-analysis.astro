@@ -73,6 +73,7 @@ import LeafletMap from '../components/LeafletMap.astro';
         <div class="hist-medlab" id="hist-medlab"></div>
         <div class="ruler" id="ruler"></div>
         <div class="ministats" id="ministats"></div>
+        <div id="dist-tip" class="dist-tip" role="tooltip" aria-hidden="true"></div>
       </div>
     </div>
 
@@ -183,20 +184,18 @@ import LeafletMap from '../components/LeafletMap.astro';
     height: 120px;
     margin: 18px 0 6px;
   }
+  /* Bars are a single calm neutral: the tallest bar is just the most common price, not a
+     signal, so red is reserved for the median line/label (and the ruler value) alone. The
+     hovered bar darkens to ink and opens the detail tooltip. */
   .hist :global(.bar) {
     flex: 1;
     min-height: 3px;
-    background: #efeadf;
+    background: color-mix(in srgb, var(--ink-3) 44%, var(--paper-2));
     border-radius: 3px 3px 0 0;
     transition: background 0.15s ease;
   }
-  .hist :global(.bar.near) {
-    background: color-mix(in srgb, var(--red) 42%, var(--paper-2));
-  }
-  .hist :global(.bar.peak) {
-    background: var(--red);
-  }
-  .hist :global(.bar):hover {
+  .hist :global(.bar):hover,
+  .hist :global(.bar.on) {
     background: var(--ink);
   }
   .hist :global(.medline) {
@@ -283,6 +282,43 @@ import LeafletMap from '../components/LeafletMap.astro';
     font-size: 16px;
     font-weight: 600;
     font-feature-settings: 'tnum' 1;
+  }
+  /* Per-bar hover tooltip. Matches the ECharts light-tooltip recipe (raised paper, hairline,
+     10px, rest shadow); its rows are injected, so they are :global. Hover-only, gated to real
+     pointer devices — the always-visible ruler/stats carry the same figures for touch/AT. */
+  .dist-tip {
+    position: fixed;
+    z-index: 60;
+    display: none;
+    pointer-events: none;
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    padding: 10px 12px;
+    min-width: 150px;
+  }
+  .dist-tip :global(.tt-h) {
+    font-family: var(--font-mono);
+    font-feature-settings: 'tnum' 1;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink);
+    margin-bottom: 7px;
+  }
+  .dist-tip :global(.tt-r) {
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+    font-size: 12px;
+    color: var(--ink-2);
+    line-height: 1.5;
+  }
+  .dist-tip :global(.tt-r b) {
+    font-family: var(--font-mono);
+    font-feature-settings: 'tnum' 1;
+    font-weight: 600;
+    color: var(--ink);
   }
   /* record sales leaderboard (section 02). Rows are injected via innerHTML, so the
      .rec rules are :global — Astro's scoping only tags elements present in the template. */
@@ -599,9 +635,27 @@ import LeafletMap from '../components/LeafletMap.astro';
       : `${moneyShort(a)}–${moneyShort(b)}`;
   }
 
-  // Render the price-distribution card: a binned histogram (modal bin in red, its neighbours
-  // tinted), a dashed median marker, a five-point percentile ruler, and summary stats. Pure
-  // client-side over the rows already in memory, so it re-renders on any filter change.
+  // Floating detail tooltip shared by the histogram bars (styled like the light chart tooltip).
+  const distTip = $('dist-tip');
+  function showDistTip(html: string, ev: MouseEvent) {
+    distTip.innerHTML = html;
+    distTip.style.display = 'block';
+    const r = distTip.getBoundingClientRect();
+    let x = ev.clientX - r.width / 2;
+    let y = ev.clientY - r.height - 14;
+    x = Math.max(8, Math.min(window.innerWidth - r.width - 8, x));
+    if (y < 8) y = ev.clientY + 18;
+    distTip.style.left = x + 'px';
+    distTip.style.top = y + 'px';
+  }
+  function hideDistTip() {
+    distTip.style.display = 'none';
+  }
+
+  // Render the price-distribution card: a binned histogram (calm neutral bars; red is reserved
+  // for the median marker), a dashed median line, a five-point percentile ruler, and summary
+  // stats. Pure client-side over the rows already in memory, so it re-renders on any filter
+  // change. Each bar reveals its price range, sale count and share on hover.
   function renderDistribution(rows: Row[], med: number) {
     const prices = rows.map((r) => r.price).sort((a, b) => a - b);
     const hist = $('hist'),
@@ -627,20 +681,33 @@ import LeafletMap from '../components/LeafletMap.astro';
     const n = Math.max(1, Math.round((end - start) / step));
     const counts = new Array(n).fill(0);
     for (const p of prices) counts[Math.min(n - 1, Math.max(0, Math.floor((p - start) / step)))]++;
-    const peak = counts.indexOf(Math.max(...counts));
     const cmax = Math.max(1, ...counts);
     const frac = (med - start) / (end - start);
+    const total = rows.length;
 
     hist.innerHTML =
       counts
-        .map((c, i) => {
-          const cls = i === peak ? ' peak' : Math.abs(i - peak) === 1 ? ' near' : '';
-          const h = Math.max(3, (c / cmax) * 100);
-          const b0 = start + i * step;
-          const title = `${moneyShort(b0)}–${moneyShort(b0 + step)} · ${c.toLocaleString()} sale${c === 1 ? '' : 's'}`;
-          return `<div class="bar${cls}" style="height:${h}%" title="${title}"></div>`;
-        })
+        .map(
+          (c, i) =>
+            `<div class="bar" data-i="${i}" style="height:${Math.max(3, (c / cmax) * 100)}%"></div>`,
+        )
         .join('') + `<div class="medline" style="left:${(frac * 100).toFixed(1)}%"></div>`;
+
+    // Per-bar detail on hover, pointer devices only (the ruler + stats below carry the same
+    // figures for touch and assistive tech).
+    if (matchMedia('(hover: hover)').matches) {
+      hist.querySelectorAll<HTMLElement>('.bar').forEach((bar) => {
+        const i = Number(bar.dataset.i);
+        const b0 = start + i * step;
+        const html =
+          `<div class="tt-h">${moneyShort(b0)} – ${moneyShort(b0 + step)}</div>` +
+          `<div class="tt-r"><span>Sales</span><b>${counts[i].toLocaleString()}</b></div>` +
+          `<div class="tt-r"><span>Share of sales</span><b>${((counts[i] / total) * 100).toFixed(1)}%</b></div>`;
+        bar.addEventListener('mouseenter', (e) => showDistTip(html, e));
+        bar.addEventListener('mousemove', (e) => showDistTip(html, e));
+        bar.addEventListener('mouseleave', hideDistTip);
+      });
+    }
     const medLeft = Math.min(94, Math.max(6, frac * 100));
     medlab.innerHTML = `<span style="left:${medLeft.toFixed(1)}%">median ${moneyShort(med)}</span>`;
     axis.innerHTML = `<span>${moneyShort(start)}</span><span>${moneyShort((start + end) / 2)}</span><span>${moneyShort(end)}</span>`;
