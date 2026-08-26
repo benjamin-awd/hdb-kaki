@@ -389,8 +389,8 @@ import LeafletMap from '../components/LeafletMap.astro';
       r.json(),
     );
     for (const f of g.features ?? []) {
-      const name = f.properties?.name;
-      const area = f.properties?.area;
+      const name = f.properties?.name?.trim();
+      const area = f.properties?.area?.trim();
       if (!name || !area) continue;
       const town = areaToTown(area, townSet);
       if (!town || !townSet.has(town)) continue;

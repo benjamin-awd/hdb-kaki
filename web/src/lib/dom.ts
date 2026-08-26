@@ -8,5 +8,8 @@ export const byId = (id: string): HTMLElement => document.getElementById(id)!;
 export function setStreets(selectEl: HTMLElement, streets: string[]): void {
   (selectEl as HTMLSelectElement).innerHTML =
     `<option value="__all" selected>All streets</option>` +
-    streets.map((s) => `<option value="${s}">${titleCase(s)}</option>`).join('');
+    streets
+      .filter((s) => s?.trim())
+      .map((s) => `<option value="${s}">${titleCase(s)}</option>`)
+      .join('');
 }
