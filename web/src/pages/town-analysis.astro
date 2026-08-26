@@ -400,11 +400,25 @@ import LeafletMap from '../components/LeafletMap.astro';
     for (const list of subzonesByTown.values()) list.sort();
   }
 
-  function populateSubtowns(town: string) {
-    const subs = subzonesByTown.get(town) ?? [];
-    ($('sel-sub') as HTMLSelectElement).innerHTML =
+  // Populate the subtown picker with only the subzones that actually have sales for the
+  // current town+flat. A subtown listed purely because its polygon sits in the town (e.g.
+  // Yio Chu Kang for a rare flat type like Multi-Generation) would otherwise select to a
+  // blank map. Independent of the street/subtown filters, so the list reflects the whole
+  // town+flat slice; pass `rows` to reuse an already-fetched slice (boot) instead of querying.
+  async function refreshSubtowns(town: string, flat: string, rows?: Row[]) {
+    const all = subzonesByTown.get(town) ?? [];
+    const src = rows ?? (await townMap({ town, flat, street: '__all' }));
+    const withData = all.filter((s) => {
+      const geom = subzoneGeom.get(s);
+      return !!geom && src.some((r) => pointInGeom(r.lng, r.lat, geom));
+    });
+    const sel = $('sel-sub') as HTMLSelectElement;
+    const prev = sel.value;
+    sel.innerHTML =
       `<option value="${SUB_ALL}">All subtowns</option>` +
-      subs.map((s) => `<option value="${s}">${titleCase(s)}</option>`).join('');
+      withData.map((s) => `<option value="${s}">${titleCase(s)}</option>`).join('');
+    // Keep the current pick if it still has data; otherwise fall back to "All subtowns".
+    sel.value = withData.includes(prev) ? prev : SUB_ALL;
   }
 
   // Ray-casting point-in-polygon; even-odd across rings handles holes, and MultiPolygon tests
@@ -732,7 +746,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     // Subtown options depend on the town; load the subzone geometry and seed the default town's
     // list before the URL state so a deep-linked `zone` lands on a real option.
     await loadSubzones(data.towns);
-    populateSubtowns(data.default.town);
+    await refreshSubtowns(data.default.town, data.default.flat, data.rows);
 
     // URL-synced filter state (see web/src/lib/urlState.ts). Declared now that the selects
     // are populated so writes land on real options. `page` is the records pager index.
@@ -770,8 +784,9 @@ import LeafletMap from '../components/LeafletMap.astro';
         ((document.querySelector('#record-scope .chip.on') as HTMLElement | null)?.dataset
           .scope as RecordScope) ?? recordScope;
       const town = ($('sel-town') as HTMLSelectElement).value;
-      // Repopulate subtowns for the linked town so a `zone` param can select a real option.
-      populateSubtowns(town);
+      const flat = ($('sel-flat') as HTMLSelectElement).value;
+      // Repopulate subtowns for the linked town+flat so a `zone` param can select a real option.
+      await refreshSubtowns(town, flat);
       url.applyKey('zone');
       if (town !== DEFAULT_TOWN) setStreets($('sel-street'), await streets(town));
       url.applyKey('street');
@@ -792,8 +807,9 @@ import LeafletMap from '../components/LeafletMap.astro';
     // drives the map.
     $('sel-town').addEventListener('change', async () => {
       const t = ($('sel-town') as HTMLSelectElement).value;
+      const flat = ($('sel-flat') as HTMLSelectElement).value;
       // Changing town resets the subtown filter to "All" and reloads the town's streets.
-      populateSubtowns(t);
+      await refreshSubtowns(t, flat);
       setStreets($('sel-street'), await streets(t));
       loadMap();
       if (recordScope === 'town') {
@@ -814,7 +830,11 @@ import LeafletMap from '../components/LeafletMap.astro';
       paintMap(currentRows, currentTown, currentFlat, currentSub);
       url.sync();
     });
-    $('sel-flat').addEventListener('change', () => {
+    $('sel-flat').addEventListener('change', async () => {
+      const town = ($('sel-town') as HTMLSelectElement).value || DEFAULT_TOWN;
+      const flat = ($('sel-flat') as HTMLSelectElement).value;
+      // A subtown with no sales for the newly picked flat type drops out of the picker.
+      await refreshSubtowns(town, flat);
       loadMap();
       url.sync();
     });
