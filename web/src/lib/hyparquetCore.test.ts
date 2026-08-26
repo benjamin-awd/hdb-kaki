@@ -25,6 +25,7 @@ const NOW = new Date('2026-07-15T00:00:00Z');
 function row(o: Partial<ResaleRow>): ResaleRow {
   return {
     month: '2026-01',
+    _ts: '2026-01-15',
     town: 'BEDOK',
     address: 'BLK 1',
     street_name: 'BEDOK AVE 1',
@@ -114,21 +115,21 @@ describe('toColumns', () => {
 
 describe('recentQuery', () => {
   const rows = [
-    row({ month: '2026-06', resale_price: 700000 }),
-    row({ month: '2026-06', resale_price: 900000 }), // same month, higher price → first
-    row({ month: '2026-05', resale_price: 800000 }),
-    row({ month: '2024-01', resale_price: 999999 }), // outside 12-month window → excluded
-    row({ month: '2026-04', town: 'CLEMENTI', resale_price: 650000 }),
+    row({ month: '2026-05', _ts: '2026-07-01', resale_price: 700000 }), // newest ingested → first
+    row({ month: '2026-06', _ts: '2026-06-01', resale_price: 900000 }),
+    row({ month: '2026-05', _ts: '2026-06-01', resale_price: 800000 }), // same _ts, older month → after
+    row({ month: '2024-01', _ts: '2026-08-01', resale_price: 999999 }), // outside 12-month window → excluded
+    row({ month: '2026-04', _ts: '2026-05-01', town: 'CLEMENTI', resale_price: 650000 }),
   ];
 
-  test('12-month window + ORDER BY month DESC, price DESC', () => {
+  test('12-month window + ORDER BY _ts DESC, month DESC', () => {
     const { rows: out, total } = recentQuery(
       cols(rows),
       { town: '__all', flat: '__all', page: 0, pageSize: 10 },
       NOW,
     );
-    expect(total).toBe(4); // the 2024 row is filtered out
-    expect(out.map((r) => r.resale_price)).toEqual([900000, 700000, 800000, 650000]);
+    expect(total).toBe(4); // the 2024 row is filtered out (window is on month, not _ts)
+    expect(out.map((r) => r.resale_price)).toEqual([700000, 900000, 800000, 650000]);
   });
 
   test('town filter + paging', () => {
