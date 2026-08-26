@@ -516,16 +516,23 @@ import LeafletMap from '../components/LeafletMap.astro';
     // Recompute the container size before fitting: if the map div was mis-sized when this paint
     // ran (initial layout, tab switch), fitBounds would compute the wrong view and never correct.
     map.invalidateSize();
-    // Focus the subtown polygon when one is picked (stable even with few/no pins); otherwise
-    // frame the town's pins.
-    if (focus) {
-      map.fitBounds(focus.pad(0.08));
-    } else if (rows.length) {
+    // Cap the zoom so a subtown/street with sales on one or two blocks doesn't slam to the
+    // tile max (19). 16 sits at block level.
+    const MAX_FIT_ZOOM = 16;
+    // Frame the pins when there are any, so a subtown zooms to its sales rather than the whole
+    // (larger) subzone polygon. Fall back to the polygon only when a subtown has no pins.
+    if (rows.length) {
       const b = L.latLngBounds(rows.map((r) => [r.lat, r.lng] as [number, number]));
       // Reserve pixel room around the pins so upward-opening tooltips (direction:'top')
       // aren't clipped by the map's rounded, overflow-hidden container — extra at the
       // top since the tooltip stacks above its pin.
-      map.fitBounds(b, { paddingTopLeft: [28, 92], paddingBottomRight: [28, 28] });
+      map.fitBounds(b, {
+        paddingTopLeft: [28, 92],
+        paddingBottomRight: [28, 28],
+        maxZoom: MAX_FIT_ZOOM,
+      });
+    } else if (focus) {
+      map.fitBounds(focus.pad(0.08), { maxZoom: MAX_FIT_ZOOM });
     }
     setTimeout(() => map.invalidateSize(), 50);
 
