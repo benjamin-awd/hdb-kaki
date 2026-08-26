@@ -136,6 +136,7 @@ export const yearOf = (month: string): string => month.slice(0, 4);
 /** A resale transaction row — the shape query results and test fixtures are built from. */
 export interface ResaleRow {
   month: string;
+  _ts: string; // ingestion date (YYYY-MM-DD); sort key for the recent table, never displayed
   town: string;
   address: string;
   street_name: string;
@@ -159,6 +160,7 @@ export interface ResaleRow {
 export interface Columns {
   n: number;
   month: string[];
+  _ts: string[]; // ingestion date (YYYY-MM-DD); recent-table sort key, never displayed
   town: string[];
   address: string[];
   street_name: string[];
@@ -188,6 +190,7 @@ export function toColumns(rows: readonly ResaleRow[]): Columns {
   const c: Columns = {
     n,
     month: new Array(n),
+    _ts: new Array(n),
     town: new Array(n),
     address: new Array(n),
     street_name: new Array(n),
@@ -207,6 +210,7 @@ export function toColumns(rows: readonly ResaleRow[]): Columns {
   for (let i = 0; i < n; i++) {
     const r = rows[i] as unknown as Record<string, unknown>;
     c.month[i] = str(r.month);
+    c._ts[i] = str(r._ts);
     c.town[i] = str(r.town);
     c.address[i] = str(r.address);
     c.street_name[i] = str(r.street_name);
@@ -366,12 +370,18 @@ export function recentQuery(
     )
       idx.push(i);
   }
+  // Ingestion recency first (_ts DESC, newest-added on top); transaction month breaks ties.
+  // Mirrors emit_overview's snapshot ordering so the first page matches on load.
   idx.sort((a, b) =>
-    c.month[a] < c.month[b]
+    c._ts[a] < c._ts[b]
       ? 1
-      : c.month[a] > c.month[b]
+      : c._ts[a] > c._ts[b]
         ? -1
-        : c.resale_price[b] - c.resale_price[a],
+        : c.month[a] < c.month[b]
+          ? 1
+          : c.month[a] > c.month[b]
+            ? -1
+            : 0,
   );
   const start = page * pageSize;
   const rows = idx.slice(start, start + pageSize).map((i) => ({
@@ -657,7 +667,7 @@ export function valuationQuery(
 // both window and worker scopes; structured clone stores the typed arrays as-is.
 const IDB_DB = 'hyparquet';
 const IDB_STORE = 'columns';
-const IDB_TAG = 'v1'; // bump if the Columns shape changes
+const IDB_TAG = 'v2'; // bump if the Columns shape changes (v2: added _ts)
 
 function idbOpen(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
