@@ -59,27 +59,20 @@ import LeafletMap from '../components/LeafletMap.astro';
         </div>
         <div id="map-sub" style="font-size:13px;color:var(--ink-3);margin-bottom:22px">&nbsp;</div>
         <div style="height:1px;background:var(--line);margin:6px 0 18px"></div>
-        <div class="cap" style="margin-bottom:8px">
-          <Term term="Distribution" end
-            >Each sale vs the median: <strong>Around</strong> is within your threshold (e.g. ±10%);
-            <strong>Above</strong> and <strong>Below</strong> fall outside.</Term
+        <div class="cap dist-head">
+          <span
+            ><Term term="Distribution" end
+              >The spread of every sale price. Bars group sales into price bins; the dashed line
+              marks the median, and the row below gives the key percentiles.</Term
+            ></span
           >
+          <span class="dist-hint" id="dist-hint">&nbsp;</span>
         </div>
-        <div class="cat-line">
-          <span class="dot" style="background:var(--red)"></span>Above median<span class="bar"
-            ><span id="bar-above" style="background:var(--red)"></span></span
-          ><span class="amt" id="amt-above">—</span>
-        </div>
-        <div class="cat-line">
-          <span class="dot" style="background:#d98a2b"></span>Around median<span class="bar"
-            ><span id="bar-around" style="background:#d98a2b"></span></span
-          ><span class="amt" id="amt-around">—</span>
-        </div>
-        <div class="cat-line">
-          <span class="dot" style="background:var(--good)"></span>Below median<span class="bar"
-            ><span id="bar-below" style="background:var(--good)"></span></span
-          ><span class="amt" id="amt-below">—</span>
-        </div>
+        <div class="hist" id="hist"></div>
+        <div class="hist-axis" id="hist-axis"><span>&nbsp;</span></div>
+        <div class="hist-medlab" id="hist-medlab"></div>
+        <div class="ruler" id="ruler"></div>
+        <div class="ministats" id="ministats"></div>
       </div>
     </div>
 
@@ -164,37 +157,132 @@ import LeafletMap from '../components/LeafletMap.astro';
     text-transform: uppercase;
     color: var(--ink-3);
   }
-  .cat-line {
+  /* Distribution: a binned price histogram with a percentile ruler and summary stats.
+     Bars/cells/ruler are injected via innerHTML in paintMap, so their selectors are
+     :global (Astro only scopes elements present in the template — the containers). */
+  .dist-head {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 10px;
-    margin: 14px 0;
-    font-size: 13.5px;
+    margin-bottom: 2px;
   }
-  .cat-line .dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    flex: none;
-  }
-  .cat-line .bar {
-    flex: 1;
-    height: 8px;
-    border-radius: 999px;
-    background: #efeadf;
-    overflow: hidden;
-  }
-  .cat-line .bar span {
-    display: block;
-    height: 100%;
-    width: 0;
-  }
-  .cat-line .amt {
-    width: 52px;
-    text-align: right;
+  .dist-hint {
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 500;
     font-family: var(--font-mono);
-    font-size: 12.5px;
-    color: var(--ink-2);
+    font-size: 11px;
+    color: var(--ink-3);
+  }
+  .hist {
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    height: 120px;
+    margin: 18px 0 6px;
+  }
+  .hist :global(.bar) {
+    flex: 1;
+    min-height: 3px;
+    background: #efeadf;
+    border-radius: 3px 3px 0 0;
+    transition: background 0.15s ease;
+  }
+  .hist :global(.bar.near) {
+    background: color-mix(in srgb, var(--red) 42%, var(--paper-2));
+  }
+  .hist :global(.bar.peak) {
+    background: var(--red);
+  }
+  .hist :global(.bar):hover {
+    background: var(--ink);
+  }
+  .hist :global(.medline) {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    border-left: 2px dashed var(--red-ink);
+    opacity: 0.55;
+    pointer-events: none;
+  }
+  .hist-axis {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--ink-3);
+    font-feature-settings: 'tnum' 1;
+  }
+  .hist-medlab {
+    position: relative;
+    height: 18px;
+    margin-top: 2px;
+  }
+  .hist-medlab :global(span) {
+    position: absolute;
+    top: 0;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--red-ink);
+  }
+  .ruler {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 4px;
+    margin-top: 14px;
+  }
+  .ruler :global(.rcell) {
+    text-align: center;
+  }
+  .ruler :global(.rk) {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--ink-3);
+    margin-bottom: 4px;
+  }
+  .ruler :global(.rv) {
+    font-family: var(--font-mono);
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ink);
+    font-feature-settings: 'tnum' 1;
+  }
+  .ruler :global(.rcell.mid .rv) {
+    color: var(--red-ink);
+  }
+  .ministats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+  }
+  .ministats :global(.ms) {
+    padding-right: 12px;
+  }
+  .ministats :global(.ms + .ms) {
+    border-left: 1px solid var(--line);
+    padding-left: 14px;
+  }
+  .ministats :global(.mk) {
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--ink-3);
+    margin-bottom: 5px;
+  }
+  .ministats :global(.mv) {
+    font-family: var(--font-mono);
+    font-size: 16px;
+    font-weight: 600;
+    font-feature-settings: 'tnum' 1;
   }
   /* record sales leaderboard (section 02). Rows are injected via innerHTML, so the
      .rec rules are :global — Astro's scoping only tags elements present in the template. */
@@ -483,6 +571,114 @@ import LeafletMap from '../components/LeafletMap.astro';
     return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
   }
 
+  // Linear-interpolated quantile over an already-sorted ascending array.
+  function quantile(sorted: number[], q: number): number {
+    if (!sorted.length) return 0;
+    const pos = (sorted.length - 1) * q;
+    const base = Math.floor(pos);
+    const rest = pos - base;
+    return sorted[base + 1] !== undefined
+      ? sorted[base] + rest * (sorted[base + 1] - sorted[base])
+      : sorted[base];
+  }
+
+  // A "nice" round histogram bin width (~16 bins across the range), snapped to a 1/2/2.5/3/4/5
+  // × 10^n step so bin edges read as clean prices (e.g. $50k) rather than arbitrary numbers.
+  function niceStep(range: number): number {
+    const raw = range / 16;
+    const pow = Math.pow(10, Math.floor(Math.log10(raw) || 0));
+    for (const s of [1, 2, 2.5, 3, 4, 5, 10]) if (raw <= s * pow) return s * pow;
+    return 10 * pow;
+  }
+
+  // Compact price range for the summary tile: "$545–899k" when both ends are in the thousands,
+  // falling back to full short form when they straddle the million mark ("$900k–$1.15m").
+  function rangeShort(a: number, b: number): string {
+    return a < 1e6 && b < 1e6
+      ? `$${Math.round(a / 1e3)}–${Math.round(b / 1e3)}k`
+      : `${moneyShort(a)}–${moneyShort(b)}`;
+  }
+
+  // Render the price-distribution card: a binned histogram (modal bin in red, its neighbours
+  // tinted), a dashed median marker, a five-point percentile ruler, and summary stats. Pure
+  // client-side over the rows already in memory, so it re-renders on any filter change.
+  function renderDistribution(rows: Row[], med: number) {
+    const prices = rows.map((r) => r.price).sort((a, b) => a - b);
+    const hist = $('hist'),
+      axis = $('hist-axis'),
+      medlab = $('hist-medlab'),
+      ruler = $('ruler'),
+      stats = $('ministats'),
+      hint = $('dist-hint');
+    if (prices.length < 2) {
+      hist.innerHTML = '';
+      medlab.innerHTML = '';
+      axis.innerHTML = '<span>&nbsp;</span>';
+      ruler.innerHTML = '';
+      stats.innerHTML = '';
+      hint.textContent = prices.length ? '1 sale' : '';
+      return;
+    }
+    const min = prices[0],
+      max = prices[prices.length - 1];
+    const step = niceStep(Math.max(1, max - min));
+    const start = Math.floor(min / step) * step;
+    const end = Math.max(start + step, Math.ceil((max + 1) / step) * step);
+    const n = Math.max(1, Math.round((end - start) / step));
+    const counts = new Array(n).fill(0);
+    for (const p of prices) counts[Math.min(n - 1, Math.max(0, Math.floor((p - start) / step)))]++;
+    const peak = counts.indexOf(Math.max(...counts));
+    const cmax = Math.max(1, ...counts);
+    const frac = (med - start) / (end - start);
+
+    hist.innerHTML =
+      counts
+        .map((c, i) => {
+          const cls = i === peak ? ' peak' : Math.abs(i - peak) === 1 ? ' near' : '';
+          const h = Math.max(3, (c / cmax) * 100);
+          const b0 = start + i * step;
+          const title = `${moneyShort(b0)}–${moneyShort(b0 + step)} · ${c.toLocaleString()} sale${c === 1 ? '' : 's'}`;
+          return `<div class="bar${cls}" style="height:${h}%" title="${title}"></div>`;
+        })
+        .join('') + `<div class="medline" style="left:${(frac * 100).toFixed(1)}%"></div>`;
+    const medLeft = Math.min(94, Math.max(6, frac * 100));
+    medlab.innerHTML = `<span style="left:${medLeft.toFixed(1)}%">median ${moneyShort(med)}</span>`;
+    axis.innerHTML = `<span>${moneyShort(start)}</span><span>${moneyShort((start + end) / 2)}</span><span>${moneyShort(end)}</span>`;
+    hint.textContent = `${rows.length.toLocaleString()} sales · ${moneyShort(step)} bins`;
+
+    const p25 = quantile(prices, 0.25),
+      p75 = quantile(prices, 0.75);
+    ruler.innerHTML = (
+      [
+        ['Min', moneyShort(min)],
+        ['25th', moneyShort(p25)],
+        ['Median', moneyShort(med)],
+        ['75th', moneyShort(p75)],
+        ['Max', moneyShort(max)],
+      ] as const
+    )
+      .map(
+        ([k, v]) =>
+          `<div class="rcell${k === 'Median' ? ' mid' : ''}"><div class="rk">${k}</div><div class="rv">${v}</div></div>`,
+      )
+      .join('');
+
+    const psfs = rows
+      .map((r) => r.psf)
+      .filter((x) => x > 0)
+      .sort((a, b) => a - b);
+    const medPsf = quantile(psfs, 0.5);
+    stats.innerHTML = (
+      [
+        ['Median PSF', medPsf ? fpsf(medPsf) : '—'],
+        ['Typical range', rangeShort(p25, p75)],
+        ['Full spread', moneyShort(max - min)],
+      ] as const
+    )
+      .map(([k, v]) => `<div class="ms"><div class="mk">${k}</div><div class="mv">${v}</div></div>`)
+      .join('');
+  }
+
   // Paint the map + summary + table from already-fetched rows. Pure client-side, so
   // changing only the threshold re-bands the same rows without a new query.
   function paintMap(rows: Row[], town: string, flat: string, sub?: string, focus?: any) {
@@ -530,16 +726,10 @@ import LeafletMap from '../components/LeafletMap.astro';
     setTimeout(() => map.invalidateSize(), 50);
 
     // summary
-    const counts = { above: 0, around: 0, below: 0 } as Record<string, number>;
-    rows.forEach((r) => counts[r.band!]++);
-    const max = Math.max(1, ...Object.values(counts));
     $('median-price').textContent = med ? money(med) : '—';
     $('map-sub').textContent =
       `${titleCase(town)}${sub ? ' · ' + titleCase(sub) : ''} · ${titleCase(flat)} · ${rows.length.toLocaleString()} sales (last 24 mo)`;
-    (['above', 'around', 'below'] as const).forEach((k) => {
-      ($('bar-' + k) as HTMLElement).style.width = (counts[k] / max) * 100 + '%';
-      $('amt-' + k).textContent = counts[k].toLocaleString();
-    });
+    renderDistribution(rows, med);
 
     // table — one page at a time (see renderTownTable + the Prev/Next pager).
     renderTownTable();
