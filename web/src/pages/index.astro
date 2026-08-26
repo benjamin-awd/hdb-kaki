@@ -1212,7 +1212,7 @@ const kpis = stats
   }
 
   // Any filter change or page turn goes through hyparquet, mirroring the snapshot's SQL
-  // (same 12-month window + ORDER BY month DESC, resale_price DESC) with page slicing.
+  // (same 12-month window + ORDER BY _ts DESC, month DESC) with page slicing.
   async function loadRecent() {
     const token = ++recentReq;
     const town = (q('rec-town') as HTMLSelectElement).value;

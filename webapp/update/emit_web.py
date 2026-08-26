@@ -49,10 +49,13 @@ PSF_SCATTER_CAP = 6000
 RECENT_PAGE_SIZE = 20
 
 # Columns dropped for the web: derivable or unused by any page.
-#   _id, _ts        — internal ETL bookkeeping
+#   _id             — internal ETL bookkeeping
 #   remaining_lease — string form; kept as remaining_lease_years
 #   block           — redundant; address already begins with the block
-DROP_COLS = ["_id", "_ts", "remaining_lease", "block"]
+# _ts (ingestion date, YYYY-MM-DD) is intentionally NOT dropped: it's the sort key for the
+# recent-transactions table (ingestion recency, not transaction month). It's never displayed,
+# but rides along in resale.parquet so the browser can re-sort on it when paging/filtering.
+DROP_COLS = ["_id", "remaining_lease", "block"]
 
 # Columns kept for the precompute snapshots but NOT shipped in resale.parquet: the web
 # client never reads them, so dropping them from the shipped file cuts download + decode.
@@ -195,7 +198,9 @@ def emit_overview(df: pl.DataFrame) -> None:
     # browser with the same ordering + page slice.
     recent_window = df.filter(pl.col("month") >= cutoff)
     recent = (
-        recent_window.sort(["month", "resale_price"], descending=[True, True])
+        # Sort by ingestion recency (_ts), newest-added first; transaction month breaks ties.
+        # _ts is the sort key only — it isn't in the .select() below, so it never renders.
+        recent_window.sort(["_ts", "month"], descending=[True, True])
         .head(RECENT_PAGE_SIZE)
         .select(
             [
