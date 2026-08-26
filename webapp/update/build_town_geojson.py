@@ -32,7 +32,7 @@ import json
 import urllib.request
 from pathlib import Path
 
-from shapely.geometry import MultiPolygon, Polygon, mapping, shape
+from shapely.geometry import MultiPolygon, mapping, shape
 from shapely.ops import unary_union
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -68,7 +68,9 @@ MIN_PART_AREA = 1e-6
 
 def _get_json(url: str, timeout: int) -> dict:
     # data.gov.sg's S3 blobs 403 the default urllib user-agent; send a browser-like one.
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (hdb-kaki build)"})
+    req = urllib.request.Request(
+        url, headers={"User-Agent": "Mozilla/5.0 (hdb-kaki build)"}
+    )
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -118,11 +120,32 @@ def build_towns() -> None:
 
     # The 26 towns the price data uses — every HDB town must resolve to one of these.
     valid = {
-        "ANG MO KIO", "BEDOK", "BISHAN", "BUKIT BATOK", "BUKIT MERAH", "BUKIT PANJANG",
-        "BUKIT TIMAH", "CENTRAL AREA", "CHOA CHU KANG", "CLEMENTI", "GEYLANG", "HOUGANG",
-        "JURONG EAST", "JURONG WEST", "KALLANG/WHAMPOA", "MARINE PARADE", "PASIR RIS",
-        "PUNGGOL", "QUEENSTOWN", "SEMBAWANG", "SENGKANG", "SERANGOON", "TAMPINES",
-        "TOA PAYOH", "WOODLANDS", "YISHUN",
+        "ANG MO KIO",
+        "BEDOK",
+        "BISHAN",
+        "BUKIT BATOK",
+        "BUKIT MERAH",
+        "BUKIT PANJANG",
+        "BUKIT TIMAH",
+        "CENTRAL AREA",
+        "CHOA CHU KANG",
+        "CLEMENTI",
+        "GEYLANG",
+        "HOUGANG",
+        "JURONG EAST",
+        "JURONG WEST",
+        "KALLANG/WHAMPOA",
+        "MARINE PARADE",
+        "PASIR RIS",
+        "PUNGGOL",
+        "QUEENSTOWN",
+        "SEMBAWANG",
+        "SENGKANG",
+        "SERANGOON",
+        "TAMPINES",
+        "TOA PAYOH",
+        "WOODLANDS",
+        "YISHUN",
     }
 
     # Collect each town's constituent planning-area polygons for dissolving, and keep
@@ -150,27 +173,37 @@ def build_towns() -> None:
     for town in sorted(parts):
         dissolved = _drop_specks(unary_union(parts[town]))
         all_geoms.append(dissolved)
-        features.append({
-            "type": "Feature",
-            "properties": {"name": town, "hdb": True},
-            "geometry": _round(mapping(dissolved.simplify(SIMPLIFY_TOLERANCE)), COORD_PRECISION),
-        })
+        features.append(
+            {
+                "type": "Feature",
+                "properties": {"name": town, "hdb": True},
+                "geometry": _round(
+                    mapping(dissolved.simplify(SIMPLIFY_TOLERANCE)), COORD_PRECISION
+                ),
+            }
+        )
     # Non-HDB areas — hdb:false, drawn as no-data base geometry only.
     for name, geom in sorted(others):
         geom = _drop_specks(geom)
         all_geoms.append(geom)
-        features.append({
-            "type": "Feature",
-            "properties": {"name": name, "hdb": False},
-            "geometry": _round(mapping(geom.simplify(SIMPLIFY_TOLERANCE)), COORD_PRECISION),
-        })
+        features.append(
+            {
+                "type": "Feature",
+                "properties": {"name": name, "hdb": False},
+                "geometry": _round(
+                    mapping(geom.simplify(SIMPLIFY_TOLERANCE)), COORD_PRECISION
+                ),
+            }
+        )
 
     fc = {"type": "FeatureCollection", "features": features}
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(fc, separators=(",", ":")))
     n_hdb = len(parts)
-    print(f"Wrote {OUT.relative_to(ROOT)} ({OUT.stat().st_size / 1024:.1f} KB, "
-          f"{n_hdb} towns + {len(features) - n_hdb} no-data areas)")
+    print(
+        f"Wrote {OUT.relative_to(ROOT)} ({OUT.stat().st_size / 1024:.1f} KB, "
+        f"{n_hdb} towns + {len(features) - n_hdb} no-data areas)"
+    )
 
     # Dissolve everything into one coastline-only polygon (internal town/area borders
     # removed) so the map can draw a crisp country outline as its own layer, distinct
@@ -178,11 +211,13 @@ def build_towns() -> None:
     outline = unary_union(all_geoms).simplify(SIMPLIFY_TOLERANCE)
     outline_fc = {
         "type": "FeatureCollection",
-        "features": [{
-            "type": "Feature",
-            "properties": {"name": "Singapore"},
-            "geometry": _round(mapping(outline), COORD_PRECISION),
-        }],
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {"name": "Singapore"},
+                "geometry": _round(mapping(outline), COORD_PRECISION),
+            }
+        ],
     }
     OUTLINE.write_text(json.dumps(outline_fc, separators=(",", ":")))
     print(f"Wrote {OUTLINE.relative_to(ROOT)} ({OUTLINE.stat().st_size / 1024:.1f} KB)")
@@ -199,22 +234,30 @@ def build_subzones() -> None:
     features = []
     for f in src["features"]:
         props = f["properties"]
-        if props["PLN_AREA_N"].strip().upper() in DROP_AREAS:
+        area = props["PLN_AREA_N"].strip().upper()
+        name = props["SUBZONE_N"].strip().upper()
+        if area in DROP_AREAS:
+            continue
+        if not name or not area:  # keep blank subzones out of the subtown picker
             continue
         geom = _drop_specks(shape(f["geometry"]).simplify(SIMPLIFY_TOLERANCE))
-        features.append({
-            "type": "Feature",
-            "properties": {
-                "name": props["SUBZONE_N"].strip().upper(),
-                "area": props["PLN_AREA_N"].strip().upper(),
-            },
-            "geometry": _round(mapping(geom), COORD_PRECISION),
-        })
+        features.append(
+            {
+                "type": "Feature",
+                "properties": {
+                    "name": name,
+                    "area": area,
+                },
+                "geometry": _round(mapping(geom), COORD_PRECISION),
+            }
+        )
 
     fc = {"type": "FeatureCollection", "features": features}
     SUBZONES.write_text(json.dumps(fc, separators=(",", ":")))
-    print(f"Wrote {SUBZONES.relative_to(ROOT)} ({SUBZONES.stat().st_size / 1024:.1f} KB, "
-          f"{len(features)} subzones)")
+    print(
+        f"Wrote {SUBZONES.relative_to(ROOT)} ({SUBZONES.stat().st_size / 1024:.1f} KB, "
+        f"{len(features)} subzones)"
+    )
 
 
 def build() -> None:
