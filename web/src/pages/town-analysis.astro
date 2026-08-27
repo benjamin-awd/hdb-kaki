@@ -320,6 +320,57 @@ import LeafletMap from '../components/LeafletMap.astro';
     font-weight: 600;
     color: var(--ink);
   }
+  /* Map legend (bottom-left Leaflet control). Injected by JS, so all selectors are :global. */
+  :global(.map-legend) {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    padding: 10px 12px;
+    font-family: var(--font-sans);
+    color: var(--ink);
+    line-height: 1;
+  }
+  :global(.map-legend .mlg-t) {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-bottom: 9px;
+  }
+  :global(.map-legend .mlg-r) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    margin: 7px 0;
+  }
+  :global(.map-legend .mlg-r:last-child) {
+    margin-bottom: 0;
+  }
+  :global(.map-legend .mlg-d) {
+    width: 11px;
+    height: 11px;
+    border-radius: 999px;
+    border: 1.5px solid #fff;
+    box-shadow: 0 0 0 1px var(--line);
+    flex: none;
+  }
+  :global(.map-legend .mlg-thr) {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--ink-3);
+    font-feature-settings: 'tnum' 1;
+  }
+  :global(.map-legend .mlg-c) {
+    margin-left: auto;
+    padding-left: 14px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-3);
+    font-feature-settings: 'tnum' 1;
+  }
   /* record sales leaderboard (section 02). Rows are injected via innerHTML, so the
      .rec rules are :global — Astro's scoping only tags elements present in the template. */
   .chart-sub {
@@ -577,6 +628,24 @@ import LeafletMap from '../components/LeafletMap.astro';
   const cluster = (L as any).markerClusterGroup({ maxClusterRadius: 45, chunkedLoading: true });
   map.addLayer(cluster);
 
+  // Legend (bottom-left): decodes the pin colours against the town median. Counts and the
+  // threshold label are filled in per paint (paintMap), since both depend on the current rows
+  // and the ±% selector. Built as a Leaflet control so it lives inside the map and pans/zooms
+  // with it; click/scroll are stopped so interacting with it never drags the map.
+  const legend = new (L as any).Control({ position: 'bottomleft' });
+  legend.onAdd = () => {
+    const div = L.DomUtil.create('div', 'map-legend');
+    div.innerHTML =
+      `<div class="mlg-t">Vs. town median</div>` +
+      `<div class="mlg-r"><span class="mlg-d" style="background:${BAND_COLOR.above}"></span>Above<span class="mlg-c" id="lg-above">—</span></div>` +
+      `<div class="mlg-r"><span class="mlg-d" style="background:${BAND_COLOR.around}"></span>Around <span class="mlg-thr" id="lg-thr"></span><span class="mlg-c" id="lg-around">—</span></div>` +
+      `<div class="mlg-r"><span class="mlg-d" style="background:${BAND_COLOR.below}"></span>Below<span class="mlg-c" id="lg-below">—</span></div>`;
+    L.DomEvent.disableClickPropagation(div);
+    L.DomEvent.disableScrollPropagation(div);
+    return div;
+  };
+  legend.addTo(map);
+
   // Pin tooltips open upward (direction:'top'). The rounded map has overflow:hidden
   // (needed to clip the tile layer), so a tooltip on a pin near the top edge gets
   // clipped. Leaflet tooltips can't autoPan/keepInView and only flip horizontally, so
@@ -759,6 +828,14 @@ import LeafletMap from '../components/LeafletMap.astro';
     const lo = med * (1 - thr),
       hi = med * (1 + thr);
     for (const r of rows) r.band = r.price < lo ? 'below' : r.price > hi ? 'above' : 'around';
+
+    // legend: counts per band + the active threshold (mirrors the pin colours)
+    const bandCounts = { above: 0, around: 0, below: 0 } as Record<string, number>;
+    for (const r of rows) bandCounts[r.band!]++;
+    $('lg-above').textContent = bandCounts.above.toLocaleString();
+    $('lg-around').textContent = bandCounts.around.toLocaleString();
+    $('lg-below').textContent = bandCounts.below.toLocaleString();
+    $('lg-thr').textContent = `±${Math.round(thr * 100)}%`;
 
     // markers
     cluster.clearLayers();
