@@ -445,11 +445,15 @@ import LeafletMap from '../components/LeafletMap.astro';
     [1.3521, 103.8198],
     12,
   );
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-    attribution: '© OpenStreetMap © CARTO',
-    maxZoom: 19,
-    subdomains: 'abcd',
-  }).addTo(map);
+  const cartoKey = import.meta.env.PUBLIC_CARTO_API_KEY;
+  L.tileLayer(
+    `https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png${cartoKey ? `?key=${cartoKey}` : ''}`,
+    {
+      attribution: '© OpenStreetMap © CARTO',
+      maxZoom: 19,
+      subdomains: 'abcd',
+    },
+  ).addTo(map);
   const cluster = (L as any).markerClusterGroup({ maxClusterRadius: 45, chunkedLoading: true });
   map.addLayer(cluster);
 
