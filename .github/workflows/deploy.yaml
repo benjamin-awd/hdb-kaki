@@ -71,6 +71,8 @@ jobs:
 
       - name: Install and build site
         working-directory: web
+        env:
+          PUBLIC_CARTO_API_KEY: ${{ secrets.PUBLIC_CARTO_API_KEY }}
         run: |
           bun install --frozen-lockfile
           bun run build
