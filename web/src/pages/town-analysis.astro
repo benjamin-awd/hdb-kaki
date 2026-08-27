@@ -59,27 +59,21 @@ import LeafletMap from '../components/LeafletMap.astro';
         </div>
         <div id="map-sub" style="font-size:13px;color:var(--ink-3);margin-bottom:22px">&nbsp;</div>
         <div style="height:1px;background:var(--line);margin:6px 0 18px"></div>
-        <div class="cap" style="margin-bottom:8px">
-          <Term term="Distribution" end
-            >Each sale vs the median: <strong>Around</strong> is within your threshold (e.g. ±10%);
-            <strong>Above</strong> and <strong>Below</strong> fall outside.</Term
+        <div class="cap dist-head">
+          <span
+            ><Term term="Distribution" end
+              >The spread of every sale price. Bars group sales into price bins; the dashed line
+              marks the median, and the row below gives the key percentiles.</Term
+            ></span
           >
+          <span class="dist-hint" id="dist-hint">&nbsp;</span>
         </div>
-        <div class="cat-line">
-          <span class="dot" style="background:var(--red)"></span>Above median<span class="bar"
-            ><span id="bar-above" style="background:var(--red)"></span></span
-          ><span class="amt" id="amt-above">—</span>
-        </div>
-        <div class="cat-line">
-          <span class="dot" style="background:#d98a2b"></span>Around median<span class="bar"
-            ><span id="bar-around" style="background:#d98a2b"></span></span
-          ><span class="amt" id="amt-around">—</span>
-        </div>
-        <div class="cat-line">
-          <span class="dot" style="background:var(--good)"></span>Below median<span class="bar"
-            ><span id="bar-below" style="background:var(--good)"></span></span
-          ><span class="amt" id="amt-below">—</span>
-        </div>
+        <div class="hist" id="hist"></div>
+        <div class="hist-axis" id="hist-axis"><span>&nbsp;</span></div>
+        <div class="hist-medlab" id="hist-medlab"></div>
+        <div class="ruler" id="ruler"></div>
+        <div class="ministats" id="ministats"></div>
+        <div id="dist-tip" class="dist-tip" role="tooltip" aria-hidden="true"></div>
       </div>
     </div>
 
@@ -164,37 +158,218 @@ import LeafletMap from '../components/LeafletMap.astro';
     text-transform: uppercase;
     color: var(--ink-3);
   }
-  .cat-line {
+  /* Distribution: a binned price histogram with a percentile ruler and summary stats.
+     Bars/cells/ruler are injected via innerHTML in paintMap, so their selectors are
+     :global (Astro only scopes elements present in the template — the containers). */
+  .dist-head {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 10px;
-    margin: 14px 0;
-    font-size: 13.5px;
+    margin-bottom: 2px;
   }
-  .cat-line .dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
+  .dist-hint {
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 500;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-3);
+  }
+  .hist {
+    position: relative;
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    height: 120px;
+    margin: 18px 0 6px;
+  }
+  /* Bars are a single calm neutral: the tallest bar is just the most common price, not a
+     signal, so red is reserved for the median line/label (and the ruler value) alone. The
+     hovered bar darkens to ink and opens the detail tooltip. */
+  .hist :global(.bar) {
+    flex: 1;
+    min-height: 3px;
+    background: color-mix(in srgb, var(--ink-3) 44%, var(--paper-2));
+    border-radius: 3px 3px 0 0;
+    transition: background 0.15s ease;
+  }
+  .hist :global(.bar):hover,
+  .hist :global(.bar.on) {
+    background: var(--ink);
+  }
+  .hist :global(.medline) {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 0;
+    border-left: 2px dashed var(--red-ink);
+    opacity: 0.55;
+    pointer-events: none;
+  }
+  .hist-axis {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--ink-3);
+    font-feature-settings: 'tnum' 1;
+  }
+  .hist-medlab {
+    position: relative;
+    height: 18px;
+    margin-top: 2px;
+  }
+  .hist-medlab :global(span) {
+    position: absolute;
+    top: 0;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--red-ink);
+  }
+  .ruler {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 4px;
+    margin-top: 14px;
+  }
+  .ruler :global(.rcell) {
+    text-align: center;
+  }
+  .ruler :global(.rk) {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--ink-3);
+    margin-bottom: 4px;
+  }
+  .ruler :global(.rv) {
+    font-family: var(--font-mono);
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--ink);
+    font-feature-settings: 'tnum' 1;
+  }
+  .ruler :global(.rcell.mid .rv) {
+    color: var(--red-ink);
+  }
+  .ministats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+  }
+  .ministats :global(.ms) {
+    padding-right: 12px;
+  }
+  .ministats :global(.ms + .ms) {
+    border-left: 1px solid var(--line);
+    padding-left: 14px;
+  }
+  .ministats :global(.mk) {
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--ink-3);
+    margin-bottom: 5px;
+  }
+  .ministats :global(.mv) {
+    font-family: var(--font-mono);
+    font-size: 16px;
+    font-weight: 600;
+    font-feature-settings: 'tnum' 1;
+  }
+  /* Per-bar hover tooltip. Matches the ECharts light-tooltip recipe (raised paper, hairline,
+     10px, rest shadow); its rows are injected, so they are :global. Hover-only, gated to real
+     pointer devices — the always-visible ruler/stats carry the same figures for touch/AT. */
+  .dist-tip {
+    position: fixed;
+    z-index: 60;
+    display: none;
+    pointer-events: none;
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    padding: 10px 12px;
+    min-width: 150px;
+  }
+  .dist-tip :global(.tt-h) {
+    font-family: var(--font-mono);
+    font-feature-settings: 'tnum' 1;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--ink);
+    margin-bottom: 7px;
+  }
+  .dist-tip :global(.tt-r) {
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+    font-size: 12px;
+    color: var(--ink-2);
+    line-height: 1.5;
+  }
+  .dist-tip :global(.tt-r b) {
+    font-family: var(--font-mono);
+    font-feature-settings: 'tnum' 1;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  /* Map legend (bottom-left Leaflet control). Injected by JS, so all selectors are :global. */
+  :global(.map-legend) {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    padding: 10px 12px;
+    font-family: var(--font-sans);
+    color: var(--ink);
+    line-height: 1;
+  }
+  :global(.map-legend .mlg-t) {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-bottom: 9px;
+  }
+  :global(.map-legend .mlg-r) {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    margin: 7px 0;
+  }
+  :global(.map-legend .mlg-r:last-child) {
+    margin-bottom: 0;
+  }
+  :global(.map-legend .mlg-d) {
+    width: 11px;
+    height: 11px;
+    border-radius: 999px;
+    border: 1.5px solid #fff;
+    box-shadow: 0 0 0 1px var(--line);
     flex: none;
   }
-  .cat-line .bar {
-    flex: 1;
-    height: 8px;
-    border-radius: 999px;
-    background: #efeadf;
-    overflow: hidden;
-  }
-  .cat-line .bar span {
-    display: block;
-    height: 100%;
-    width: 0;
-  }
-  .cat-line .amt {
-    width: 52px;
-    text-align: right;
+  :global(.map-legend .mlg-thr) {
     font-family: var(--font-mono);
-    font-size: 12.5px;
-    color: var(--ink-2);
+    font-size: 10.5px;
+    color: var(--ink-3);
+    font-feature-settings: 'tnum' 1;
+  }
+  :global(.map-legend .mlg-c) {
+    margin-left: auto;
+    padding-left: 14px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-3);
+    font-feature-settings: 'tnum' 1;
   }
   /* record sales leaderboard (section 02). Rows are injected via innerHTML, so the
      .rec rules are :global — Astro's scoping only tags elements present in the template. */
@@ -467,6 +642,24 @@ import LeafletMap from '../components/LeafletMap.astro';
   const cluster = (L as any).markerClusterGroup({ maxClusterRadius: 45, chunkedLoading: true });
   map.addLayer(cluster);
 
+  // Legend (bottom-left): decodes the pin colours against the town median. Counts and the
+  // threshold label are filled in per paint (paintMap), since both depend on the current rows
+  // and the ±% selector. Built as a Leaflet control so it lives inside the map and pans/zooms
+  // with it; click/scroll are stopped so interacting with it never drags the map.
+  const legend = new (L as any).Control({ position: 'bottomleft' });
+  legend.onAdd = () => {
+    const div = L.DomUtil.create('div', 'map-legend');
+    div.innerHTML =
+      `<div class="mlg-t">Vs. town median</div>` +
+      `<div class="mlg-r"><span class="mlg-d" style="background:${BAND_COLOR.above}"></span>Above<span class="mlg-c" id="lg-above">—</span></div>` +
+      `<div class="mlg-r"><span class="mlg-d" style="background:${BAND_COLOR.around}"></span>Around <span class="mlg-thr" id="lg-thr"></span><span class="mlg-c" id="lg-around">—</span></div>` +
+      `<div class="mlg-r"><span class="mlg-d" style="background:${BAND_COLOR.below}"></span>Below<span class="mlg-c" id="lg-below">—</span></div>`;
+    L.DomEvent.disableClickPropagation(div);
+    L.DomEvent.disableScrollPropagation(div);
+    return div;
+  };
+  legend.addTo(map);
+
   // Pin tooltips open upward (direction:'top'). The rounded map has overflow:hidden
   // (needed to clip the tile layer), so a tooltip on a pin near the top edge gets
   // clipped. Leaflet tooltips can't autoPan/keepInView and only flip horizontally, so
@@ -497,6 +690,145 @@ import LeafletMap from '../components/LeafletMap.astro';
     return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
   }
 
+  // Linear-interpolated quantile over an already-sorted ascending array.
+  function quantile(sorted: number[], q: number): number {
+    if (!sorted.length) return 0;
+    const pos = (sorted.length - 1) * q;
+    const base = Math.floor(pos);
+    const rest = pos - base;
+    return sorted[base + 1] !== undefined
+      ? sorted[base] + rest * (sorted[base + 1] - sorted[base])
+      : sorted[base];
+  }
+
+  // A "nice" round histogram bin width (~16 bins across the range), snapped to a 1/2/2.5/3/4/5
+  // × 10^n step so bin edges read as clean prices (e.g. $50k) rather than arbitrary numbers.
+  function niceStep(range: number): number {
+    const raw = range / 16;
+    const pow = Math.pow(10, Math.floor(Math.log10(raw) || 0));
+    for (const s of [1, 2, 2.5, 3, 4, 5, 10]) if (raw <= s * pow) return s * pow;
+    return 10 * pow;
+  }
+
+  // Compact price range for the summary tile: "$545–899k" when both ends are in the thousands,
+  // falling back to full short form when they straddle the million mark ("$900k–$1.15m").
+  function rangeShort(a: number, b: number): string {
+    return a < 1e6 && b < 1e6
+      ? `$${Math.round(a / 1e3)}–${Math.round(b / 1e3)}k`
+      : `${moneyShort(a)}–${moneyShort(b)}`;
+  }
+
+  // Floating detail tooltip shared by the histogram bars (styled like the light chart tooltip).
+  const distTip = $('dist-tip');
+  function showDistTip(html: string, ev: MouseEvent) {
+    distTip.innerHTML = html;
+    distTip.style.display = 'block';
+    const r = distTip.getBoundingClientRect();
+    let x = ev.clientX - r.width / 2;
+    let y = ev.clientY - r.height - 14;
+    x = Math.max(8, Math.min(window.innerWidth - r.width - 8, x));
+    if (y < 8) y = ev.clientY + 18;
+    distTip.style.left = x + 'px';
+    distTip.style.top = y + 'px';
+  }
+  function hideDistTip() {
+    distTip.style.display = 'none';
+  }
+
+  // Render the price-distribution card: a binned histogram (calm neutral bars; red is reserved
+  // for the median marker), a dashed median line, a five-point percentile ruler, and summary
+  // stats. Pure client-side over the rows already in memory, so it re-renders on any filter
+  // change. Each bar reveals its price range, sale count and share on hover.
+  function renderDistribution(rows: Row[], med: number) {
+    const prices = rows.map((r) => r.price).sort((a, b) => a - b);
+    const hist = $('hist'),
+      axis = $('hist-axis'),
+      medlab = $('hist-medlab'),
+      ruler = $('ruler'),
+      stats = $('ministats'),
+      hint = $('dist-hint');
+    if (prices.length < 2) {
+      hist.innerHTML = '';
+      medlab.innerHTML = '';
+      axis.innerHTML = '<span>&nbsp;</span>';
+      ruler.innerHTML = '';
+      stats.innerHTML = '';
+      hint.textContent = prices.length ? '1 sale' : '';
+      return;
+    }
+    const min = prices[0],
+      max = prices[prices.length - 1];
+    const step = niceStep(Math.max(1, max - min));
+    const start = Math.floor(min / step) * step;
+    const end = Math.max(start + step, Math.ceil((max + 1) / step) * step);
+    const n = Math.max(1, Math.round((end - start) / step));
+    const counts = new Array(n).fill(0);
+    for (const p of prices) counts[Math.min(n - 1, Math.max(0, Math.floor((p - start) / step)))]++;
+    const cmax = Math.max(1, ...counts);
+    const frac = (med - start) / (end - start);
+    const total = rows.length;
+
+    hist.innerHTML =
+      counts
+        .map(
+          (c, i) =>
+            `<div class="bar" data-i="${i}" style="height:${Math.max(3, (c / cmax) * 100)}%"></div>`,
+        )
+        .join('') + `<div class="medline" style="left:${(frac * 100).toFixed(1)}%"></div>`;
+
+    // Per-bar detail on hover, pointer devices only (the ruler + stats below carry the same
+    // figures for touch and assistive tech).
+    if (matchMedia('(hover: hover)').matches) {
+      hist.querySelectorAll<HTMLElement>('.bar').forEach((bar) => {
+        const i = Number(bar.dataset.i);
+        const b0 = start + i * step;
+        const html =
+          `<div class="tt-h">${moneyShort(b0)} – ${moneyShort(b0 + step)}</div>` +
+          `<div class="tt-r"><span>Sales</span><b>${counts[i].toLocaleString()}</b></div>` +
+          `<div class="tt-r"><span>Share of sales</span><b>${((counts[i] / total) * 100).toFixed(1)}%</b></div>`;
+        bar.addEventListener('mouseenter', (e) => showDistTip(html, e));
+        bar.addEventListener('mousemove', (e) => showDistTip(html, e));
+        bar.addEventListener('mouseleave', hideDistTip);
+      });
+    }
+    const medLeft = Math.min(94, Math.max(6, frac * 100));
+    medlab.innerHTML = `<span style="left:${medLeft.toFixed(1)}%">median ${moneyShort(med)}</span>`;
+    axis.innerHTML = `<span>${moneyShort(start)}</span><span>${moneyShort((start + end) / 2)}</span><span>${moneyShort(end)}</span>`;
+    hint.textContent = `${rows.length.toLocaleString()} sales · ${moneyShort(step)} bins`;
+
+    const p25 = quantile(prices, 0.25),
+      p75 = quantile(prices, 0.75);
+    ruler.innerHTML = (
+      [
+        ['Min', moneyShort(min)],
+        ['25th', moneyShort(p25)],
+        ['Median', moneyShort(med)],
+        ['75th', moneyShort(p75)],
+        ['Max', moneyShort(max)],
+      ] as const
+    )
+      .map(
+        ([k, v]) =>
+          `<div class="rcell${k === 'Median' ? ' mid' : ''}"><div class="rk">${k}</div><div class="rv">${v}</div></div>`,
+      )
+      .join('');
+
+    const psfs = rows
+      .map((r) => r.psf)
+      .filter((x) => x > 0)
+      .sort((a, b) => a - b);
+    const medPsf = quantile(psfs, 0.5);
+    stats.innerHTML = (
+      [
+        ['Median PSF', medPsf ? fpsf(medPsf) : '—'],
+        ['Typical range', rangeShort(p25, p75)],
+        ['Full spread', moneyShort(max - min)],
+      ] as const
+    )
+      .map(([k, v]) => `<div class="ms"><div class="mk">${k}</div><div class="mv">${v}</div></div>`)
+      .join('');
+  }
+
   // Paint the map + summary + table from already-fetched rows. Pure client-side, so
   // changing only the threshold re-bands the same rows without a new query.
   function paintMap(rows: Row[], town: string, flat: string, sub?: string, focus?: any) {
@@ -510,6 +842,14 @@ import LeafletMap from '../components/LeafletMap.astro';
     const lo = med * (1 - thr),
       hi = med * (1 + thr);
     for (const r of rows) r.band = r.price < lo ? 'below' : r.price > hi ? 'above' : 'around';
+
+    // legend: counts per band + the active threshold (mirrors the pin colours)
+    const bandCounts = { above: 0, around: 0, below: 0 } as Record<string, number>;
+    for (const r of rows) bandCounts[r.band!]++;
+    $('lg-above').textContent = bandCounts.above.toLocaleString();
+    $('lg-around').textContent = bandCounts.around.toLocaleString();
+    $('lg-below').textContent = bandCounts.below.toLocaleString();
+    $('lg-thr').textContent = `±${Math.round(thr * 100)}%`;
 
     // markers
     cluster.clearLayers();
@@ -551,16 +891,10 @@ import LeafletMap from '../components/LeafletMap.astro';
     setTimeout(() => map.invalidateSize(), 50);
 
     // summary
-    const counts = { above: 0, around: 0, below: 0 } as Record<string, number>;
-    rows.forEach((r) => counts[r.band!]++);
-    const max = Math.max(1, ...Object.values(counts));
     $('median-price').textContent = med ? money(med) : '—';
     $('map-sub').textContent =
       `${titleCase(town)}${sub ? ' · ' + titleCase(sub) : ''} · ${titleCase(flat)} · ${rows.length.toLocaleString()} sales (last 24 mo)`;
-    (['above', 'around', 'below'] as const).forEach((k) => {
-      ($('bar-' + k) as HTMLElement).style.width = (counts[k] / max) * 100 + '%';
-      $('amt-' + k).textContent = counts[k].toLocaleString();
-    });
+    renderDistribution(rows, med);
 
     // table — one page at a time (see renderTownTable + the Prev/Next pager).
     renderTownTable();
