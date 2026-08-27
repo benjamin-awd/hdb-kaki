@@ -1307,6 +1307,26 @@ import LeafletMap from '../components/LeafletMap.astro';
     vertical-align: middle;
     display: inline-block;
   }
+  /* Section divider between the "same street" and "elsewhere" comp groups — makes the
+     Sold-date reset at the boundary read as structure. Injected via innerHTML, so :global. */
+  :global(table.comp tbody tr.comp-section td) {
+    background: var(--paper);
+    padding: 7px 16px;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+  :global(tr.comp-section .cs-lab) {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+  }
+  :global(tr.comp-section .cs-n) {
+    float: right;
+    font-size: 12px;
+    color: var(--ink-3);
+  }
   .comp-foot {
     display: flex;
     justify-content: space-between;
@@ -2591,6 +2611,12 @@ import LeafletMap from '../components/LeafletMap.astro';
   let compPage = 0;
   let compYouRow = '';
   let compRowsHtml: string[] = [];
+  // Parallel to compRowsHtml: the section key ('same' | 'else' | '') each comp belongs to,
+  // and the divider-row HTML for each key. Comps are grouped "same street first", so the
+  // Sold dates reset at the group boundary; the dividers make that reset read as structure
+  // rather than a sort bug. Keys are '' when there's only one group (no boundary → no divider).
+  let compRowGroups: string[] = [];
+  let compSectionHeaders: Record<string, string> = {};
   let compFootSuffix = '';
   function renderComps() {
     const total = compRowsHtml.length;
@@ -2598,7 +2624,17 @@ import LeafletMap from '../components/LeafletMap.astro';
     if (compPage >= pages) compPage = pages - 1; // clamp when a smaller comp set lands
     const start = total ? compPage * COMP_PAGE : 0;
     const end = Math.min(start + COMP_PAGE, total);
-    $('comp-body').innerHTML = compYouRow + compRowsHtml.slice(start, end).join('');
+    // Emit a divider before the first row of the page and at any mid-page group change, so
+    // the section header repeats atop each page it spills onto.
+    let rows = '';
+    let lastGroup = '';
+    for (let i = start; i < end; i++) {
+      const g = compRowGroups[i] ?? '';
+      if (g && g !== lastGroup) rows += compSectionHeaders[g] ?? '';
+      lastGroup = g;
+      rows += compRowsHtml[i];
+    }
+    $('comp-body').innerHTML = compYouRow + rows;
     $('comp-foot').textContent = total
       ? `Showing ${start + 1}–${end} of ${total} ${compFootSuffix}`
       : `No ${compFootSuffix}`;
@@ -2729,6 +2765,21 @@ import LeafletMap from '../components/LeafletMap.astro';
     const sorted = [...comps].sort(
       (a, b) => Number(sameStreet(b)) - Number(sameStreet(a)) || b.month.localeCompare(a.month),
     );
+    // Group the sorted comps into "same street" then "elsewhere in town", and build a divider
+    // per group. Only when both groups exist (that's the only case where the Sold dates reset)
+    // do we tag rows with a section key — otherwise there's no boundary to explain.
+    const sameCount = sorted.filter(sameStreet).length;
+    const elseCount = sorted.length - sameCount;
+    const useSections = sameCount > 0 && elseCount > 0;
+    const secRow = (label: string, count: number) =>
+      `<tr class="comp-section"><td colspan="7"><span class="cs-lab">${label}</span><span class="cs-n">${count.toLocaleString()} ${count === 1 ? 'sale' : 'sales'}</span></td></tr>`;
+    compSectionHeaders = useSections
+      ? {
+          same: secRow(`Same street · ${titleCase(block.street)}`, sameCount),
+          else: secRow(`Elsewhere in ${titleCase(block.town)}`, elseCount),
+        }
+      : {};
+    compRowGroups = sorted.map((c) => (useSections ? (sameStreet(c) ? 'same' : 'else') : ''));
     const youRow = `<tr class="you"><td class="addr" data-role="title"><b>${titleCase(block.address)}</b><span class="badge">YOUR FLAT</span><br><span class="st">Estimated</span></td>
       <td data-role="meta">${storey}</td><td class="r" data-role="meta" data-suffix="sqft">${area.toLocaleString()}</td><td class="r" data-role="meta">${rem} yr</td>
       <td class="r price" data-role="primary">${money(estimate)}</td><td class="r psf" data-role="meta" data-suffix="psf">${fpsf(medPsf)}</td><td class="r" data-role="meta">—</td><td class="tbreak" aria-hidden="true"></td></tr>`;
