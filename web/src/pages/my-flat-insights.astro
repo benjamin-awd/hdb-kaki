@@ -1836,10 +1836,23 @@ import LeafletMap from '../components/LeafletMap.astro';
   // the view, nothing beyond it. Reused on first compute and whenever the container resizes
   // (fullscreen), so the visible range stays "10 minutes" regardless of screen size. Leaflet fits
   // the bounds to whatever the container is at call time, so the zoom adapts to the screen.
-  function fitToReach() {
-    if (!userLatLng) return;
+  // The one exception is a nearest station beyond the ring: the frame stretches just enough to
+  // include it, so the dashed line never runs off-map. The target is computed from the ring, never
+  // read back from map.getBounds(), which is stale while a previous fit is still animating.
+  let nearestStationLatLng: [number, number] | null = null;
+  function reachBounds(): L.LatLngBounds | null {
+    if (!userLatLng) return null;
     const tenMinM = REACH_RINGS[1]?.meters ?? 800;
-    map.fitBounds(L.latLng(userLatLng[0], userLatLng[1]).toBounds(2 * tenMinM));
+    return L.latLng(userLatLng[0], userLatLng[1]).toBounds(2 * tenMinM);
+  }
+  function fitToReach() {
+    const b = reachBounds();
+    if (!b) return;
+    if (nearestStationLatLng && !b.contains(nearestStationLatLng)) {
+      map.fitBounds(b.extend(nearestStationLatLng), { padding: [24, 24] });
+    } else {
+      map.fitBounds(b);
+    }
   }
 
   // MRT/LRT line colours keyed by code prefix. Used only to tint the single nearest-station
@@ -2233,15 +2246,12 @@ import LeafletMap from '../components/LeafletMap.astro';
     const kind = stationKind(near.station.codes);
 
     // Draw the corridor(s) every shown station sits on (Downtown, Jurong Region, etc.), under
-    // the markers + line. Lines that run past the framed radius are just clipped by the map
-    // viewport, so this shows each pin on its own line without a full network diagram.
+    // the markers + line. Lines (LRT loops included) that run past the framed radius are just
+    // clipped by the map viewport, so this shows each pin on its own line without a full network
+    // diagram or zooming out from the walking ring.
     const prefixes = new Set(
       nearby.flatMap((n) => n.station.codes.split(' / ').map((c) => c.replace(/\d.*$/, ''))),
     );
-    // The compact LRT loops/spurs are framed in full (below) so a ring never clips mid-loop;
-    // long heavy-rail lines stay clipped by the viewport — fitting them would zoom out island-wide.
-    const LRT_PREFIXES = new Set(['BP', 'SW', 'SE', 'STC', 'PW', 'PE', 'PTC']);
-    let lrtLinePts: [number, number][] = [];
     try {
       const lines = await loadLines();
       if (seq !== mrtSeq) return;
@@ -2256,13 +2266,6 @@ import LeafletMap from '../components/LeafletMap.astro';
           lineJoin: 'round',
         }),
       }).addTo(routeLayer);
-      lrtLinePts = lines.features
-        .filter((f) => prefixes.has(f.properties?.line) && LRT_PREFIXES.has(f.properties?.line))
-        .flatMap((f) =>
-          (f.geometry as GeoJSON.LineString).coordinates.map(
-            (c) => [c[1], c[0]] as [number, number],
-          ),
-        );
     } catch {
       /* line geometry unavailable — the station marker alone still reads */
     }
@@ -2311,15 +2314,10 @@ import LeafletMap from '../components/LeafletMap.astro';
     // MRTs (the highlighted nearest plus the next two).
     setStation(near, nearby.slice(1, 3));
 
-    // Frame the flat, every station shown, and any full LRT loop drawn, so the within-radius pins
-    // are visible and a compact loop is never clipped mid-ring. Only refit when something falls
-    // outside the current view, to avoid a jump; maxZoom keeps a lone close station from over-zooming.
-    const b = L.latLngBounds([
-      from,
-      ...nearby.map((n) => [n.station.lat, n.station.lng] as [number, number]),
-      ...lrtLinePts,
-    ]);
-    if (!map.getBounds().contains(b)) map.fitBounds(b, { maxZoom: 16, padding: [24, 24] });
+    // Keep the walking-ring frame; refit only when the nearest station sits beyond it, stretching
+    // just enough to include it (see fitToReach). Secondary stations may fall outside the view.
+    nearestStationLatLng = to;
+    if (!reachBounds()?.contains(to)) fitToReach();
   }
 
   // The resolved line carries validation errors only — the matched block/town is shown
@@ -2882,6 +2880,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     // Default the view to the 10-minute walking ring (800 m) around the flat, so "what's a short
     // walk away" fills the frame. Fall back to the comps bounds when we have no flat location.
     if (userLatLng) {
+      nearestStationLatLng = null; // the previous flat's station; updateNearestMrt sets this one's
       fitToReach();
     } else if (pts.length) {
       map.fitBounds(L.latLngBounds(pts).pad(0.15));
