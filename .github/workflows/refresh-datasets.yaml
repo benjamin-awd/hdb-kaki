@@ -10,11 +10,15 @@ name: Refresh generated datasets
 # faster — cafes/restaurants open and close constantly — so it refreshes weekly. A
 # commit here touches web/**, which triggers the "Deploy web" workflow to publish.
 #
-# One matrix entry per dataset, run one-at-a-time (max-parallel: 1) so the per-entry
-# pushes to the default branch never race, and fail-fast: false so a flaky third-party
-# source for one dataset (e.g. Overpass throttling amenities, SFA/OneMap 500ing food)
-# still lets the others refresh. Build and commit are one step, so a failed build makes
-# no partial commit — it just retries next cycle.
+# One matrix entry per dataset, run one-at-a-time (max-parallel: 1), and fail-fast: false
+# so a flaky third-party source for one dataset (e.g. Overpass throttling amenities,
+# SFA/OneMap 500ing food) still lets the others refresh. Build and commit are one step,
+# so a failed build makes no partial commit — it just retries next cycle.
+#
+# Every entry checks out the run's trigger SHA, not the current branch tip, so once an
+# earlier entry (or the daily Auto-update) has pushed, a plain push is rejected as
+# non-fast-forward. Each entry therefore rebases onto the latest default branch before
+# pushing; the entries write disjoint paths, so the rebase never conflicts.
 #
 # | Dataset                       | Script                 | Source                            | Cadence |
 # |-------------------------------|------------------------|-----------------------------------|---------|
@@ -117,5 +121,6 @@ jobs:
           else
             git add ${{ matrix.paths }}
             git commit -m "${{ matrix.message }}"
-            git push
+            git pull --rebase origin ${{ github.event.repository.default_branch }}
+            git push origin HEAD:${{ github.event.repository.default_branch }}
           fi
