@@ -3,6 +3,10 @@ repos:
     rev: v4.4.0
     hooks:
       - id: end-of-file-fixer
+        # Generated map datasets are written (and committed by CI, without hooks) as
+        # minified JSON with no trailing newline; adding one here would make the next
+        # scheduled refresh commit a no-op diff.
+        exclude: ^web/public/geo/
       - id: trailing-whitespace
 
   - repo: https://github.com/psf/black-pre-commit-mirror
