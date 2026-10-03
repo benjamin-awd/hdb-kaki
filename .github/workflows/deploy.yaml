@@ -47,15 +47,15 @@ permissions:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # Skip when chained off a failed ETL run; always run for push / manual.
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v10.2.0
 
       - name: Download latest parquet from release
         env:
@@ -91,7 +91,7 @@ jobs:
 
       - name: Comment preview URL on PR
         if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           # Passed via env (not string-interpolated into the script) so wrangler
           # output can't break the JS or inject code.

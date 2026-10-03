@@ -33,7 +33,7 @@ permissions:
 
 jobs:
   smoke:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # Only after a SUCCESSFUL production deploy (main), never a PR preview upload; the
     # schedule/manual runs always proceed.
     if: >-
@@ -42,7 +42,7 @@ jobs:
        github.event.workflow_run.head_branch == 'main')
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -63,7 +63,7 @@ jobs:
 
       - name: Upload report on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: smoke-report
           path: web/playwright-report/
