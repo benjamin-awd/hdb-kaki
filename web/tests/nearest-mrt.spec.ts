@@ -32,9 +32,20 @@ test('shows straight-line distance to the nearest MRT', async ({ page }) => {
   await expect(page.locator('.mrt-pin-sec').first()).toBeVisible();
   await expect(page.locator('.leaflet-overlay-pane svg path')).not.toHaveCount(0);
 
-  // Toggling an amenity category draws its nearby pins on the map.
-  await page.locator('.am-chip[data-cat="supermarket"]').click();
-  await expect(page.locator('.am-pin').first()).toBeVisible();
+  // Amenity chips start engaged, so the map already shows nearby places: single pins, or a
+  // cloverleaf cluster where several sit close together (which one depends on density and zoom).
+  const amenityMarkers = page.locator('.am-pin, .am-clover');
+  await expect(amenityMarkers.first()).toBeVisible();
+
+  // Turning every category off clears the layer; turning one back on redraws it.
+  for (const cat of ['hawker', 'supermarket', 'mall']) {
+    await page.locator(`.am-chip[data-cat="${cat}"]`).click();
+  }
+  await expect(amenityMarkers).toHaveCount(0);
+  const supermarkets = page.locator('.am-chip[data-cat="supermarket"]');
+  await supermarkets.click();
+  await expect(supermarkets).toHaveAttribute('aria-pressed', 'true');
+  await expect(amenityMarkers.first()).toBeVisible();
 
   await page.locator('.ins-map-col').screenshot({ path: 'test-results/nearest-mrt.png' });
 });

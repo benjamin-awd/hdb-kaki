@@ -45,18 +45,24 @@ OVERPASS_MIRRORS = [
     "https://overpass.kumi.systems/api/interpreter",
     "https://lz4.overpass-api.de/api/interpreter",
 ]
-BBOX = "1.15,103.55,1.48,104.1"  # Singapore
+# Singapore's OSM country boundary. A lat/lng bounding box also sweeps in the Johor shoreline
+# (AEON Mall, ZUS Coffee, ...), which then shows up as "nearby" for Woodlands/Tuas flats.
+SG_AREA = 'area["ISO3166-1"="SG"][admin_level=2]->.sg;'
 
 
 def _get(url: str, timeout: int = 90) -> bytes:
-    with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=timeout) as r:
+    with urllib.request.urlopen(
+        urllib.request.Request(url, headers=UA), timeout=timeout
+    ) as r:
         return r.read()
 
 
 def _hawkers() -> list[dict]:
     """NEA hawker centres from data.gov.sg — poll for a signed URL, then fetch the GeoJSON."""
     meta = json.loads(
-        _get(f"https://api-open.data.gov.sg/v1/public/api/datasets/{HAWKER_DATASET}/poll-download")
+        _get(
+            f"https://api-open.data.gov.sg/v1/public/api/datasets/{HAWKER_DATASET}/poll-download"
+        )
     )
     gj = json.loads(_get(meta["data"]["url"]))
     out = []
@@ -65,7 +71,14 @@ def _hawkers() -> list[dict]:
         name = (p.get("NAME") or "").strip()
         lng, lat = (f.get("geometry") or {}).get("coordinates", [None, None])[:2]
         if name and lat is not None and lng is not None:
-            out.append({"type": "hawker", "name": name, "lat": round(lat, 5), "lng": round(lng, 5)})
+            out.append(
+                {
+                    "type": "hawker",
+                    "name": name,
+                    "lat": round(lat, 5),
+                    "lng": round(lng, 5),
+                }
+            )
     return out
 
 
@@ -92,14 +105,15 @@ def _overpass(query: str) -> list[dict]:
 def _osm_amenities() -> list[dict]:
     """One combined Overpass query for supermarkets, malls, and food courts (fewer flaky calls).
     Food courts join the hawker category so coffeeshops/food centres (e.g. "Food Loft @10") show;
-    OSM tags these inconsistently, so coverage is partial and generic restaurants are excluded."""
+    OSM tags these inconsistently, so coverage is partial and generic restaurants are excluded.
+    """
     q = (
-        f"[out:json][timeout:120];("
-        f'nwr["shop"="supermarket"]({BBOX});'
-        f'nwr["shop"="mall"]({BBOX});'
-        f'nwr["amenity"="food_court"]({BBOX});'
-        f'nwr["amenity"="cafe"]({BBOX});'
-        f");out center tags;"
+        f"[out:json][timeout:120];{SG_AREA}("
+        'nwr["shop"="supermarket"](area.sg);'
+        'nwr["shop"="mall"](area.sg);'
+        'nwr["amenity"="food_court"](area.sg);'
+        'nwr["amenity"="cafe"](area.sg);'
+        ");out center tags;"
     )
     out = []
     for el in _overpass(q):
@@ -117,7 +131,9 @@ def _osm_amenities() -> list[dict]:
         lat = el.get("lat") or center.get("lat")  # SG coords never 0, so `or` is safe
         lng = el.get("lon") or center.get("lon")
         if name and not _GENERIC.match(name) and lat is not None and lng is not None:
-            out.append({"type": cat, "name": name, "lat": round(lat, 5), "lng": round(lng, 5)})
+            out.append(
+                {"type": cat, "name": name, "lat": round(lat, 5), "lng": round(lng, 5)}
+            )
     return out
 
 
@@ -134,7 +150,10 @@ def build() -> None:
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(amenities, separators=(",", ":")))
-    counts = {c: sum(a["type"] == c for a in amenities) for c in ("hawker", "supermarket", "mall")}
+    counts = {
+        c: sum(a["type"] == c for a in amenities)
+        for c in ("hawker", "supermarket", "mall")
+    }
     print(
         f"Wrote {OUT.relative_to(ROOT)} ({OUT.stat().st_size / 1024:.1f} KB, "
         f"{len(amenities)} amenities: {counts})"
