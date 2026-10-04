@@ -444,3 +444,230 @@ describe('valuationQuery', () => {
     expect(v.comps).toHaveLength(32);
   });
 });
+
+// ---- valuationQuery: tier boundaries, widening, and bad inputs ----
+// One town ('T'), user at (VLAT, VLNG) with 80 yrs left. Each fixture kind carries its own
+// psf so a test can tell which rows became comps.
+const VLAT = 1.32,
+  VLNG = 103.9;
+const NEAR_LAT = VLAT + 0.008; // ~890 m north
+const FAR_LAT = VLAT + 0.01; // ~1112 m north
+const vrow = (o: Partial<ResaleRow>): ResaleRow =>
+  row({
+    month: '2026-03',
+    town: 'T',
+    street_name: 'ST',
+    remaining_lease_years: 80,
+    latitude: VLAT,
+    longitude: VLNG,
+    ...o,
+  });
+const vmany = (n: number, o: Partial<ResaleRow>) => Array.from({ length: n }, () => vrow(o));
+const vq = (
+  rows: ResaleRow[],
+  o: { lease?: number; lat?: number | null; lng?: number | null } = {},
+  now: Date = NOW,
+) =>
+  valuationQuery(
+    cols(rows),
+    { town: 'T', flat: '4 ROOM', lease: 80, lat: VLAT, lng: VLNG, ...o },
+    now,
+  );
+const NEAR = { psf: 1000 }; // similar lease, nearby
+const LEASE_FAR = { psf: 800, latitude: FAR_LAT }; // similar lease, beyond 1 km
+const OLD = { psf: 400, remaining_lease_years: 50 }; // dissimilar lease, nearby
+const OLD24 = { month: '2025-01' }; // inside 24 months, outside 12
+
+describe('valuationQuery tiers', () => {
+  test('near: exactly 10 nearby similar-lease sales -> near/12', () => {
+    const v = vq([...vmany(10, NEAR), ...vmany(30, LEASE_FAR)]);
+    expect([v.scope, v.months, v.comps.length]).toEqual(['near', 12, 10]);
+  });
+  test('near: 9 -> falls to the lease tier', () => {
+    const v = vq([...vmany(9, NEAR), ...vmany(30, LEASE_FAR)]);
+    expect([v.scope, v.months, v.comps.length]).toEqual(['lease', 12, 39]);
+  });
+  test('radius: ~890 m is near, ~1112 m is not', () => {
+    const v = vq([...vmany(10, { ...NEAR, latitude: NEAR_LAT }), ...vmany(10, LEASE_FAR)]);
+    expect(v.scope).toBe('near');
+    expect(v.comps.every((c) => c.psf === 1000)).toBe(true);
+  });
+  test('lease band is inclusive at ±10 years', () => {
+    const v = vq([
+      ...vmany(5, { remaining_lease_years: 90 }),
+      ...vmany(5, { remaining_lease_years: 70 }),
+    ]);
+    expect([v.scope, v.comps.length]).toEqual(['near', 10]);
+    expect(vq(vmany(10, { remaining_lease_years: 90.01 })).scope).toBe('town');
+  });
+  test('lease: exactly 5 -> lease/12; 4 -> town/12', () => {
+    const five = vq([...vmany(5, LEASE_FAR), ...vmany(30, OLD)]);
+    expect([five.scope, five.months, five.comps.length]).toEqual(['lease', 12, 5]);
+    const four = vq([...vmany(4, LEASE_FAR), ...vmany(30, OLD)]);
+    expect([four.scope, four.months, four.comps.length]).toEqual(['town', 12, 34]);
+  });
+  test('town: the last tier is used even under its minimum, at 24 months', () => {
+    const v = vq([...vmany(3, OLD), ...vmany(2, { ...OLD, ...OLD24 })]);
+    expect([v.scope, v.months, v.comps.length]).toEqual(['town', 24, 5]);
+  });
+  test('no lease or location: straight to the town tier', () => {
+    const v = vq(vmany(10, OLD), { lease: 0, lat: null, lng: null });
+    expect([v.scope, v.months, v.comps.length]).toEqual(['town', 12, 10]);
+  });
+});
+
+describe('valuationQuery widens 12 -> 24 months before dropping a tier', () => {
+  test('near/24 wins over lease/12', () => {
+    const v = vq([...vmany(6, NEAR), ...vmany(4, { ...NEAR, ...OLD24 }), ...vmany(30, LEASE_FAR)]);
+    expect([v.scope, v.months, v.comps.length]).toEqual(['near', 24, 10]);
+  });
+  test('lease/24 wins over town/12', () => {
+    const v = vq([
+      ...vmany(3, LEASE_FAR),
+      ...vmany(2, { ...LEASE_FAR, ...OLD24 }),
+      ...vmany(30, OLD),
+    ]);
+    expect([v.scope, v.months, v.comps.length]).toEqual(['lease', 24, 5]);
+  });
+  test('sales older than 24 months never count', () => {
+    const v = vq([...vmany(9, NEAR), ...vmany(5, { ...NEAR, month: '2024-06' })]);
+    expect([v.scope, v.comps.length]).toEqual(['lease', 9]);
+  });
+  test('the cutoff month is inclusive', () => {
+    expect(monthsAgo(12, NOW)).toBe('2025-07');
+    const v = vq(vmany(10, { ...NEAR, month: '2025-07' }));
+    expect([v.scope, v.months]).toEqual(['near', 12]);
+  });
+});
+
+describe('valuationQuery with no comps', () => {
+  test('no sales at all: town/24, empty, zero medians, no last sale', () => {
+    const v = vq([]);
+    expect([v.scope, v.months, v.comps.length, v.nearby.length]).toEqual(['town', 24, 0, 0]);
+    expect(v.town).toEqual({ price: 0, area: 0 });
+    expect(v.lastSale).toBe('');
+  });
+  test('only older sales: empty comps but the last sale month is reported', () => {
+    const v = vq([...vmany(3, { month: '2021-12' }), ...vmany(2, { month: '2020-05' })]);
+    expect(v.comps).toHaveLength(0);
+    expect(v.lastSale).toBe('2021-12');
+  });
+  test('scope, months and comps stay consistent when the town tier ends at 24', () => {
+    const v = vq([...vmany(2, OLD), ...vmany(3, { ...OLD, ...OLD24 })]);
+    expect(v.months).toBe(24);
+    expect(v.comps.map((c) => c.month).sort()).toEqual([
+      '2025-01',
+      '2025-01',
+      '2025-01',
+      '2026-03',
+      '2026-03',
+    ]);
+  });
+});
+
+describe('valuationQuery location and lease inputs', () => {
+  test('null, one-sided or NaN user coords skip the near tier and give null distances', () => {
+    for (const o of [{ lat: null, lng: null }, { lng: null }, { lat: NaN, lng: NaN }]) {
+      const v = vq(vmany(20, NEAR), o);
+      expect(v.scope).toBe('lease');
+      expect(v.nearby.every((r) => r.dist === null)).toBe(true);
+    }
+  });
+  test('lat/lng 0 is a real (far away) location, not "missing"', () => {
+    const v = vq(vmany(20, NEAR), { lat: 0, lng: 0 });
+    expect(v.scope).toBe('lease');
+    expect(v.nearby[0].dist).toBeGreaterThan(1e7);
+  });
+  test('a comp missing either coordinate has a null distance and is never near', () => {
+    for (const bad of [{ latitude: null }, { longitude: null }]) {
+      const v = vq([...vmany(9, NEAR), vrow({ ...NEAR, ...bad })]);
+      expect(v.scope).toBe('lease');
+      expect(v.nearby.filter((r) => r.dist === null)).toHaveLength(1);
+    }
+  });
+  test('unknown lease (0, negative or NaN): town tier, every town sale is a table match', () => {
+    for (const lease of [0, -5, NaN]) {
+      const v = vq([...vmany(10, NEAR), ...vmany(10, { ...OLD, latitude: FAR_LAT })], { lease });
+      expect(v.scope).toBe('town');
+      expect(v.nearby).toHaveLength(20);
+      expect(v.nearby.every((r) => r.match)).toBe(true);
+    }
+  });
+  test('a comp with no remaining lease is never "similar" and has no lease bucket', () => {
+    const v = vq(vmany(10, { remaining_lease_years: null as unknown as number }));
+    expect(v.scope).toBe('town');
+    expect(v.nearby.every((r) => !r.match)).toBe(true);
+    expect(v.leaseTown).toHaveLength(0);
+  });
+  test('sales without a PSF never become comps or table rows', () => {
+    const v = vq([...vmany(10, NEAR), ...vmany(5, { ...NEAR, psf: null })]);
+    expect(v.comps).toHaveLength(10);
+    expect(v.nearby).toHaveLength(10);
+    expect(v.comps.every((c) => c.psf === 1000)).toBe(true);
+  });
+});
+
+describe('valuationQuery table rows and benchmark', () => {
+  test('nearby: lease matches anywhere in town, other leases only within 1 km', () => {
+    const v = vq([
+      ...vmany(10, NEAR),
+      vrow(LEASE_FAR),
+      vrow({ ...OLD, latitude: NEAR_LAT }),
+      vrow({ ...OLD, latitude: FAR_LAT }),
+    ]);
+    expect(v.nearby).toHaveLength(12);
+    const far = v.nearby.find((r) => r.psf === 800)!;
+    expect(far.match).toBe(true);
+    expect(far.dist!).toBeGreaterThan(1100);
+    const other = v.nearby.find((r) => r.psf === 400)!;
+    expect(other.match).toBe(false);
+    expect(other.dist!).toBeGreaterThan(880);
+    expect(other.dist!).toBeLessThan(900);
+  });
+  test('other-lease rows drop out when the flat has no location', () => {
+    const v = vq([...vmany(10, NEAR), ...vmany(5, OLD)], { lat: null, lng: null });
+    expect(v.nearby).toHaveLength(10);
+  });
+  test('nearby spans the chosen window, wider than the comps', () => {
+    const v = vq([
+      ...vmany(6, NEAR),
+      ...vmany(4, { ...NEAR, ...OLD24 }),
+      ...vmany(3, { ...LEASE_FAR, ...OLD24 }),
+    ]);
+    expect([v.scope, v.months, v.comps.length, v.nearby.length]).toEqual(['near', 24, 10, 13]);
+  });
+  test('town benchmark stays on 12 months when the comps widen to 24', () => {
+    const v = vq([
+      ...vmany(5, { ...NEAR, resale_price: 600000 }),
+      ...vmany(20, { ...NEAR, ...OLD24, resale_price: 100000 }),
+    ]);
+    expect(v.months).toBe(24);
+    expect(v.town.price).toBe(600000);
+  });
+  test('town benchmark falls back to 24 months only when 12 has no sales', () => {
+    const v = vq(vmany(3, { ...NEAR, ...OLD24, resale_price: 100000 }));
+    expect(v.town.price).toBe(100000);
+  });
+});
+
+describe('monthsAgo at month ends', () => {
+  // Local-time constructors so the expectations don't depend on the TZ.
+  test('crosses the year from Jan', () => {
+    expect(monthsAgo(12, new Date(2026, 0, 1))).toBe('2025-01');
+    expect(monthsAgo(24, new Date(2026, 0, 31))).toBe('2024-01');
+  });
+  test('no overflow from the 31st or a leap day', () => {
+    expect(monthsAgo(12, new Date(2026, 6, 31))).toBe('2025-07');
+    expect(monthsAgo(36, new Date(2026, 11, 31))).toBe('2023-12');
+    expect(monthsAgo(1, new Date(2026, 2, 31))).toBe('2026-02');
+    expect(monthsAgo(12, new Date(2028, 1, 29))).toBe('2027-02');
+  });
+  test('a sale in the cutoff month is in; one month earlier is out', () => {
+    const v = vq(
+      [...vmany(10, { ...NEAR, month: '2025-01' }), ...vmany(10, { ...NEAR, month: '2024-12' })],
+      {},
+      new Date(2026, 0, 1),
+    );
+    expect([v.scope, v.months, v.comps.length]).toEqual(['near', 12, 10]);
+  });
+});
