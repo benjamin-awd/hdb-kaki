@@ -366,7 +366,7 @@ import LeafletMap from '../components/LeafletMap.astro';
 
       <!-- 05 COMPARABLES -->
       <SecHead num="05" title="Nearby comparables" hintId="comp-hint">
-        Recent sales of the same flat type: the same street first, then similar-lease flats in town,
+        Recent sales of the same flat type: the same street first, then similar-lease flats nearby,
         then older and newer blocks nearby for comparison.
       </SecHead>
 
@@ -2612,6 +2612,7 @@ import LeafletMap from '../components/LeafletMap.astro';
   // reference; compute() stashes it, the full comp rows, and the footer suffix, and paging is
   // pure client-side slicing over the comps already fetched.
   const COMP_PAGE = 8;
+  const TABLE_RADIUS_M = 2000; // similar-lease rows beyond this drop off the table (see compute)
   let compPage = 0;
   let compYouRow = '';
   let compRowsHtml: string[] = [];
@@ -2806,7 +2807,14 @@ import LeafletMap from '../components/LeafletMap.astro';
           : 'else';
     const order = ['same', 'else', 'newer', 'older'];
     const byDist = (a: NearbyRow, b: NearbyRow) => (a.dist ?? Infinity) - (b.dist ?? Infinity);
-    const sorted = [...nearby].sort(
+    // When the estimate came from sales within 1 km, cap the similar-lease rows at 2 km so the
+    // older/newer blocks nearby aren't buried under far-off ones. Otherwise the estimate used
+    // sales from across town, so the table keeps them all.
+    const capped = scope === 'near';
+    const rows = capped
+      ? nearby.filter((c) => !c.match || (c.dist ?? Infinity) <= TABLE_RADIUS_M)
+      : nearby;
+    const sorted = [...rows].sort(
       (a, b) =>
         order.indexOf(sectionOf(a)) - order.indexOf(sectionOf(b)) ||
         (sectionOf(a) === 'same' ? 0 : byDist(a, b)) ||
@@ -2819,7 +2827,11 @@ import LeafletMap from '../components/LeafletMap.astro';
       `<tr class="comp-section"><td colspan="7"><span class="cs-lab">${label}</span><span class="cs-n">${psfs.length.toLocaleString()} ${psfs.length === 1 ? 'sale' : 'sales'}${psfs.length >= 5 ? ` · median ${fpsf(med(psfs))} psf` : ''}</span></td></tr>`;
     const secLabels: Record<string, string> = {
       same: `Same street · ${titleCase(block.street)}`,
-      else: matchLabel ? `${matchLabel} · elsewhere in ${townName}` : `Elsewhere in ${townName}`,
+      else: capped
+        ? `${matchLabel} · within 2 km`
+        : matchLabel
+          ? `${matchLabel} · elsewhere in ${townName}`
+          : `Elsewhere in ${townName}`,
       newer: 'Newer flats nearby',
       older: 'Older flats nearby',
     };
