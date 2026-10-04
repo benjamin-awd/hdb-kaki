@@ -8,10 +8,16 @@ export interface StoreyPoint {
   psf: number;
 }
 
+/** Fewest sales the storey slope is fitted on; below this there's no adjustment. */
+export const STOREY_MIN_N = 10;
+
 /** OLS slope of PSF per floor from `psf ~ a + b·storey + c·lease`, clamped at 0 (a negative
  * fit is noise: HDB floors don't sell at a discount to the ones below). 0 when fewer than
- * `minN` points or the fit is degenerate. */
-export function storeySlope(pts: readonly StoreyPoint[], minN = 10): number {
+ * `minN` usable (all-finite) points or the fit is degenerate. */
+export function storeySlope(all: readonly StoreyPoint[], minN = STOREY_MIN_N): number {
+  const pts = all.filter(
+    (p) => Number.isFinite(p.slo) && Number.isFinite(p.lease) && Number.isFinite(p.psf),
+  );
   if (pts.length < minN) return 0;
   const n = pts.length;
   const mx = pts.reduce((s, p) => s + p.slo, 0) / n;
@@ -32,11 +38,13 @@ export function storeySlope(pts: readonly StoreyPoint[], minN = 10): number {
     sxy += x * y;
     sly += l * y;
   }
+  if (!sxx) return 0; // every sale on one floor: no storey signal
   // No lease variation: plain simple regression on storey.
-  if (sll === 0) return sxx ? Math.max(0, sxy / sxx) : 0;
+  if (sll === 0) return Math.max(0, sxy / sxx);
   const det = sxx * sll - sxl * sxl;
-  if (Math.abs(det) < 1e-9 * sxx * sll) return 0; // storey and lease collinear
-  return Math.max(0, (sxy * sll - sly * sxl) / det);
+  if (Math.abs(det) <= 1e-9 * sxx * sll) return 0; // storey and lease collinear
+  const b = (sxy * sll - sly * sxl) / det;
+  return Number.isFinite(b) ? Math.max(0, b) : 0;
 }
 
 /** Each comp's PSF shifted to the user's floor along `slope`, sorted ascending. */
