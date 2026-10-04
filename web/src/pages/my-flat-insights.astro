@@ -171,8 +171,9 @@ import LeafletMap from '../components/LeafletMap.astro';
             <span class="k"
               >Median PSF (<Term term="comps" end
                 ><strong>Comps</strong> are recent resale sales of the same flat type with a similar remaining
-                lease, from data.gov.sg, taken from nearby blocks when there are enough. They set the
-                base for the estimate, adjusted for storey but not for unit condition.</Term
+                lease, as close to this flat as the data allows, from data.gov.sg. Each is adjusted to
+                this flat's storey and lease before taking the median. Unit condition is not adjusted
+                for.</Term
               >)</span
             ><span class="v" id="vs-psf">—</span>
           </div>
@@ -184,12 +185,21 @@ import LeafletMap from '../components/LeafletMap.astro';
             ><span class="v" id="vs-storey">—</span>
           </div>
           <div class="vs-row">
+            <span class="k"
+              ><Term term="Lease adjustment" end
+                >How much moving each comp to this flat's remaining lease shifts the estimate, at
+                the per-year premium seen across the town's sales.</Term
+              ></span
+            ><span class="v" id="vs-lease">—</span>
+          </div>
+          <div class="vs-row">
             <span class="k">Floor area</span><span class="v" id="vs-area">—</span>
           </div>
           <div class="conf">
             <Term term="Confidence" end
-              >Based on how many comparable sales back the estimate. More comps means a more
-              reliable estimate.</Term
+              >How closely the comparable sales agree once adjusted to this flat, which in testing
+              tracked how far estimates landed from real sale prices. It is capped at Medium when
+              the sales come from across the town or their leases are more than 20 years apart.</Term
             >
             <span class="bars" id="conf-bars"></span>
             <span id="conf-label">—</span>
@@ -1666,7 +1676,8 @@ import LeafletMap from '../components/LeafletMap.astro';
     type NearbyRow,
     type ValuationData,
   } from '../lib/hyparquetClient';
-  import { storeySlope, psfAtStorey, STOREY_MIN_N } from '../lib/storey';
+  import { valuate, med, COMP_LEASE_BAND } from '../lib/valuation';
+  import { STOREY_MIN_N } from '../lib/storey';
   import { createUrlState, selectBinding, inputBinding } from '../lib/urlState';
   import { downloadCsv } from '../lib/csv';
 
@@ -1734,19 +1745,6 @@ import LeafletMap from '../components/LeafletMap.astro';
   let townYearPrice: Record<string, number> = {}; // 'YYYY' -> town median price for the flat type
   let latestYear = '';
 
-  const med = (a: number[]) => {
-    if (!a.length) return 0;
-    const s = [...a].sort((x, y) => x - y);
-    const m = s.length >> 1;
-    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-  };
-  const quantile = (sorted: number[], p: number) => {
-    if (!sorted.length) return 0;
-    const i = (sorted.length - 1) * p,
-      lo = Math.floor(i),
-      hi = Math.ceil(i);
-    return sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo);
-  };
   // ---- Leaflet map ----
   const map = L.map('ins-map', { scrollWheelZoom: false }).setView([1.3521, 103.8198], 12);
   const cartoKey = import.meta.env.PUBLIC_CARTO_API_KEY;
@@ -2834,6 +2832,12 @@ import LeafletMap from '../components/LeafletMap.astro';
     }
   }
 
+  // Rounded before picking the sign, so a -0.04% shift reads "0.0%", not "-0.0%".
+  const signedPct = (p: number) => {
+    const r = +p.toFixed(1);
+    return `${r > 0 ? '+' : ''}${r.toFixed(1)}%`;
+  };
+
   async function compute() {
     const flat = ($('f-flat') as HTMLSelectElement).value;
     const storey = ($('f-storey') as HTMLSelectElement).value;
@@ -2865,6 +2869,8 @@ import LeafletMap from '../components/LeafletMap.astro';
       nearby,
       months,
       scope,
+      radius,
+      pool,
       town,
       lastSale,
       island,
@@ -2881,11 +2887,12 @@ import LeafletMap from '../components/LeafletMap.astro';
     // Where the comps came from, for the copy: the worker narrows to lease-matched sales nearby,
     // then town-wide, before falling back to every sale in town.
     const townName = titleCase(block.town);
+    const ring = radius && radius < 1000 ? `${radius} m` : `${(radius ?? 1000) / 1000} km`;
     const compWhere =
       scope === 'near'
-        ? `within 1 km with a similar lease (±10 yrs)`
+        ? `within ${ring} with a similar lease (±${COMP_LEASE_BAND} yrs)`
         : scope === 'lease'
-          ? `in ${townName} with a similar lease (±10 yrs)`
+          ? `in ${townName} with a similar lease (±${COMP_LEASE_BAND} yrs)`
           : `in ${townName}`;
     const islandPsf = island.psf,
       islandPrice = island.price,
@@ -2915,37 +2922,41 @@ import LeafletMap from '../components/LeafletMap.astro';
       return;
     }
 
-    // valuation: base median PSF over all comps, then adjust to the chosen storey
-    const baseMedPsf = med(comps.map((c) => c.psf));
-    // Storey: shift every comp to the user's floor along the PSF-per-floor slope, fitted on the
-    // lease-matched sales in town (wider than the comps, uncapped by distance) so a thin comp set
-    // still gets a stable, monotonic adjustment.
-    const userLo = parseInt(storey, 10) || 0; // "10 TO 12" -> 10
-    const slopePool = nearby.filter((c) => c.match);
-    const slope = storeySlope(slopePool);
-    const useStorey = slope > 0 && userLo > 0;
-    const psfs = useStorey
-      ? psfAtStorey(comps, userLo, slope)
-      : comps.map((c) => c.psf).sort((a, b) => a - b);
-    const medPsf = med(psfs),
-      q25 = quantile(psfs, 0.25),
-      q75 = quantile(psfs, 0.75);
-    // Rounded before picking the sign, so a -0.04% shift reads "0.0%", not "-0.0%".
-    const storeyAdjPct = baseMedPsf ? +((medPsf / baseMedPsf - 1) * 100).toFixed(1) : 0;
-    const estimate = medPsf * area,
-      low = q25 * area,
-      high = q75 * area;
+    // valuation (lib/valuation.ts, shared with the backtest): median comp PSF adjusted to this
+    // flat, the likely range, the comparable-sales scale and confidence
+    const {
+      n,
+      baseMedPsf,
+      medPsf,
+      estimate,
+      low,
+      high,
+      barLo,
+      barHi,
+      slope,
+      useStorey,
+      storeyClampedTo,
+      storeyAdjPct,
+      leaseCoef,
+      leaseAdjPct,
+      confLabel,
+      confBars,
+    } = valuate({ comps, nearby, scope, pool }, { storey, area, lease: rem });
     currentEstimate = estimate;
-    const n = comps.length;
-    const [confLabel, confBars] =
-      n >= 30 ? ['High', 4] : n >= 15 ? ['Medium-High', 3] : n >= 5 ? ['Medium', 2] : ['Low', 1];
-    // A q25–q75 range from under 5 sales (or identical PSFs) is noise, not a range.
-    const hasRange = n >= 5 && q75 > q25;
+    // A range from under 5 sales (or identical PSFs) is noise, not a range.
+    const hasRange = n >= 5 && high > low;
 
-    const basis = `Modelled from ${n} comparable ${flat.toLowerCase()} sale${n === 1 ? '' : 's'} ${compWhere}, last ${months} months`;
-    $('val-hint').textContent = useStorey
-      ? `${basis}, adjusted to storey ${storey} (+$${slope.toFixed(1)} psf per floor).`
-      : `${basis}.`;
+    const adjusted = [
+      useStorey
+        ? storeyClampedTo == null
+          ? `storey ${storey} (+$${slope.toFixed(1)} psf per floor)`
+          : `storey ${storey}, capped at storey ${storeyClampedTo}, the ${storeyClampedTo < (parseInt(storey, 10) || 0) ? 'highest' : 'lowest'} floor among recent sales (+$${slope.toFixed(1)} psf per floor)`
+        : '',
+      leaseCoef > 0 ? `${rem} years of lease left (+$${leaseCoef.toFixed(1)} psf per year)` : '',
+    ].filter(Boolean);
+    $('val-hint').textContent =
+      `Modelled from ${n} comparable ${flat.toLowerCase()} sale${n === 1 ? '' : 's'} ${compWhere}, last ${months} months` +
+      (adjusted.length ? `, adjusted to ${adjusted.join(' and ')}.` : '.');
     $('val-big').textContent = money(estimate);
     $('val-low').textContent = money(low);
     $('val-high').textContent = money(high);
@@ -2955,19 +2966,15 @@ import LeafletMap from '../components/LeafletMap.astro';
         ? `Only ${n} comparable sale${n === 1 ? '' : 's'}, too few for a likely range.`
         : 'Comparable sales are too alike to give a range.',
     );
-    // The bar spans what the comps actually sold for (10th–90th pct, unadjusted, at the user's
-    // area); the marker is the storey-adjusted estimate, so it slides with the floor. A top or
-    // ground floor can push the estimate (and its range) past those sales, so the scale
-    // stretches to keep the marker and fill on the bar.
-    const rawPsfs = comps.map((c) => c.psf).sort((a, b) => a - b);
-    const compLo = quantile(rawPsfs, 0.1) * area,
-      compHi = quantile(rawPsfs, 0.9) * area;
-    const barLo = Math.min(compLo, hasRange ? low : estimate),
-      barHi = Math.max(compHi, hasRange ? high : estimate);
+    // The bar spans what the comps actually sold for (unadjusted, at the user's area) and the
+    // likely range; the marker is the adjusted estimate, so it slides with the floor.
     $('scale-low').textContent = moneyShort(barLo);
     $('scale-high').textContent = moneyShort(barHi);
+    // The bar only takes the range's own edges when it had to stretch past the comps to fit it.
     $('scale-mid').textContent =
-      barLo < compLo || barHi > compHi ? 'comparable sales and estimate' : 'comparable sales';
+      hasRange && (barLo === low || barHi === high)
+        ? 'comparable sales and estimate'
+        : 'comparable sales';
     const at = (v: number) =>
       barHi > barLo ? Math.min(100, Math.max(0, ((v - barLo) / (barHi - barLo)) * 100)) : 50;
     const marker = $('val-marker') as HTMLElement;
@@ -2984,12 +2991,13 @@ import LeafletMap from '../components/LeafletMap.astro';
     // Why there's no adjustment: no storey picked, too few sales to fit, or a fit that found
     // no premium for height (clamped to 0).
     $('vs-storey').textContent = useStorey
-      ? `${storeyAdjPct > 0 ? '+' : ''}${storeyAdjPct.toFixed(1)}% · ${storey}`
-      : !userLo
+      ? `${signedPct(storeyAdjPct)} · ${storey}`
+      : !parseInt(storey, 10)
         ? 'n/a'
-        : slopePool.length < STOREY_MIN_N
+        : Math.max(nearby.filter((c) => c.match).length, n) < STOREY_MIN_N
           ? 'n/a, too few'
           : 'none, no floor premium found';
+    $('vs-lease').textContent = leaseCoef > 0 ? `${signedPct(leaseAdjPct)} · ${rem} yrs` : 'none';
     $('conf-label').textContent = confLabel;
     $('conf-bars').innerHTML = [0, 1, 2, 3]
       .map((i) => `<i class="${i < confBars ? 'on' : ''}"></i>`)
@@ -3046,25 +3054,29 @@ import LeafletMap from '../components/LeafletMap.astro';
     ]);
 
     // comparables table, in sections: your street (matched lease, newest first), then the
-    // matched lease elsewhere in town, then newer/older flats nearby (each nearest first). The
-    // section headers explain why the Sold dates reset at each boundary.
-    // Older/newer sections answer "how do the other blocks nearby compare?" without changing
+    // matched lease within the comps' ring, then the matched lease further out, then
+    // newer/older flats (each nearest first). The section headers explain why the Sold dates
+    // reset at each boundary, and which rows fed the estimate (`used`): in 'near' scope that's
+    // the ring; in 'lease' scope every similar-lease row; in 'town' scope every row.
+    // Older/newer sections nearby answer "how do the other blocks compare?" without changing
     // the estimate; each header carries its median PSF when enough sales back it.
     const matchLabel = rem ? 'Similar lease' : '';
+    const capped = scope === 'near';
     const sectionOf = (c: NearbyRow) =>
       !c.match
         ? c.lease > rem
           ? 'newer'
           : 'older'
-        : c.street_name === block.street
+        : c.street_name === block.street && (c.used || !capped)
           ? 'same'
-          : 'else';
-    const order = ['same', 'else', 'newer', 'older'];
+          : capped && c.used
+            ? 'ring'
+            : 'else';
+    const order = ['same', 'ring', 'else', 'newer', 'older'];
     const byDist = (a: NearbyRow, b: NearbyRow) => (a.dist ?? Infinity) - (b.dist ?? Infinity);
-    // When the estimate came from sales within 1 km, cap the similar-lease rows at 2 km so the
+    // When the estimate came from sales nearby, cap the similar-lease rows at 2 km so the
     // older/newer blocks nearby aren't buried under far-off ones. Otherwise the estimate used
     // sales from across town, so the table keeps them all.
-    const capped = scope === 'near';
     const rows = capped
       ? nearby.filter((c) => !c.match || (c.dist ?? Infinity) <= TABLE_RADIUS_M)
       : nearby;
@@ -3083,15 +3095,18 @@ import LeafletMap from '../components/LeafletMap.astro';
       secKeys.length > 1 || (secKeys.length === 1 && ['newer', 'older'].includes(secKeys[0]));
     const secRow = (label: string, psfs: number[]) =>
       `<tr class="comp-section"><td colspan="7"><span class="cs-lab">${label}</span><span class="cs-n">${psfs.length.toLocaleString()} ${psfs.length === 1 ? 'sale' : 'sales'}${psfs.length >= 5 ? ` · median ${fpsf(med(psfs))} psf` : ''}</span></td></tr>`;
+    // Newer/older rows feed the estimate only in a town-wide fallback, where they're the town's.
+    const otherWhere = scope === 'town' ? `in ${townName}` : 'nearby';
     const secLabels: Record<string, string> = {
       same: `Same street · ${titleCase(block.street)}`,
+      ring: `${matchLabel} · within ${ring}`,
       else: capped
-        ? `${matchLabel} · within 2 km`
+        ? `${matchLabel} · ${ring} to 2 km · not in the estimate`
         : matchLabel
           ? `${matchLabel} · elsewhere in ${townName}`
           : `Elsewhere in ${townName}`,
-      newer: 'Newer flats nearby',
-      older: 'Older flats nearby',
+      newer: `Newer flats ${otherWhere}${scope === 'town' ? '' : ' · not in the estimate'}`,
+      older: `Older flats ${otherWhere}${scope === 'town' ? '' : ' · not in the estimate'}`,
     };
     compSectionHeaders = useSections
       ? Object.fromEntries(Object.entries(secPsfs).map(([k, ps]) => [k, secRow(secLabels[k], ps)]))
@@ -3117,7 +3132,8 @@ import LeafletMap from '../components/LeafletMap.astro';
       <td data-role="meta">${c.storey_range}</td><td class="r" data-role="meta" data-suffix="sqft">${c.area.toLocaleString()}</td><td class="r" data-role="meta">${c.lease} yr</td>
       <td class="r price" data-role="primary">${money(c.price)}</td><td class="r psf" data-role="meta" data-suffix="psf">${fpsf(c.psf)}</td><td class="r" data-role="meta">${c.month}</td><td class="tbreak" aria-hidden="true"></td></tr>`,
     );
-    compFootSuffix = `recent sales · last ${months} months · ${townName}`;
+    const nUsed = sorted.filter((c) => c.used).length;
+    compFootSuffix = `recent sales · ${nUsed.toLocaleString()} used in the estimate · last ${months} months · ${townName}`;
     compPage = 0; // new valuation → back to the first page
     renderComps();
 
@@ -3286,7 +3302,18 @@ import LeafletMap from '../components/LeafletMap.astro';
     if (!tableComps.length) return;
     downloadCsv(
       'my-flat-comps.csv',
-      ['month', 'address', 'street_name', 'storey_range', 'area', 'lease', 'price', 'psf'],
+      [
+        'month',
+        'address',
+        'street_name',
+        'storey_range',
+        'area',
+        'lease',
+        'price',
+        'psf',
+        'dist_m',
+        'used_in_estimate',
+      ],
       tableComps.map((c) => [
         c.month,
         c.address,
@@ -3296,6 +3323,8 @@ import LeafletMap from '../components/LeafletMap.astro';
         c.lease,
         c.price,
         Math.round(c.psf),
+        c.dist == null ? '' : Math.round(c.dist),
+        c.used ? 'yes' : 'no',
       ]),
     );
   });
