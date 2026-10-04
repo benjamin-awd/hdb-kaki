@@ -473,6 +473,19 @@ describe('valuationQuery', () => {
     expect([v.scope, v.radius, v.months, v.comps.length]).toEqual(['near', 300, 24, 11]);
   });
 
+  test('flags the table rows that fed the estimate, and lists every comp', () => {
+    // 10 young sales in the 300 m ring, 5 more ~800 m out: only the ring is used.
+    const near = valuationQuery(cols([...young(10, 0), ...young(5, 2)]), at, NOW);
+    expect(near.nearby.filter((r) => r.used)).toHaveLength(10);
+    expect(near.nearby.filter((r) => r.used).every((r) => (r.dist ?? Infinity) <= 300)).toBe(true);
+    // Town-wide fallback (old flat, no similar lease in town): every comp is in the table,
+    // including other-lease sales far beyond 1 km.
+    const old = valuationQuery(cols(young(12, 30)), { ...at, lease: 50 }, NOW);
+    expect(old.scope).toBe('town');
+    expect(old.nearby).toHaveLength(12);
+    expect(old.nearby.every((r) => r.used && !r.match)).toBe(true);
+  });
+
   test('radius is null outside the near tiers', () => {
     const v = valuationQuery(cols(mixedTown(1.4)), at, NOW);
     expect([v.scope, v.radius]).toEqual(['lease', null]);

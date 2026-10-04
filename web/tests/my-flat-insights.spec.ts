@@ -38,6 +38,8 @@ test('values a young block in a mixed-age town against similar-lease sales', asy
 
   for (let i = 0; i < 60 && !(await page.locator('#comp-next').isDisabled()); i++)
     await page.click('#comp-next');
-  await expect(page.locator('#comp-body .cs-lab').last()).toHaveText('Older flats nearby');
+  await expect(page.locator('#comp-body .cs-lab').last()).toHaveText(
+    'Older flats nearby · not in the estimate',
+  );
   await expect(page.locator('#comp-body .cs-n').last()).toContainText('psf');
 });
