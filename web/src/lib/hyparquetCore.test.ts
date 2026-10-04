@@ -361,4 +361,86 @@ describe('valuationQuery', () => {
     expect(v.months).toBe(24);
     expect(v.comps).toHaveLength(11);
   });
+
+  // Queenstown-style mix: old low-rise blocks at ~$550 psf, young blocks at ~$1,100 psf.
+  const mixedTown = (youngLat = 1.32) => [
+    ...Array.from({ length: 20 }, () =>
+      row({
+        town: 'QUEENSTOWN',
+        flat_type: '3 ROOM',
+        month: '2026-03',
+        psf: 550,
+        remaining_lease_years: 47,
+      }),
+    ),
+    ...Array.from({ length: 12 }, () =>
+      row({
+        town: 'QUEENSTOWN',
+        flat_type: '3 ROOM',
+        month: '2026-03',
+        psf: 1100,
+        remaining_lease_years: 88,
+        latitude: youngLat,
+      }),
+    ),
+  ];
+
+  test('narrows comps to similar-lease sales nearby', () => {
+    const v = valuationQuery(
+      cols(mixedTown()),
+      { town: 'QUEENSTOWN', flat: '3 ROOM', lease: 85, lat: 1.32, lng: 103.9 },
+      NOW,
+    );
+    expect(v.scope).toBe('near');
+    expect(v.comps).toHaveLength(12);
+    expect(v.comps.every((c) => c.psf === 1100)).toBe(true);
+    expect(v.town.price).toBe(500000); // town benchmark still spans every sale
+  });
+
+  test('falls back to similar lease town-wide when nothing similar is nearby', () => {
+    const v = valuationQuery(
+      cols(mixedTown(1.4)), // young blocks ~9 km away
+      { town: 'QUEENSTOWN', flat: '3 ROOM', lease: 85, lat: 1.32, lng: 103.9 },
+      NOW,
+    );
+    expect(v.scope).toBe('lease');
+    expect(v.comps.every((c) => c.psf === 1100)).toBe(true);
+  });
+
+  test('nearby table rows: matched lease town-wide plus other leases within 1 km', () => {
+    const rows = [
+      ...mixedTown(), // old blocks at the flat's location, young blocks too
+      row({
+        town: 'QUEENSTOWN',
+        flat_type: '3 ROOM',
+        month: '2026-03',
+        remaining_lease_years: 47,
+        latitude: 1.4,
+      }), // old + far
+      row({
+        town: 'QUEENSTOWN',
+        flat_type: '3 ROOM',
+        month: '2026-03',
+        remaining_lease_years: 90,
+        latitude: 1.4,
+      }), // young + far
+    ];
+    const v = valuationQuery(
+      cols(rows),
+      { town: 'QUEENSTOWN', flat: '3 ROOM', lease: 85, lat: 1.32, lng: 103.9 },
+      NOW,
+    );
+    expect(v.nearby).toHaveLength(33); // 20 old nearby + 12 young nearby + 1 young far
+    expect(v.nearby.filter((r) => r.match)).toHaveLength(13);
+    expect(v.nearby.find((r) => r.lat === 1.4)?.match).toBe(true);
+    expect(v.nearby.filter((r) => !r.match).every((r) => r.lease === 47 && r.dist === 0)).toBe(
+      true,
+    );
+  });
+
+  test('uses every town sale when lease is unknown', () => {
+    const v = valuationQuery(cols(mixedTown()), { town: 'QUEENSTOWN', flat: '3 ROOM' }, NOW);
+    expect(v.scope).toBe('town');
+    expect(v.comps).toHaveLength(32);
+  });
 });

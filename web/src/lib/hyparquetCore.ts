@@ -14,6 +14,7 @@
 // ZSTD natively, so we pass the decompressor from hyparquet-compressors (pure JS).
 import { parquetReadObjects, type AsyncBuffer } from 'hyparquet';
 import { compressors } from 'hyparquet-compressors';
+import { haversineMeters } from './onemap';
 
 interface Manifest {
   file: string;
@@ -309,6 +310,12 @@ export interface CompRow {
   lat: number | null;
   lng: number | null;
 }
+/** A comparables-table row: a comp plus its distance from the flat and whether its lease
+ * falls in the matched range. */
+export interface NearbyRow extends CompRow {
+  dist: number | null; // metres from the flat; null when either location is unknown
+  match: boolean;
+}
 /** Postal → block identity (latest-transaction fields) + the flat types seen at that block. */
 export interface BlockMeta {
   town: string;
@@ -331,9 +338,18 @@ export interface LeaseBucket {
 }
 /** Everything my-flat-insights' compute() needs from the dataset, in one round-trip. The
  * page keeps the pure shaping (storey adjustment, histogram, benchmarks, returns, map). */
+/** How the comps were narrowed: 'near' = within COMP_RADIUS_M and a similar lease, 'lease' =
+ * anywhere in town with a similar lease, 'town' = every sale in town (no lease/location match). */
+export type CompScope = 'near' | 'lease' | 'town';
 export interface ValuationData {
   comps: CompRow[];
+  /** Comparables table: every lease-matched town sale plus any other-lease sale within
+   * COMP_RADIUS_M, over `months`. Wider than `comps` (which only feeds the estimate). */
+  nearby: NearbyRow[];
   months: 12 | 24;
+  scope: CompScope;
+  /** Town-wide medians for the flat type over `months`, independent of scope (benchmarks). */
+  town: { price: number; area: number };
   island: { psf: number; price: number; area: number };
   trajectory: { yr: string; psf: number; price: number; n: number }[];
   leaseTown: LeaseBucket[];
@@ -581,11 +597,30 @@ export function storeysAreaQuery(c: Columns, postal: number, flat: string): Stor
   };
 }
 
-/** The full valuation dataset: comps (12mo, widened to 24 if thin), island medians, yearly
- * trajectory, and lease-decay buckets (town: 36mo/n>=8, island: 24mo/n>=30). */
+// Comps match lease (and distance) before storey, since lease age drives PSF more than floor and
+// a town can mix old and new blocks. The tightest tier with enough sales wins.
+const COMP_RADIUS_M = 1000;
+const COMP_LEASE_BAND = 10; // ± years of remaining lease
+
+/** The full valuation dataset: comps (tiered by distance + lease, 12mo widened to 24 if thin),
+ * island medians, yearly trajectory, and lease-decay buckets (town: 36mo/n>=8, island:
+ * 24mo/n>=30). `lease` (remaining years, matched ±COMP_LEASE_BAND) and `lat`/`lng` enable
+ * the tighter tiers; without them comps fall back to the whole town. */
 export function valuationQuery(
   c: Columns,
-  { town, flat }: { town: string; flat: string },
+  {
+    town,
+    flat,
+    lease = 0,
+    lat = null,
+    lng = null,
+  }: {
+    town: string;
+    flat: string;
+    lease?: number;
+    lat?: number | null;
+    lng?: number | null;
+  },
   now?: Date,
 ): ValuationData {
   const c12 = monthsAgo(12, now);
@@ -596,13 +631,40 @@ export function valuationQuery(
   for (let i = 0; i < c.n; i++)
     if (c.town[i] === town && c.flat_type[i] === flat) inTownFlat.push(i);
 
+  const similarLease = (i: number) =>
+    Math.abs(c.remaining_lease_years[i] - lease) <= COMP_LEASE_BAND;
+  const distTo = (i: number) =>
+    lat == null || lng == null || Number.isNaN(c.latitude[i])
+      ? null
+      : haversineMeters([lat, lng], [c.latitude[i], c.longitude[i]]);
+  const isNear = (i: number) => (distTo(i) ?? Infinity) <= COMP_RADIUS_M;
+  // [scope, filter, min sales]. 'lease' accepts a thinner set (the storey adjustment's own floor
+  // of 5) since a few similar-lease sales still beat a town-wide mix of old and new blocks.
+  const tiers: [CompScope, (i: number) => boolean, number][] = [];
+  if (lease > 0 && lat != null && lng != null)
+    tiers.push(['near', (i) => similarLease(i) && isNear(i), 10]);
+  if (lease > 0) tiers.push(['lease', similarLease, 5]);
+  tiers.push(['town', () => true, 10]);
+
+  const in12 = inTownFlat.filter((i) => c.month[i] >= c12);
+  const in24 = inTownFlat.filter((i) => c.month[i] >= c24);
+  // Within a tier prefer 12 months, widening to 24 before dropping to a looser tier: a slightly
+  // older sale of a similar flat beats a fresh sale of a dissimilar one. The last tier is
+  // used regardless of size.
+  let scope: CompScope = 'town';
   let months: 12 | 24 = 12;
-  let comps = inTownFlat.filter((i) => c.month[i] >= c12);
-  if (comps.length < 10) {
-    months = 24;
-    comps = inTownFlat.filter((i) => c.month[i] >= c24);
-  }
-  const compRows: CompRow[] = comps.map((i) => ({
+  let comps = in12;
+  pick: for (const [s, keep, min] of tiers)
+    for (const [m, src] of [
+      [12, in12],
+      [24, in24],
+    ] as const) {
+      const sel = src.filter(keep);
+      [scope, months, comps] = [s, m, sel];
+      if (sel.length >= min) break pick;
+    }
+  const townIdx = months === 12 ? in12 : in24;
+  const toComp = (i: number): CompRow => ({
     month: c.month[i],
     address: c.address[i],
     street_name: c.street_name[i],
@@ -614,7 +676,7 @@ export function valuationQuery(
     psf: Number.isNaN(c.psf[i]) ? 0 : c.psf[i],
     lat: Number.isNaN(c.latitude[i]) ? null : c.latitude[i],
     lng: Number.isNaN(c.longitude[i]) ? null : c.longitude[i],
-  }));
+  });
 
   const islandIdx: number[] = [];
   for (let i = 0; i < c.n; i++) if (c.flat_type[i] === flat && c.month[i] >= c12) islandIdx.push(i);
@@ -648,8 +710,18 @@ export function valuationQuery(
   for (let i = 0; i < c.n; i++) if (c.flat_type[i] === flat) islandAll.push(i);
 
   return {
-    comps: compRows,
+    comps: comps.map(toComp),
+    nearby: townIdx.flatMap((i) => {
+      const match = lease <= 0 || similarLease(i);
+      const dist = distTo(i);
+      return match || (dist ?? Infinity) <= COMP_RADIUS_M ? [{ ...toComp(i), dist, match }] : [];
+    }),
     months,
+    scope,
+    town: {
+      price: median(gather(c.resale_price, townIdx)),
+      area: median(gather(c.floor_area_sqft, townIdx)),
+    },
     island,
     trajectory,
     leaseTown: buckets(inTownFlat, c36, 8),
@@ -756,7 +828,13 @@ export interface HyparquetApi {
   }): Promise<{ rows: TownRecord[]; total: number }>;
   resolveBlock(postal: number): Promise<BlockMeta | null>;
   storeysAndArea(postal: number, flat: string): Promise<StoreysArea>;
-  valuation(o: { town: string; flat: string }): Promise<ValuationData>;
+  valuation(o: {
+    town: string;
+    flat: string;
+    lease?: number;
+    lat?: number | null;
+    lng?: number | null;
+  }): Promise<ValuationData>;
 }
 
 /** The resident engine: owns the decoded columns (via loadColumns) and runs every scan.
