@@ -317,6 +317,7 @@ export interface CompRow {
 export interface NearbyRow extends CompRow {
   dist: number | null; // metres from the flat; null when either location is unknown
   match: boolean;
+  used: boolean; // one of `comps`, i.e. it fed the estimate
 }
 /** Postal → block identity (latest-transaction fields) + the flat types seen at that block. */
 export interface BlockMeta {
@@ -345,8 +346,8 @@ export interface LeaseBucket {
 export type CompScope = 'near' | 'lease' | 'town';
 export interface ValuationData {
   comps: CompRow[];
-  /** Comparables table: every lease-matched town sale plus any other-lease sale within
-   * COMP_RADIUS_M, over `months`. Wider than `comps` (which only feeds the estimate). */
+  /** Comparables table: every lease-matched town sale, every comp, and any other-lease sale
+   * within COMP_RADIUS_M, over `months`. Rows that fed the estimate are flagged `used`. */
   nearby: NearbyRow[];
   months: 12 | 24;
   scope: CompScope;
@@ -676,6 +677,7 @@ export function valuationQuery(
       if (sel.length >= min) break pick;
     }
   const townIdx = months === 12 ? in12 : in24;
+  const usedIdx = new Set(comps);
   const toComp = (i: number): CompRow => ({
     month: c.month[i],
     address: c.address[i],
@@ -725,8 +727,11 @@ export function valuationQuery(
     comps: comps.map(toComp),
     nearby: townIdx.flatMap((i) => {
       const match = lease <= 0 || similarLease(i);
+      const used = usedIdx.has(i);
       const d = dist.get(i) ?? null;
-      return match || within(i, COMP_RADIUS_M) ? [{ ...toComp(i), dist: d, match }] : [];
+      return match || used || within(i, COMP_RADIUS_M)
+        ? [{ ...toComp(i), dist: d, match, used }]
+        : [];
     }),
     months,
     scope,

@@ -2676,9 +2676,10 @@ import LeafletMap from '../components/LeafletMap.astro';
     // Where the comps came from, for the copy: the worker narrows to lease-matched sales nearby,
     // then town-wide, before falling back to every sale in town.
     const townName = titleCase(block.town);
+    const ring = radius && radius < 1000 ? `${radius} m` : `${(radius ?? 1000) / 1000} km`;
     const compWhere =
       scope === 'near'
-        ? `within ${radius && radius < 1000 ? `${radius} m` : `${(radius ?? 1000) / 1000} km`} with a similar lease (±${COMP_LEASE_BAND} yrs)`
+        ? `within ${ring} with a similar lease (±${COMP_LEASE_BAND} yrs)`
         : scope === 'lease'
           ? `in ${townName} with a similar lease (±${COMP_LEASE_BAND} yrs)`
           : `in ${townName}`;
@@ -2714,7 +2715,7 @@ import LeafletMap from '../components/LeafletMap.astro';
           ? `storey ${storey} (+$${slope.toFixed(1)} psf per floor)`
           : `storey ${storey}, capped at storey ${storeyClampedTo}, the ${storeyClampedTo < (parseInt(storey, 10) || 0) ? 'highest' : 'lowest'} floor among recent sales (+$${slope.toFixed(1)} psf per floor)`
         : '',
-      leaseCoef > 0 ? `a ${rem}-year lease (+$${leaseCoef.toFixed(1)} psf per year)` : '',
+      leaseCoef > 0 ? `${rem} years of lease left (+$${leaseCoef.toFixed(1)} psf per year)` : '',
     ].filter(Boolean);
     $('val-hint').textContent =
       `Modelled from ${n} comparable ${flat.toLowerCase()} sales ${compWhere}, last ${months} months` +
@@ -2743,7 +2744,7 @@ import LeafletMap from '../components/LeafletMap.astro';
       : 'n/a, too few';
     $('vs-lease').textContent =
       leaseCoef > 0
-        ? `${leaseAdjPct >= 0 ? '+' : '−'}${Math.abs(leaseAdjPct).toFixed(1)}% · ${rem} yrs`
+        ? `${leaseAdjPct >= 0 ? '+' : ''}${leaseAdjPct.toFixed(1)}% · ${rem} yrs`
         : 'none';
     $('conf-label').textContent = confLabel;
     $('conf-bars').innerHTML = [0, 1, 2, 3]
@@ -2808,25 +2809,29 @@ import LeafletMap from '../components/LeafletMap.astro';
     nowEl.setAttribute('data-label', `This flat · ${rem}y`);
 
     // comparables table, in sections: your street (matched lease, newest first), then the
-    // matched lease elsewhere in town, then newer/older flats nearby (each nearest first). The
-    // section headers explain why the Sold dates reset at each boundary.
-    // Older/newer sections answer "how do the other blocks nearby compare?" without changing
+    // matched lease within the comps' ring, then the matched lease further out, then
+    // newer/older flats (each nearest first). The section headers explain why the Sold dates
+    // reset at each boundary, and which rows fed the estimate (`used`): in 'near' scope that's
+    // the ring; in 'lease' scope every similar-lease row; in 'town' scope every row.
+    // Older/newer sections nearby answer "how do the other blocks compare?" without changing
     // the estimate; each header carries its median PSF when enough sales back it.
     const matchLabel = rem ? 'Similar lease' : '';
+    const capped = scope === 'near';
     const sectionOf = (c: NearbyRow) =>
       !c.match
         ? c.lease > rem
           ? 'newer'
           : 'older'
-        : c.street_name === block.street
+        : c.street_name === block.street && (c.used || !capped)
           ? 'same'
-          : 'else';
-    const order = ['same', 'else', 'newer', 'older'];
+          : capped && c.used
+            ? 'ring'
+            : 'else';
+    const order = ['same', 'ring', 'else', 'newer', 'older'];
     const byDist = (a: NearbyRow, b: NearbyRow) => (a.dist ?? Infinity) - (b.dist ?? Infinity);
-    // When the estimate came from sales within 1 km, cap the similar-lease rows at 2 km so the
+    // When the estimate came from sales nearby, cap the similar-lease rows at 2 km so the
     // older/newer blocks nearby aren't buried under far-off ones. Otherwise the estimate used
     // sales from across town, so the table keeps them all.
-    const capped = scope === 'near';
     const rows = capped
       ? nearby.filter((c) => !c.match || (c.dist ?? Infinity) <= TABLE_RADIUS_M)
       : nearby;
@@ -2841,15 +2846,18 @@ import LeafletMap from '../components/LeafletMap.astro';
     const useSections = Object.keys(secPsfs).length > 1;
     const secRow = (label: string, psfs: number[]) =>
       `<tr class="comp-section"><td colspan="7"><span class="cs-lab">${label}</span><span class="cs-n">${psfs.length.toLocaleString()} ${psfs.length === 1 ? 'sale' : 'sales'}${psfs.length >= 5 ? ` · median ${fpsf(med(psfs))} psf` : ''}</span></td></tr>`;
+    // Newer/older rows feed the estimate only in a town-wide fallback, where they're the town's.
+    const otherWhere = scope === 'town' ? `in ${townName}` : 'nearby';
     const secLabels: Record<string, string> = {
       same: `Same street · ${titleCase(block.street)}`,
+      ring: `${matchLabel} · within ${ring}`,
       else: capped
-        ? `${matchLabel} · within 2 km`
+        ? `${matchLabel} · ${ring} to 2 km · not in the estimate`
         : matchLabel
           ? `${matchLabel} · elsewhere in ${townName}`
           : `Elsewhere in ${townName}`,
-      newer: 'Newer flats nearby',
-      older: 'Older flats nearby',
+      newer: `Newer flats ${otherWhere}${scope === 'town' ? '' : ' · not in the estimate'}`,
+      older: `Older flats ${otherWhere}${scope === 'town' ? '' : ' · not in the estimate'}`,
     };
     compSectionHeaders = useSections
       ? Object.fromEntries(Object.entries(secPsfs).map(([k, ps]) => [k, secRow(secLabels[k], ps)]))
@@ -2875,7 +2883,8 @@ import LeafletMap from '../components/LeafletMap.astro';
       <td data-role="meta">${c.storey_range}</td><td class="r" data-role="meta" data-suffix="sqft">${c.area.toLocaleString()}</td><td class="r" data-role="meta">${c.lease} yr</td>
       <td class="r price" data-role="primary">${money(c.price)}</td><td class="r psf" data-role="meta" data-suffix="psf">${fpsf(c.psf)}</td><td class="r" data-role="meta">${c.month}</td><td class="tbreak" aria-hidden="true"></td></tr>`,
     );
-    compFootSuffix = `recent sales · last ${months} months · ${townName}`;
+    const nUsed = sorted.filter((c) => c.used).length;
+    compFootSuffix = `recent sales · ${nUsed.toLocaleString()} used in the estimate · last ${months} months · ${townName}`;
     compPage = 0; // new valuation → back to the first page
     renderComps();
 
@@ -3104,7 +3113,18 @@ import LeafletMap from '../components/LeafletMap.astro';
     if (!tableComps.length) return;
     downloadCsv(
       'my-flat-comps.csv',
-      ['month', 'address', 'street_name', 'storey_range', 'area', 'lease', 'price', 'psf'],
+      [
+        'month',
+        'address',
+        'street_name',
+        'storey_range',
+        'area',
+        'lease',
+        'price',
+        'psf',
+        'dist_m',
+        'used_in_estimate',
+      ],
       tableComps.map((c) => [
         c.month,
         c.address,
@@ -3114,6 +3134,8 @@ import LeafletMap from '../components/LeafletMap.astro';
         c.lease,
         c.price,
         Math.round(c.psf),
+        c.dist == null ? '' : Math.round(c.dist),
+        c.used ? 'yes' : 'no',
       ]),
     );
   });
