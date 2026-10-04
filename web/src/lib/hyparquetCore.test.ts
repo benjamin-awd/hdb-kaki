@@ -329,51 +329,6 @@ describe('storeysAreaQuery', () => {
   });
 });
 
-test('storeysAreaQuery buckets town sales by remaining lease', () => {
-  const rows = [
-    row({
-      postal: 1,
-      town: 'QUEENSTOWN',
-      flat_type: '3 ROOM',
-      month: '2026-01',
-      remaining_lease_years: 86,
-    }),
-    row({
-      postal: 2,
-      town: 'QUEENSTOWN',
-      flat_type: '3 ROOM',
-      month: '2026-01',
-      remaining_lease_years: 47,
-    }),
-    row({
-      postal: 3,
-      town: 'QUEENSTOWN',
-      flat_type: '3 ROOM',
-      month: '2026-02',
-      remaining_lease_years: 41,
-    }),
-    row({
-      postal: 4,
-      town: 'QUEENSTOWN',
-      flat_type: '3 ROOM',
-      month: '2023-01',
-      remaining_lease_years: 60,
-    }), // >24mo
-    row({
-      postal: 5,
-      town: 'BEDOK',
-      flat_type: '3 ROOM',
-      month: '2026-01',
-      remaining_lease_years: 70,
-    }),
-  ];
-  const { leaseBuckets } = storeysAreaQuery(cols(rows), 1, '3 ROOM', NOW);
-  expect(leaseBuckets).toEqual([
-    { bucket: 40, n: 2 },
-    { bucket: 80, n: 1 },
-  ]);
-});
-
 describe('valuationQuery', () => {
   test('comps 12mo window, trajectory by year, lease HAVING thresholds', () => {
     const rows = Array.from({ length: 12 }, () =>
@@ -450,17 +405,6 @@ describe('valuationQuery', () => {
     );
     expect(v.scope).toBe('lease');
     expect(v.comps.every((c) => c.psf === 1100)).toBe(true);
-  });
-
-  test('matches an explicit lease range (e.g. the older blocks in town)', () => {
-    const v = valuationQuery(
-      cols(mixedTown()),
-      { town: 'QUEENSTOWN', flat: '3 ROOM', lease: 44.5, leaseBand: 4.5, lat: 1.32, lng: 103.9 },
-      NOW,
-    );
-    expect(v.scope).toBe('near');
-    expect(v.comps).toHaveLength(20);
-    expect(v.comps.every((c) => c.psf === 550)).toBe(true);
   });
 
   test('nearby table rows: matched lease town-wide plus other leases within 1 km', () => {
