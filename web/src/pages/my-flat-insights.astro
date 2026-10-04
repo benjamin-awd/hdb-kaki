@@ -2653,20 +2653,31 @@ import LeafletMap from '../components/LeafletMap.astro';
     // One worker round-trip returns everything this valuation needs from the dataset: comps
     // (same town+flat, 12mo → widened to 24 if thin), island medians, the yearly trajectory,
     // and the lease-decay buckets. All the shaping below stays on the (cheap) main thread.
-    const { comps, nearby, months, scope, pool, town, island, trajectory, leaseTown, leaseIsland } =
-      await qValuation({
-        town: block.town,
-        flat,
-        lease: rem,
-        lat: userLatLng?.[0] ?? null,
-        lng: userLatLng?.[1] ?? null,
-      });
+    const {
+      comps,
+      nearby,
+      months,
+      scope,
+      radius,
+      pool,
+      town,
+      island,
+      trajectory,
+      leaseTown,
+      leaseIsland,
+    } = await qValuation({
+      town: block.town,
+      flat,
+      lease: rem,
+      lat: userLatLng?.[0] ?? null,
+      lng: userLatLng?.[1] ?? null,
+    });
     // Where the comps came from, for the copy: the worker narrows to lease-matched sales nearby,
     // then town-wide, before falling back to every sale in town.
     const townName = titleCase(block.town);
     const compWhere =
       scope === 'near'
-        ? `within 1 km with a similar lease (±${COMP_LEASE_BAND} yrs)`
+        ? `within ${radius && radius < 1000 ? `${radius} m` : `${(radius ?? 1000) / 1000} km`} with a similar lease (±${COMP_LEASE_BAND} yrs)`
         : scope === 'lease'
           ? `in ${townName} with a similar lease (±${COMP_LEASE_BAND} yrs)`
           : `in ${townName}`;
