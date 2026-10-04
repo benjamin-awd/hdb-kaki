@@ -87,4 +87,22 @@ describe('deviatesFromDefaults', () => {
   test('an empty value does not count as a deviation', () => {
     expect(deviatesFromDefaults('?town=', defaults)).toBe(false);
   });
+
+  test('the compare is case-sensitive', () => {
+    expect(deviatesFromDefaults('?t=all', { t: 'ALL' })).toBe(true);
+  });
+});
+
+describe('codec edge cases', () => {
+  test('special characters round-trip', () => {
+    const d = { town: 'ALL', q: '' };
+    const v = { town: 'KALLANG/WHAMPOA & CO', q: 'a=b?c#d' };
+    expect(decodeParams(encodeParams(v, d, ['town', 'q']), d)).toEqual(v);
+  });
+  test('a search without "?" decodes, and a repeated key takes the first value', () => {
+    expect(decodeParams('town=A&town=B', { town: 'X' })).toEqual({ town: 'A' });
+  });
+  test('keys missing from `order` are never emitted', () => {
+    expect(encodeParams({ a: '1', b: '2' }, { a: '', b: '' }, ['a'])).toBe('?a=1');
+  });
 });
