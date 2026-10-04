@@ -198,8 +198,9 @@ import LeafletMap from '../components/LeafletMap.astro';
           </div>
           <div class="conf">
             <Term term="Confidence" end
-              >Based on how many comparable sales we found nearby. More comps means a more reliable
-              estimate.</Term
+              >How closely the comparable sales agree once adjusted to this flat, which in testing
+              tracked how far estimates landed from real sale prices. It is capped at Medium when
+              the sales come from across the town or their leases are more than 20 years apart.</Term
             >
             <span class="bars" id="conf-bars"></span>
             <span id="conf-label">—</span>

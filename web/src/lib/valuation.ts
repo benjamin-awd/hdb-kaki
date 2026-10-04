@@ -62,6 +62,34 @@ export interface Valuation {
   confBars: number;
 }
 
+const CONF_LABELS = ['High', 'Medium-High', 'Medium', 'Low'];
+/** Spread (IQR / median of the adjusted comps) at which confidence drops a level. Calibrated
+ * on the backtest: median error ran 2.7% / 3.7% / 4.8% / 8.5% across the four levels, while
+ * the number of comps barely predicted error at all. */
+export const CONF_SPREAD = [0.05, 0.08, 0.14] as const;
+
+/** Confidence level, 0 = High … 3 = Low, from how tightly the adjusted comps agree, capped
+ * when there are few of them or they are a poor match for the flat (a town-wide fallback, or
+ * leases more than 20 years apart). */
+export function confidence({
+  n,
+  spread,
+  scope,
+  leaseSpan,
+}: {
+  n: number;
+  spread: number;
+  scope: CompScope;
+  leaseSpan: number;
+}): 0 | 1 | 2 | 3 {
+  if (n < 5) return 3;
+  let level = CONF_SPREAD.findIndex((t) => spread < t);
+  if (level < 0) level = 3;
+  if (n < 10) level = Math.max(level, 1);
+  if (scope === 'town' || leaseSpan > 20) level = Math.max(level, 2);
+  return level as 0 | 1 | 2 | 3;
+}
+
 /** Value a flat of `area` sqft on storey band `storey` ("10 TO 12") with `lease` years left
  * (0 = unknown) from the query result. */
 export function valuate(
@@ -99,8 +127,10 @@ export function valuate(
   const medPsf = med(psfs);
   const storeyMedPsf = med(storeyPsfs);
   const n = comps.length;
-  const [confLabel, confBars] =
-    n >= 30 ? ['High', 4] : n >= 15 ? ['Medium-High', 3] : n >= 5 ? ['Medium', 2] : ['Low', 1];
+  const spread = medPsf ? (quantile(psfs, 0.75) - quantile(psfs, 0.25)) / medPsf : 0;
+  const leases = comps.map((c) => c.lease);
+  const leaseSpan = n ? Math.max(...leases) - Math.min(...leases) : 0;
+  const conf = confidence({ n, spread, scope: v.scope, leaseSpan });
   // Likely range: the middle 80% of the adjusted comps (q25–q75 held only ~47% of actual
   // prices in the backtest; q10–q90 holds ~75%).
   const low = quantile(psfs, 0.1) * area,
@@ -117,14 +147,14 @@ export function valuate(
     high,
     barLo: Math.min(quantile(rawPsfs, 0.05) * area, low),
     barHi: Math.max(quantile(rawPsfs, 0.95) * area, high),
-    spread: medPsf ? (quantile(psfs, 0.75) - quantile(psfs, 0.25)) / medPsf : 0,
+    spread,
     slope,
     useStorey,
     storeyClampedTo: useStorey && userLo !== askedLo ? userLo : null,
     storeyAdjPct: baseMedPsf ? (storeyMedPsf / baseMedPsf - 1) * 100 : 0,
     leaseCoef,
     leaseAdjPct: storeyMedPsf ? (medPsf / storeyMedPsf - 1) * 100 : 0,
-    confLabel: confLabel as string,
-    confBars: confBars as number,
+    confLabel: CONF_LABELS[conf],
+    confBars: 4 - conf,
   } satisfies Valuation;
 }
