@@ -6,6 +6,10 @@ import { fitPremiums, type StoreyPoint } from './storey';
 
 /** Comps match this flat's remaining lease within ± this many years (valuationQuery). */
 export const COMP_LEASE_BAND = 15;
+/** Similar-lease sales are drawn from the tightest of these rings (metres) holding at least
+ * COMP_NEAR_MIN of them, before falling back to the whole town. */
+export const COMP_RADII = [300, 500, 1000] as const;
+export const COMP_NEAR_MIN = 10;
 
 export const med = (a: number[]) => {
   if (!a.length) return 0;

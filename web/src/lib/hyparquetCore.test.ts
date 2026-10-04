@@ -438,6 +438,46 @@ describe('valuationQuery', () => {
     );
   });
 
+  // Young 3-room sales at `n` × 0.0036° (~400 m) steps north of the flat.
+  const young = (k: number, ring: number, month = '2026-03') =>
+    Array.from({ length: k }, () =>
+      row({
+        town: 'QUEENSTOWN',
+        flat_type: '3 ROOM',
+        month,
+        psf: 1100,
+        remaining_lease_years: 88,
+        latitude: 1.32 + 0.0036 * ring,
+      }),
+    );
+  const at = { town: 'QUEENSTOWN', flat: '3 ROOM', lease: 85, lat: 1.32, lng: 103.9 };
+
+  test('draws comps from the tightest ring with enough similar-lease sales', () => {
+    const v = valuationQuery(cols([...young(10, 0), ...young(20, 1)]), at, NOW);
+    expect([v.scope, v.radius, v.months, v.comps.length]).toEqual(['near', 300, 12, 10]);
+  });
+
+  test('widens the ring to 500 m, then 1 km, when the closer ring is thin', () => {
+    const v500 = valuationQuery(cols([...young(9, 0), ...young(3, 1), ...young(20, 2)]), at, NOW);
+    expect([v500.scope, v500.radius, v500.comps.length]).toEqual(['near', 500, 12]);
+    const v1k = valuationQuery(cols([...young(4, 0), ...young(4, 1), ...young(4, 2)]), at, NOW);
+    expect([v1k.scope, v1k.radius, v1k.comps.length]).toEqual(['near', 1000, 12]);
+  });
+
+  test('widens a ring to 24 months before moving to a wider ring', () => {
+    const v = valuationQuery(
+      cols([...young(6, 0), ...young(5, 0, '2025-03'), ...young(20, 1)]),
+      at,
+      NOW,
+    );
+    expect([v.scope, v.radius, v.months, v.comps.length]).toEqual(['near', 300, 24, 11]);
+  });
+
+  test('radius is null outside the near tiers', () => {
+    const v = valuationQuery(cols(mixedTown(1.4)), at, NOW);
+    expect([v.scope, v.radius]).toEqual(['lease', null]);
+  });
+
   test('uses every town sale when lease is unknown', () => {
     const v = valuationQuery(cols(mixedTown()), { town: 'QUEENSTOWN', flat: '3 ROOM' }, NOW);
     expect(v.scope).toBe('town');
