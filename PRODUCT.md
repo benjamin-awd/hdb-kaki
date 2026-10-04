@@ -40,7 +40,7 @@ stance most neighboring property tools (agent portals, valuation services) could
     high against that town's own median (Leaflet).
   - **PSF Trends** (`/psf-trends`) — fits a trend to price-per-square-foot over time for any town,
     street, storey, or lease band, with projection.
-  - **My Flat Insights** (`/my-flat-insights`) — starts from a postal code and values the visitor's
+  - **Flat Insights** (`/my-flat-insights`) — starts from a postal code and values a
     flat against nearby transactions.
 - Supporting pages: About, Privacy, Terms.
 - Visitors arrive on desktop or mobile web, often mid-research (comparing listings, deciding on an
