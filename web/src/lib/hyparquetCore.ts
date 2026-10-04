@@ -122,11 +122,11 @@ export function sampleN<T>(rows: readonly T[], n: number): T[] {
   return a.slice(0, n);
 }
 
-/** `YYYY-MM` for `n` months before `now`. */
+/** `YYYY-MM` for `n` months before `now`. Month arithmetic, not setMonth(): from 31 Mar or
+ * 29 Feb, setMonth() overflows into the following month and the window loses a month. */
 export function monthsAgo(n: number, now: Date = new Date()): string {
-  const d = new Date(now);
-  d.setMonth(d.getMonth() - n);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const m = now.getFullYear() * 12 + now.getMonth() - n;
+  return `${Math.floor(m / 12)}-${String((m % 12) + 1).padStart(2, '0')}`;
 }
 
 /** Year part of a 'YYYY-MM' month. */
@@ -156,7 +156,7 @@ export interface ResaleRow {
 }
 
 /** The resident dataset in Structure-of-Arrays form. Nullable numeric columns (psf,
- * latitude, longitude) store NaN for null — scans test `Number.isNaN`, result-builders map
+ * remaining lease, latitude, longitude) store NaN for null — scans test `Number.isNaN`, result-builders map
  * NaN back to 0/null to match the old row-object behaviour. */
 export interface Columns {
   n: number;
@@ -173,7 +173,7 @@ export interface Columns {
   postal: Int32Array;
   floor_area_sqft: Float64Array;
   resale_price: Float64Array;
-  remaining_lease_years: Float64Array;
+  remaining_lease_years: Float64Array; // NaN = null
   psf: Float64Array; // NaN = null
   latitude: Float64Array; // NaN = null
   longitude: Float64Array; // NaN = null
@@ -223,7 +223,7 @@ export function toColumns(rows: readonly ResaleRow[]): Columns {
     c.postal[i] = Number(r.postal);
     c.floor_area_sqft[i] = Number(r.floor_area_sqft);
     c.resale_price[i] = Number(r.resale_price);
-    c.remaining_lease_years[i] = Number(r.remaining_lease_years);
+    c.remaining_lease_years[i] = f64(r.remaining_lease_years);
     c.psf[i] = f64(r.psf);
     c.latitude[i] = f64(r.latitude);
     c.longitude[i] = f64(r.longitude);
@@ -348,8 +348,11 @@ export interface ValuationData {
   nearby: NearbyRow[];
   months: 12 | 24;
   scope: CompScope;
-  /** Town-wide medians for the flat type over `months`, independent of scope (benchmarks). */
+  /** Town-wide medians for the flat type over the last 12 months (24 if the town had no
+   * sales in 12), independent of scope and `months` so the benchmark is like-for-like. */
   town: { price: number; area: number };
+  /** Latest sale month ('YYYY-MM') of the flat type in town, any age; '' if never sold. */
+  lastSale: string;
   island: { psf: number; price: number; area: number };
   trajectory: { yr: string; psf: number; price: number; n: number }[];
   leaseTown: LeaseBucket[];
@@ -631,23 +634,27 @@ export function valuationQuery(
   for (let i = 0; i < c.n; i++)
     if (c.town[i] === town && c.flat_type[i] === flat) inTownFlat.push(i);
 
+  // Unknown (0, negative or NaN) lease or location skip the tiers that need them.
+  const leaseKnown = lease > 0;
+  const hasLoc = Number.isFinite(lat) && Number.isFinite(lng);
   const similarLease = (i: number) =>
     Math.abs(c.remaining_lease_years[i] - lease) <= COMP_LEASE_BAND;
   const distTo = (i: number) =>
-    lat == null || lng == null || Number.isNaN(c.latitude[i])
+    !hasLoc || Number.isNaN(c.latitude[i]) || Number.isNaN(c.longitude[i])
       ? null
-      : haversineMeters([lat, lng], [c.latitude[i], c.longitude[i]]);
+      : haversineMeters([lat as number, lng as number], [c.latitude[i], c.longitude[i]]);
   const isNear = (i: number) => (distTo(i) ?? Infinity) <= COMP_RADIUS_M;
-  // [scope, filter, min sales]. 'lease' accepts a thinner set (the storey adjustment's own floor
-  // of 5) since a few similar-lease sales still beat a town-wide mix of old and new blocks.
+  // [scope, filter, min sales]. 'lease' accepts a thinner set since a few similar-lease sales
+  // still beat a town-wide mix of old and new blocks.
   const tiers: [CompScope, (i: number) => boolean, number][] = [];
-  if (lease > 0 && lat != null && lng != null)
-    tiers.push(['near', (i) => similarLease(i) && isNear(i), 10]);
-  if (lease > 0) tiers.push(['lease', similarLease, 5]);
+  if (leaseKnown && hasLoc) tiers.push(['near', (i) => similarLease(i) && isNear(i), 10]);
+  if (leaseKnown) tiers.push(['lease', similarLease, 5]);
   tiers.push(['town', () => true, 10]);
 
-  const in12 = inTownFlat.filter((i) => c.month[i] >= c12);
-  const in24 = inTownFlat.filter((i) => c.month[i] >= c24);
+  // Sales without a PSF can't price anything, so they never become comps or table rows.
+  const priced = inTownFlat.filter((i) => !Number.isNaN(c.psf[i]));
+  const in12 = priced.filter((i) => c.month[i] >= c12);
+  const in24 = priced.filter((i) => c.month[i] >= c24);
   // Within a tier prefer 12 months, widening to 24 before dropping to a looser tier: a slightly
   // older sale of a similar flat beats a fresh sale of a dissimilar one. The last tier is
   // used regardless of size.
@@ -663,7 +670,9 @@ export function valuationQuery(
       [scope, months, comps] = [s, m, sel];
       if (sel.length >= min) break pick;
     }
-  const townIdx = months === 12 ? in12 : in24;
+  const tableIdx = months === 12 ? in12 : in24;
+  const town12 = inTownFlat.filter((i) => c.month[i] >= c12);
+  const townIdx = town12.length ? town12 : inTownFlat.filter((i) => c.month[i] >= c24);
   const toComp = (i: number): CompRow => ({
     month: c.month[i],
     address: c.address[i],
@@ -673,7 +682,7 @@ export function valuationQuery(
     area: c.floor_area_sqft[i],
     lease: c.remaining_lease_years[i],
     price: c.resale_price[i],
-    psf: Number.isNaN(c.psf[i]) ? 0 : c.psf[i],
+    psf: c.psf[i], // never NaN: unpriced sales are dropped above
     lat: Number.isNaN(c.latitude[i]) ? null : c.latitude[i],
     lng: Number.isNaN(c.longitude[i]) ? null : c.longitude[i],
   });
@@ -698,7 +707,7 @@ export function valuationQuery(
   const buckets = (src: number[], cutoff: string, minN: number): LeaseBucket[] =>
     [
       ...groupBy(
-        src.filter((i) => c.month[i] >= cutoff),
+        src.filter((i) => c.month[i] >= cutoff && !Number.isNaN(c.remaining_lease_years[i])),
         (i) => Math.floor(c.remaining_lease_years[i] / 10) * 10,
       ),
     ]
@@ -711,8 +720,8 @@ export function valuationQuery(
 
   return {
     comps: comps.map(toComp),
-    nearby: townIdx.flatMap((i) => {
-      const match = lease <= 0 || similarLease(i);
+    nearby: tableIdx.flatMap((i) => {
+      const match = !leaseKnown || similarLease(i);
       const dist = distTo(i);
       return match || (dist ?? Infinity) <= COMP_RADIUS_M ? [{ ...toComp(i), dist, match }] : [];
     }),
@@ -722,6 +731,7 @@ export function valuationQuery(
       price: median(gather(c.resale_price, townIdx)),
       area: median(gather(c.floor_area_sqft, townIdx)),
     },
+    lastSale: inTownFlat.reduce((m, i) => (c.month[i] > m ? c.month[i] : m), ''),
     island,
     trajectory,
     leaseTown: buckets(inTownFlat, c36, 8),

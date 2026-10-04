@@ -3,12 +3,20 @@
 export const money = (n: number): string => '$' + Math.round(n).toLocaleString('en-SG');
 
 export const moneyShort = (n: number): string => {
+  if (n < 0) return '-' + moneyShort(-n);
   if (n >= 1e6) return '$' + (n / 1e6).toFixed(2) + 'm';
   if (n >= 1e3) return '$' + Math.round(n / 1e3) + 'k';
   return '$' + Math.round(n);
 };
 
 export const psf = (n: number): string => '$' + Math.round(n);
+
+/** English ordinal: 1 -> "1st", 22 -> "22nd", 13 -> "13th". */
+export const ordinal = (n: number): string => {
+  const t = n % 100;
+  const suf = t >= 11 && t <= 13 ? 'th' : (['th', 'st', 'nd', 'rd'][n % 10] ?? 'th');
+  return `${n}${suf}`;
+};
 
 export const pct = (n: number): string => (n >= 0 ? '+' : '') + n.toFixed(1) + '%';
 
@@ -31,9 +39,10 @@ export const deltaPill = (
  * Title-case a SCREAMING town/flat/address label, e.g. "ANG MO KIO" -> "Ang Mo Kio".
  * A letter that directly follows a digit is kept uppercase so HDB block and lane
  * suffixes read correctly, e.g. "138A LOR 1A TOA PAYOH" -> "138A Lor 1A Toa Payoh".
+ * A letter after an apostrophe stays lowercase: "ST. GEORGE'S LANE" -> "St. George's Lane".
  */
 export const titleCase = (s: string): string =>
   s
     .toLowerCase()
-    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .replace(/(^|[^\w'’])(\w)/g, (_, p, c) => p + c.toUpperCase())
     .replace(/(\d)([a-z])/g, (_, d, l) => d + l.toUpperCase());
