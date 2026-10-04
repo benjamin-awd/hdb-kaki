@@ -84,17 +84,16 @@ import LeafletMap from '../components/LeafletMap.astro';
           <div class="val-label">Estimated market value</div>
           <div class="val-big" id="val-big">—</div>
           <div class="val-range-txt">
-            Likely range <b id="val-low">—</b> – <b id="val-high">—</b>
+            <span id="val-range">Likely range <b id="val-low">—</b> – <b id="val-high">—</b></span>
+            <span id="val-note" hidden></span>
           </div>
           <div class="rangebar">
             <div class="track">
               <div class="fill" id="val-fill"></div><div class="marker" id="val-marker"></div>
             </div>
             <div class="scale">
-              <span class="mono" id="scale-low">—</span><span>comparable sales</span><span
-                class="mono"
-                id="scale-high">—</span
-              >
+              <span class="mono" id="scale-low">—</span><span id="scale-mid">comparable sales</span
+              ><span class="mono" id="scale-high">—</span>
             </div>
           </div>
           <div class="toolbar">
@@ -295,8 +294,8 @@ import LeafletMap from '../components/LeafletMap.astro';
       <div class="split" style="grid-template-columns:1.4fr 1fr;margin-top:18px">
         <ChartCard title="Where the flat sits in the market">
           <Info slot="titleTip" label="What does percentile mean?"
-            >The share of nearby sales priced below the estimate. For example, 70th percentile beats
-            about 70% of them.</Info
+            >The share of the comparable sales behind the estimate that sold below it. For example,
+            70th percentile beats about 70% of them.</Info
           >
           <span class="pill" id="pctile-pill" slot="head">—</span>
           <div id="dist-chart" style="width:100%;height:210px"></div>
@@ -312,7 +311,7 @@ import LeafletMap from '../components/LeafletMap.astro';
             </div>
           </div>
           <div class="card mt">
-            <div class="mt-k">Priciest nearby sale</div><div class="mt-v" id="mt-hi">—</div><div
+            <div class="mt-k">Priciest comparable sale</div><div class="mt-v" id="mt-hi">—</div><div
               class="mt-s"
               id="mt-hi-s"
             >
@@ -320,7 +319,7 @@ import LeafletMap from '../components/LeafletMap.astro';
             </div>
           </div>
           <div class="card mt">
-            <div class="mt-k">Lowest nearby sale</div><div class="mt-v" id="mt-lo">—</div><div
+            <div class="mt-k">Lowest comparable sale</div><div class="mt-v" id="mt-lo">—</div><div
               class="mt-s"
               id="mt-lo-s"
             >
@@ -577,6 +576,9 @@ import LeafletMap from '../components/LeafletMap.astro';
      guides without shouting. It self-clears once a postal resolves (see JS). */
   .field .sub.cue {
     color: var(--ink-2);
+  }
+  .field .sub.err {
+    color: var(--red-ink);
   }
   .form-foot {
     display: flex;
@@ -1540,6 +1542,13 @@ import LeafletMap from '../components/LeafletMap.astro';
     color: var(--ink);
     background: var(--paper);
   }
+  /* No valuation on screen (empty state / invalid area): nothing to share, export or print. */
+  .act:disabled {
+    opacity: 0.4;
+    cursor: default;
+    background: transparent;
+    color: var(--ink-3);
+  }
   .act:focus-visible {
     outline: 2px solid var(--red);
     outline-offset: 1px;
@@ -1660,8 +1669,15 @@ import LeafletMap from '../components/LeafletMap.astro';
   // The valuation reads resale.parquet via the hyparquet data worker: postal lookups, comps
   // and benchmarks are computed off the main thread and only the summaries cross back.
   import { byId as $ } from '../lib/dom';
-  import { createHyparquet, type NearbyRow } from '../lib/hyparquetClient';
+  import {
+    createHyparquet,
+    type CompRow,
+    type LeaseBucket,
+    type NearbyRow,
+    type ValuationData,
+  } from '../lib/hyparquetClient';
   import { valuate, med, COMP_LEASE_BAND } from '../lib/valuation';
+  import { STOREY_MIN_N } from '../lib/storey';
   import { createUrlState, selectBinding, inputBinding } from '../lib/urlState';
   import { downloadCsv } from '../lib/csv';
 
@@ -1690,9 +1706,9 @@ import LeafletMap from '../components/LeafletMap.astro';
     ink3,
     red,
   } from '../lib/echartsTheme';
-  import { money, moneyShort, psf as fpsf, titleCase, deltaPill } from '../lib/format';
+  import { money, moneyShort, psf as fpsf, titleCase, deltaPill, ordinal } from '../lib/format';
   import { nearbyStations, stationsWithin, haversineMeters, type Station } from '../lib/onemap';
-  import { reformatWithCaret, parsePrice, computeReturns } from '../lib/returns';
+  import { reformatWithCaret, parsePrice, computeReturns, MIN_PAID } from '../lib/returns';
 
   const NOW_YEAR = new Date().getFullYear();
 
@@ -1710,7 +1726,7 @@ import LeafletMap from '../components/LeafletMap.astro';
   const ec = (id: string) => (charts[id] ??= initChart($(id)));
   // State the "returns" panel needs so it can recompute on input change without re-querying.
   let currentEstimate = 0;
-  let currentComps: any[] = []; // last compute()'s comps (the estimate basis) — for the print summary
+  let currentComps: CompRow[] = []; // last compute()'s comps (the estimate basis) — for the print summary
   let tableComps: NearbyRow[] = []; // the comparables table rows, in display order — for the CSV export
 
   // URL-synced form state (see web/src/lib/urlState.ts). All default to '' so an empty form
@@ -2374,7 +2390,10 @@ import LeafletMap from '../components/LeafletMap.astro';
     if (storeys.length) sel.selectedIndex = Math.floor(storeys.length / 2); // default mid-floor
 
     if (areaMed) {
-      ($('f-area') as HTMLInputElement).value = String(Math.round(areaMed));
+      const areaIn = $('f-area') as HTMLInputElement;
+      areaIn.value = String(Math.round(areaMed));
+      areaIn.removeAttribute('aria-invalid');
+      $('f-area-sub').classList.remove('err');
       $('f-area-sub').textContent = `≈ typical for this block`;
     }
     const rem = remainingLease();
@@ -2388,14 +2407,19 @@ import LeafletMap from '../components/LeafletMap.astro';
   // user's storey-adjusted estimate drawn as a reference line.
   function renderTrajectory(rows: any[], userPsf: number, flat: string, town: string) {
     const el = ec('traj-chart');
-    if (!rows.length) {
+    $('traj-title').textContent = `Median PSF · ${titleCase(town)} ${flat.toLowerCase()}`;
+    // One year (or none) is a dot, not a trajectory: no line and no "since" growth pill.
+    if (rows.length < 2) {
       el.clear();
+      $('traj-pill').className = 'pill';
+      $('traj-pill').textContent = '—';
+      $('traj-hint').textContent =
+        `Not enough sales of ${flat.toLowerCase()} flats in ${titleCase(town)} to chart a trend.`;
       return;
     }
     const first = rows[0],
       last = rows[rows.length - 1];
     const growth = first.psf ? (last.psf / first.psf - 1) * 100 : 0;
-    $('traj-title').textContent = `Median PSF · ${titleCase(town)} ${flat.toLowerCase()}`;
     $('traj-hint').textContent =
       `Median PSF for ${flat.toLowerCase()} flats in ${titleCase(town)}, ${first.yr}–${last.yr}.`;
     const pill = $('traj-pill');
@@ -2465,7 +2489,11 @@ import LeafletMap from '../components/LeafletMap.astro';
       out.innerHTML = '<div class="ret-empty">The gain will appear here.</div>';
       return;
     }
-    const { hold, gain, totRet, cagr, townCagr, beat } = computeReturns(
+    if (paid < MIN_PAID) {
+      out.innerHTML = `<div class="ret-empty">Enter the full purchase price (at least ${money(MIN_PAID)}).</div>`;
+      return;
+    }
+    const { hold, gain, totRet, cagr, townCagr, beat, seriesStart } = computeReturns(
       paid,
       yr,
       currentEstimate,
@@ -2484,7 +2512,9 @@ import LeafletMap from '../components/LeafletMap.astro';
           isFinite(townCagr)
             ? `<div class="ret-row"><span class="k">${town} average</span><span class="v">${townCagr >= 0 ? '+' : '−'}${Math.abs(townCagr).toFixed(1)}%/yr</span></div>
         <div class="ret-row"><span class="k">This flat vs ${town}</span><span class="v" style="color:${beat >= 0 ? 'var(--good)' : 'var(--red-ink)'}">${beat >= 0 ? '▲' : '▼'} ${Math.abs(beat).toFixed(1)} pts/yr</span></div>`
-            : ''
+            : seriesStart && yr < Number(seriesStart)
+              ? `<div class="ret-row"><span class="k">${town} average</span><span class="v">n/a, town data from ${seriesStart}</span></div>`
+              : ''
         }
       </div>`;
   }
@@ -2512,7 +2542,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     const pct = Math.round((psfs.filter((p) => p < userPsf).length / psfs.length) * 100);
     const pill = $('pctile-pill');
     pill.className = `pill ${pct >= 50 ? 'up' : 'flat'}`;
-    pill.textContent = `${pct}th percentile`;
+    pill.textContent = `${ordinal(pct)} percentile`;
     $('dist-cap').textContent =
       `The estimate (${fpsf(userPsf)}) is priced above ${pct}% of recent ${flat.toLowerCase()} sales ${where}.`;
     el.setOption({
@@ -2644,12 +2674,192 @@ import LeafletMap from '../components/LeafletMap.astro';
     ($('comp-next') as HTMLButtonElement).disabled = end >= total;
   }
 
+  // Floor areas the valuation accepts: the input's own min/max, which the browser doesn't
+  // enforce on typed or deep-linked values (a negative area priced a flat at -$355k).
+  const AREA_MIN = 200,
+    AREA_MAX = 3000;
+  const areaOk = (v: string) => Number(v) >= AREA_MIN && Number(v) <= AREA_MAX;
+
+  // Likely range vs a note in its place (no comps, too few for a range, invalid area).
+  const showRange = (on: boolean, note = '') => {
+    $('val-range').hidden = !on;
+    $('val-note').hidden = on;
+    $('val-note').textContent = note;
+  };
+  // Share / CSV / print only make sense while a valuation is on screen.
+  const setActions = (on: boolean) =>
+    ['copy-link', 'dl-comps', 'print-btn'].forEach(
+      (id) => (($(id) as HTMLButtonElement).disabled = !on),
+    );
+
+  // No valuation to show: blank every figure compute() fills so nothing from the previous
+  // flat lingers, and say why in place of the range.
+  function clearValuation(note: string) {
+    currentEstimate = 0;
+    currentComps = [];
+    tableComps = [];
+    $('val-hint').textContent = 'Modelled from the median PSF of comparable sales.';
+    $('scale-mid').textContent = 'comparable sales';
+    showRange(false, note);
+    ($('val-marker') as HTMLElement).hidden = true;
+    ($('val-fill') as HTMLElement).hidden = true;
+    for (const id of [
+      'val-big',
+      'scale-low',
+      'scale-high',
+      'vs-n',
+      'vs-psf',
+      'vs-storey',
+      'vs-area',
+      'conf-label',
+      'b1-v',
+      'b2-v',
+      'b3-v',
+      'mt-vel',
+      'mt-hi',
+      'mt-lo',
+    ])
+      $(id).textContent = '—';
+    for (const id of ['b1-pill', 'b2-pill', 'b3-pill', 'pctile-pill']) {
+      $(id).className = 'pill';
+      $(id).textContent = '—';
+    }
+    for (const id of ['b1-bars', 'b2-bars', 'b3-bars', 'conf-bars']) $(id).innerHTML = '';
+    for (const id of ['mt-vel-s', 'mt-hi-s', 'mt-lo-s', 'dist-cap']) $(id).innerHTML = '&nbsp;';
+    ec('dist-chart').clear();
+    compYouRow = '';
+    compRowsHtml = [];
+    compRowGroups = [];
+    compFootSuffix = 'comparable sales';
+    renderComps();
+    compsLayer.clearLayers();
+    setActions(false);
+    renderReturns();
+  }
+
+  // The parts of the page that don't depend on having comps: lease runway, price history,
+  // returns, and the map (the flat, its comps when there are any, MRT and amenities).
+  function renderContext(d: {
+    rem: number;
+    flat: string;
+    trajectory: ValuationData['trajectory'];
+    leaseTown: LeaseBucket[];
+    leaseIsland: LeaseBucket[];
+    comps: CompRow[];
+    estimate: number;
+    medPsf: number;
+  }) {
+    // lease decay
+    $('lease-rem').textContent = String(d.rem);
+    $('lease-start').textContent = block.lc ? String(block.lc) : '—';
+    const nowEl = $('lease-now') as HTMLElement;
+    nowEl.style.left = `${((99 - d.rem) / 99) * 100}%`;
+    nowEl.setAttribute('data-label', `This flat · ${d.rem}y`);
+
+    // 02/04 · trajectory + lease-decay curves come from the valuation round-trip (they need
+    // wider history than the comps window).
+    const traj = d.trajectory;
+    townYearPrice = {};
+    traj.forEach((r) => {
+      townYearPrice[r.yr] = r.price;
+    });
+    latestYear = traj.length ? traj[traj.length - 1].yr : '';
+    renderTrajectory(traj, d.medPsf, d.flat, block.town);
+    renderReturns(); // reflects the refreshed estimate + town series
+    // prefer the user's own town for the lease curve; fall back to island-wide when too thin
+    const leaseInTown = d.leaseTown.length >= 2;
+    const leaseRows = leaseInTown ? d.leaseTown : d.leaseIsland;
+    renderLeaseCurve(
+      leaseRows.map((r) => ({ bucket: r.bucket, psf: r.psf })),
+      d.rem,
+      leaseInTown ? titleCase(block.town) : null,
+    );
+
+    // map: comps (grey, own toggleable layer) + your block (red, always shown)
+    layer.clearLayers();
+    compsLayer.clearLayers();
+    const pts: [number, number][] = [];
+    d.comps.forEach((c) => {
+      if (c.lat == null || c.lng == null) return;
+      pts.push([c.lat, c.lng]);
+      L.circleMarker([c.lat, c.lng], {
+        radius: 6,
+        weight: 1.5,
+        color: '#fff',
+        fillColor: '#c9bfae',
+        fillOpacity: 0.9,
+      })
+        .bindTooltip(
+          `<b>${titleCase(c.address)}</b><br/>${c.month} · ${c.storey_range}<br/><b>${money(c.price)}</b> · ${fpsf(c.psf)} psf`,
+          { direction: 'top', offset: [0, -6], opacity: 1, className: 'hdb-tip' },
+        )
+        .addTo(compsLayer);
+    });
+    if (userLatLng) {
+      pts.push(userLatLng);
+      flatMarker = L.circleMarker(userLatLng, {
+        radius: 9,
+        weight: 2.5,
+        color: '#fff',
+        fillColor: '#fe012b',
+        fillOpacity: 1,
+      })
+        .bindTooltip(
+          `<b>This flat</b> · ${titleCase(block.address)}` +
+            (d.estimate ? `<br/><b>${money(d.estimate)}</b> est · ${fpsf(d.medPsf)} psf` : ''),
+          { direction: 'top', offset: [0, -8], opacity: 1, className: 'hdb-tip' },
+        )
+        .addTo(layer);
+    }
+    // Default the view to the 10-minute walking ring (800 m) around the flat, so "what's a short
+    // walk away" fills the frame. Fall back to the comps bounds when we have no flat location.
+    if (userLatLng) {
+      nearestStationLatLng = null; // the previous flat's station; updateNearestMrt sets this one's
+      fitToReach();
+    } else if (pts.length) {
+      map.fitBounds(L.latLngBounds(pts).pad(0.15));
+    }
+    setTimeout(() => map.invalidateSize(), 50);
+    // Nearest-MRT walking route (async; extends the frame only if the station sits outside it).
+    if (userLatLng) {
+      updateNearestMrt(userLatLng);
+      drawAmenities(userLatLng);
+    } else {
+      routeLayer.clearLayers();
+      reachLayer.clearLayers();
+      amenityLayer.clearLayers();
+      setStation(null);
+    }
+  }
+
+  // Rounded before picking the sign, so a -0.04% shift reads "0.0%", not "-0.0%".
+  const signedPct = (p: number) => {
+    const r = +p.toFixed(1);
+    return `${r > 0 ? '+' : ''}${r.toFixed(1)}%`;
+  };
+
   async function compute() {
     const flat = ($('f-flat') as HTMLSelectElement).value;
     const storey = ($('f-storey') as HTMLSelectElement).value;
-    const area = Number(($('f-area') as HTMLInputElement).value) || 0;
+    const areaIn = $('f-area') as HTMLInputElement;
     const rem = remainingLease();
-    if (!block.town || !flat || !area) return;
+    if (!block.town || !flat) return;
+    const areaSub = $('f-area-sub');
+    if (!areaOk(areaIn.value)) {
+      areaIn.setAttribute('aria-invalid', 'true');
+      areaSub.classList.add('err');
+      areaSub.textContent = `Enter ${AREA_MIN} to ${AREA_MAX.toLocaleString()} sqft`;
+      clearValuation(
+        `Enter a floor area between ${AREA_MIN} and ${AREA_MAX.toLocaleString()} sqft to see the estimate.`,
+      );
+      return; // no url.sync(): a share link never carries an area we refused to value
+    }
+    const area = Number(areaIn.value);
+    if (areaSub.classList.contains('err')) {
+      areaIn.removeAttribute('aria-invalid');
+      areaSub.classList.remove('err');
+      areaSub.innerHTML = '&nbsp;';
+    }
 
     // One worker round-trip returns everything this valuation needs from the dataset: comps
     // (same town+flat, 12mo → widened to 24 if thin), island medians, the yearly trajectory,
@@ -2662,6 +2872,7 @@ import LeafletMap from '../components/LeafletMap.astro';
       radius,
       pool,
       town,
+      lastSale,
       island,
       trajectory,
       leaseTown,
@@ -2687,6 +2898,30 @@ import LeafletMap from '../components/LeafletMap.astro';
       islandPrice = island.price,
       islandArea = island.area;
 
+    // No sale of this flat type in town for 24 months (e.g. Bukit Merah executive flats): say
+    // so instead of valuing the flat at $0, but still show its history, lease and map.
+    if (!comps.length) {
+      const last = lastSale
+        ? ` The last one sold in ${new Date(`${lastSale}-01`).toLocaleDateString('en-SG', { month: 'short', year: 'numeric' })}.`
+        : '';
+      clearValuation(
+        `Not enough recent ${flat.toLowerCase()} sales in ${townName} to value this flat.${last}`,
+      );
+      $('vs-area').textContent = `${area.toLocaleString()} sqft`;
+      renderContext({
+        rem,
+        flat,
+        trajectory,
+        leaseTown,
+        leaseIsland,
+        comps,
+        estimate: 0,
+        medPsf: 0,
+      });
+      url.sync();
+      return;
+    }
+
     // valuation (lib/valuation.ts, shared with the backtest): median comp PSF adjusted to this
     // flat, the likely range, the comparable-sales scale and confidence
     const {
@@ -2708,6 +2943,8 @@ import LeafletMap from '../components/LeafletMap.astro';
       confBars,
     } = valuate({ comps, nearby, scope, pool }, { storey, area, lease: rem });
     currentEstimate = estimate;
+    // A range from under 5 sales (or identical PSFs) is noise, not a range.
+    const hasRange = n >= 5 && high > low;
 
     const adjusted = [
       useStorey
@@ -2718,34 +2955,49 @@ import LeafletMap from '../components/LeafletMap.astro';
       leaseCoef > 0 ? `${rem} years of lease left (+$${leaseCoef.toFixed(1)} psf per year)` : '',
     ].filter(Boolean);
     $('val-hint').textContent =
-      `Modelled from ${n} comparable ${flat.toLowerCase()} sales ${compWhere}, last ${months} months` +
+      `Modelled from ${n} comparable ${flat.toLowerCase()} sale${n === 1 ? '' : 's'} ${compWhere}, last ${months} months` +
       (adjusted.length ? `, adjusted to ${adjusted.join(' and ')}.` : '.');
     $('val-big').textContent = money(estimate);
     $('val-low').textContent = money(low);
     $('val-high').textContent = money(high);
+    showRange(
+      hasRange,
+      n < 5
+        ? `Only ${n} comparable sale${n === 1 ? '' : 's'}, too few for a likely range.`
+        : 'Comparable sales are too alike to give a range.',
+    );
     // The bar spans what the comps actually sold for (unadjusted, at the user's area) and the
     // likely range; the marker is the adjusted estimate, so it slides with the floor.
     $('scale-low').textContent = moneyShort(barLo);
     $('scale-high').textContent = moneyShort(barHi);
-    const pos =
-      barHi > barLo ? Math.min(96, Math.max(4, ((estimate - barLo) / (barHi - barLo)) * 100)) : 50;
-    ($('val-marker') as HTMLElement).style.left = pos + '%';
-    // Fill = the estimate's likely range on the same scale.
+    // The bar only takes the range's own edges when it had to stretch past the comps to fit it.
+    $('scale-mid').textContent =
+      hasRange && (barLo === low || barHi === high)
+        ? 'comparable sales and estimate'
+        : 'comparable sales';
     const at = (v: number) =>
       barHi > barLo ? Math.min(100, Math.max(0, ((v - barLo) / (barHi - barLo)) * 100)) : 50;
+    const marker = $('val-marker') as HTMLElement;
+    marker.hidden = false;
+    marker.style.left = `${Math.min(96, Math.max(4, at(estimate)))}%`;
+    // Fill = the estimate's likely range on the same scale.
     const fill = $('val-fill') as HTMLElement;
+    fill.hidden = !hasRange;
     fill.style.left = `${at(low)}%`;
     fill.style.right = `${100 - at(high)}%`;
     $('vs-n').textContent = String(n);
     $('vs-psf').textContent = fpsf(baseMedPsf);
     $('vs-area').textContent = `${area.toLocaleString()} sqft`;
+    // Why there's no adjustment: no storey picked, too few sales to fit, or a fit that found
+    // no premium for height (clamped to 0).
     $('vs-storey').textContent = useStorey
-      ? `${storeyAdjPct >= 0 ? '+' : ''}${storeyAdjPct.toFixed(1)}% · ${storey}`
-      : 'n/a, too few';
-    $('vs-lease').textContent =
-      leaseCoef > 0
-        ? `${leaseAdjPct >= 0 ? '+' : ''}${leaseAdjPct.toFixed(1)}% · ${rem} yrs`
-        : 'none';
+      ? `${signedPct(storeyAdjPct)} · ${storey}`
+      : !parseInt(storey, 10)
+        ? 'n/a'
+        : Math.max(nearby.filter((c) => c.match).length, n) < STOREY_MIN_N
+          ? 'n/a, too few'
+          : 'none, no floor premium found';
+    $('vs-lease').textContent = leaseCoef > 0 ? `${signedPct(leaseAdjPct)} · ${rem} yrs` : 'none';
     $('conf-label').textContent = confLabel;
     $('conf-bars').innerHTML = [0, 1, 2, 3]
       .map((i) => `<i class="${i < confBars ? 'on' : ''}"></i>`)
@@ -2801,13 +3053,6 @@ import LeafletMap from '../components/LeafletMap.astro';
       { lab: 'Island', val: islandArea, fmt: (v) => Math.round(v).toLocaleString() },
     ]);
 
-    // lease decay
-    $('lease-rem').textContent = String(rem);
-    $('lease-start').textContent = block.lc ? String(block.lc) : '—';
-    const nowEl = $('lease-now') as HTMLElement;
-    nowEl.style.left = `${((99 - rem) / 99) * 100}%`;
-    nowEl.setAttribute('data-label', `This flat · ${rem}y`);
-
     // comparables table, in sections: your street (matched lease, newest first), then the
     // matched lease within the comps' ring, then the matched lease further out, then
     // newer/older flats (each nearest first). The section headers explain why the Sold dates
@@ -2843,7 +3088,11 @@ import LeafletMap from '../components/LeafletMap.astro';
     );
     const secPsfs: Record<string, number[]> = {};
     sorted.forEach((c) => (secPsfs[sectionOf(c)] ??= []).push(c.psf));
-    const useSections = Object.keys(secPsfs).length > 1;
+    // One section needs no header, unless it's the newer/older flats: then the header is the
+    // only thing saying none of these share the flat's lease.
+    const secKeys = Object.keys(secPsfs);
+    const useSections =
+      secKeys.length > 1 || (secKeys.length === 1 && ['newer', 'older'].includes(secKeys[0]));
     const secRow = (label: string, psfs: number[]) =>
       `<tr class="comp-section"><td colspan="7"><span class="cs-lab">${label}</span><span class="cs-n">${psfs.length.toLocaleString()} ${psfs.length === 1 ? 'sale' : 'sales'}${psfs.length >= 5 ? ` · median ${fpsf(med(psfs))} psf` : ''}</span></td></tr>`;
     // Newer/older rows feed the estimate only in a town-wide fallback, where they're the town's.
@@ -2902,93 +3151,30 @@ import LeafletMap from '../components/LeafletMap.astro';
     const byPrice = [...comps].sort((a, b) => b.price - a.price);
     const hiC = byPrice[0],
       loC = byPrice[byPrice.length - 1];
-    if (hiC) {
-      $('mt-hi').textContent = moneyShort(hiC.price);
-      $('mt-hi-s').textContent = `${titleCase(hiC.address)} · ${hiC.month}`;
-    }
-    if (loC) {
-      $('mt-lo').textContent = moneyShort(loC.price);
-      $('mt-lo-s').textContent = `${titleCase(loC.address)} · ${loC.month}`;
-    }
+    $('mt-hi').textContent = moneyShort(hiC.price);
+    $('mt-hi-s').textContent = `${titleCase(hiC.address)} · ${hiC.month}`;
+    $('mt-lo').textContent = moneyShort(loC.price);
+    $('mt-lo-s').textContent = `${titleCase(loC.address)} · ${loC.month}`;
 
-    // 02/04 · trajectory + lease-decay curves came from the same worker round-trip above
-    // (they need wider history than the comps window).
-    const traj = trajectory;
-    townYearPrice = {};
-    traj.forEach((r) => {
-      townYearPrice[r.yr] = r.price;
-    });
-    latestYear = traj.length ? traj[traj.length - 1].yr : '';
-    renderTrajectory(traj, medPsf, flat, block.town);
-    renderReturns(); // reflects the refreshed estimate + town series
-    // prefer the user's own town for the lease curve; fall back to island-wide when too thin
-    const leaseInTown = leaseTown.length >= 2;
-    const leaseRows = leaseInTown ? leaseTown : leaseIsland;
-    renderLeaseCurve(
-      leaseRows.map((r) => ({ bucket: r.bucket, psf: r.psf })),
-      rem,
-      leaseInTown ? titleCase(block.town) : null,
-    );
-
-    // map: comps (grey, own toggleable layer) + your block (red, always shown)
-    layer.clearLayers();
-    compsLayer.clearLayers();
-    const pts: [number, number][] = [];
-    comps.forEach((c) => {
-      if (c.lat == null || c.lng == null) return;
-      pts.push([c.lat, c.lng]);
-      L.circleMarker([c.lat, c.lng], {
-        radius: 6,
-        weight: 1.5,
-        color: '#fff',
-        fillColor: '#c9bfae',
-        fillOpacity: 0.9,
-      })
-        .bindTooltip(
-          `<b>${titleCase(c.address)}</b><br/>${c.month} · ${c.storey_range}<br/><b>${money(c.price)}</b> · ${fpsf(c.psf)} psf`,
-          { direction: 'top', offset: [0, -6], opacity: 1, className: 'hdb-tip' },
-        )
-        .addTo(compsLayer);
-    });
-    if (userLatLng) {
-      pts.push(userLatLng);
-      flatMarker = L.circleMarker(userLatLng, {
-        radius: 9,
-        weight: 2.5,
-        color: '#fff',
-        fillColor: '#fe012b',
-        fillOpacity: 1,
-      })
-        .bindTooltip(
-          `<b>This flat</b> · ${titleCase(block.address)}<br/><b>${money(estimate)}</b> est · ${fpsf(medPsf)} psf`,
-          { direction: 'top', offset: [0, -8], opacity: 1, className: 'hdb-tip' },
-        )
-        .addTo(layer);
-    }
-    // Default the view to the 10-minute walking ring (800 m) around the flat, so "what's a short
-    // walk away" fills the frame. Fall back to the comps bounds when we have no flat location.
-    if (userLatLng) {
-      nearestStationLatLng = null; // the previous flat's station; updateNearestMrt sets this one's
-      fitToReach();
-    } else if (pts.length) {
-      map.fitBounds(L.latLngBounds(pts).pad(0.15));
-    }
-    setTimeout(() => map.invalidateSize(), 50);
-    // Nearest-MRT walking route (async; extends the frame only if the station sits outside it).
-    if (userLatLng) {
-      updateNearestMrt(userLatLng);
-      drawAmenities(userLatLng);
-    } else {
-      routeLayer.clearLayers();
-      reachLayer.clearLayers();
-      amenityLayer.clearLayers();
-      setStation(null);
-    }
+    renderContext({ rem, flat, trajectory, leaseTown, leaseIsland, comps, estimate, medPsf });
 
     // Export state: keep the comps for the CSV, refresh the print summary, and track the
     // computed view in the URL so copy-link / bookmarks reproduce it.
     currentComps = comps;
-    fillPrintSummary({ flat, storey, area, rem, estimate, low, high, medPsf, townPrice, months });
+    fillPrintSummary({
+      flat,
+      storey,
+      area,
+      rem,
+      estimate,
+      low,
+      high,
+      hasRange,
+      medPsf,
+      townPrice,
+      months,
+    });
+    setActions(true);
     url.sync();
   }
 
@@ -3001,6 +3187,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     estimate: number;
     low: number;
     high: number;
+    hasRange: boolean;
     medPsf: number;
     townPrice: number;
     months: number;
@@ -3011,7 +3198,9 @@ import LeafletMap from '../components/LeafletMap.astro';
       (block.lc ? ` · lease from ${block.lc}` : '');
     $('ps-est').textContent = money(d.estimate);
     $('ps-rng').textContent =
-      `Likely range ${moneyShort(d.low)} – ${moneyShort(d.high)} · based on ` +
+      (d.hasRange
+        ? `Likely range ${moneyShort(d.low)} – ${moneyShort(d.high)} · based on `
+        : 'Based on ') +
       `${currentComps.length} comparable sale${currentComps.length === 1 ? '' : 's'} in the last ${d.months} months`;
     const topComps = [...currentComps].sort((a, b) => b.month.localeCompare(a.month)).slice(0, 5);
     $('ps-comps').innerHTML = topComps
@@ -3175,11 +3364,13 @@ import LeafletMap from '../components/LeafletMap.astro';
         await onFlatChange();
       }
     }
-    // Apply the storey/area overrides last (unknown values are graceful no-op sets).
+    // Apply the storey/area overrides last, and only when valid: assigning a value that isn't an
+    // option blanks the select, so an unknown storey or bad area keeps the block's defaults.
     const storey = params.get('storey');
-    if (storey) ($('f-storey') as HTMLSelectElement).value = storey;
+    const storeySel = $('f-storey') as HTMLSelectElement;
+    if (storey && [...storeySel.options].some((o) => o.value === storey)) storeySel.value = storey;
     const area = params.get('area');
-    if (area) ($('f-area') as HTMLInputElement).value = area;
+    if (area && areaOk(area)) ($('f-area') as HTMLInputElement).value = area;
     await compute();
     document.querySelector('.results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
