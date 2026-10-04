@@ -310,6 +310,12 @@ export interface CompRow {
   lat: number | null;
   lng: number | null;
 }
+/** A comparables-table row: a comp plus its distance from the flat and whether its lease
+ * falls in the matched range. */
+export interface NearbyRow extends CompRow {
+  dist: number | null; // metres from the flat; null when either location is unknown
+  match: boolean;
+}
 /** Postal → block identity (latest-transaction fields) + the flat types seen at that block. */
 export interface BlockMeta {
   town: string;
@@ -339,6 +345,9 @@ export interface LeaseBucket {
 export type CompScope = 'near' | 'lease' | 'town';
 export interface ValuationData {
   comps: CompRow[];
+  /** Comparables table: every lease-matched town sale plus any other-lease sale within
+   * COMP_RADIUS_M, over `months`. Wider than `comps` (which only feeds the estimate). */
+  nearby: NearbyRow[];
   months: 12 | 24;
   scope: CompScope;
   /** Town-wide medians for the flat type over `months`, independent of scope (benchmarks). */
@@ -640,10 +649,11 @@ export function valuationQuery(
     if (c.town[i] === town && c.flat_type[i] === flat) inTownFlat.push(i);
 
   const similarLease = (i: number) => Math.abs(c.remaining_lease_years[i] - lease) <= leaseBand;
-  const isNear = (i: number) =>
-    !Number.isNaN(c.latitude[i]) &&
-    haversineMeters([lat as number, lng as number], [c.latitude[i], c.longitude[i]]) <=
-      COMP_RADIUS_M;
+  const distTo = (i: number) =>
+    lat == null || lng == null || Number.isNaN(c.latitude[i])
+      ? null
+      : haversineMeters([lat, lng], [c.latitude[i], c.longitude[i]]);
+  const isNear = (i: number) => (distTo(i) ?? Infinity) <= COMP_RADIUS_M;
   // [scope, filter, min sales]. 'lease' accepts a thinner set (the storey adjustment's own floor
   // of 5) since a few similar-lease sales still beat a town-wide mix of old and new blocks.
   const tiers: [CompScope, (i: number) => boolean, number][] = [];
@@ -717,6 +727,11 @@ export function valuationQuery(
 
   return {
     comps: comps.map(toComp),
+    nearby: townIdx.flatMap((i) => {
+      const match = lease <= 0 || similarLease(i);
+      const dist = distTo(i);
+      return match || (dist ?? Infinity) <= COMP_RADIUS_M ? [{ ...toComp(i), dist, match }] : [];
+    }),
     months,
     scope,
     town: {

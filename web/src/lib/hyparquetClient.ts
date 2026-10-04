@@ -13,6 +13,7 @@ export type {
   TownMapRow,
   TownRecord,
   CompRow,
+  NearbyRow,
   BlockMeta,
   StoreysArea,
   LeaseBucket,

@@ -43,8 +43,8 @@ test('picking a lease range re-values the flat against those sales', async ({ pa
     .getAttribute('value');
   await lease.selectOption(oldest!);
   await expect(page.locator('#f-lease-sub')).toContainText(`${oldest}–${Number(oldest) + 9} yr`);
-  await expect(page.locator('#comp-foot')).toContainText(
-    `${oldest}–${Number(oldest) + 9} yrs left`,
+  await expect(page.locator('#comp-body .cs-lab').first()).toContainText(
+    `${oldest}–${Number(oldest) + 9} yr · elsewhere in Queenstown`,
   );
   await expect(page.locator('#val-big')).not.toHaveText(own!);
   await expect(page).toHaveURL(new RegExp(`lease=${oldest}`));
