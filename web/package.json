@@ -16,6 +16,7 @@
     "test:e2e": "playwright test",
     "test:smoke": "playwright test --config=playwright.smoke.config.ts",
     "test:unit": "bun test src",
+    "backtest": "bun scripts/backtest.ts",
     "lhci": "lhci autorun --config=lighthouserc.cjs"
   },
   "dependencies": {

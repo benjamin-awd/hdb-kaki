@@ -1651,7 +1651,7 @@ import LeafletMap from '../components/LeafletMap.astro';
   // and benchmarks are computed off the main thread and only the summaries cross back.
   import { byId as $ } from '../lib/dom';
   import { createHyparquet, type NearbyRow } from '../lib/hyparquetClient';
-  import { storeySlope, psfAtStorey } from '../lib/storey';
+  import { valuate, med } from '../lib/valuation';
   import { createUrlState, selectBinding, inputBinding } from '../lib/urlState';
   import { downloadCsv } from '../lib/csv';
 
@@ -1719,19 +1719,6 @@ import LeafletMap from '../components/LeafletMap.astro';
   let townYearPrice: Record<string, number> = {}; // 'YYYY' -> town median price for the flat type
   let latestYear = '';
 
-  const med = (a: number[]) => {
-    if (!a.length) return 0;
-    const s = [...a].sort((x, y) => x - y);
-    const m = s.length >> 1;
-    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-  };
-  const quantile = (sorted: number[], p: number) => {
-    if (!sorted.length) return 0;
-    const i = (sorted.length - 1) * p,
-      lo = Math.floor(i),
-      hi = Math.ceil(i);
-    return sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo);
-  };
   // ---- Leaflet map ----
   const map = L.map('ins-map', { scrollWheelZoom: false }).setView([1.3521, 103.8198], 12);
   const cartoKey = import.meta.env.PUBLIC_CARTO_API_KEY;
@@ -2678,28 +2665,24 @@ import LeafletMap from '../components/LeafletMap.astro';
       islandPrice = island.price,
       islandArea = island.area;
 
-    // valuation — base median PSF over all comps, then adjust to the chosen storey
-    const baseMedPsf = med(comps.map((c) => c.psf));
-    // Storey: shift every comp to the user's floor along the PSF-per-floor slope, fitted on the
-    // wider lease-matched pool (the table rows) so a thin comp set still gets a stable, monotonic
-    // adjustment.
-    const userLo = parseInt(storey, 10) || 0; // "10 TO 12" -> 10
-    const slope = storeySlope(nearby.filter((c) => c.match));
-    const useStorey = slope > 0 && userLo > 0;
-    const psfs = useStorey
-      ? psfAtStorey(comps, userLo, slope)
-      : comps.map((c) => c.psf).sort((a, b) => a - b);
-    const medPsf = med(psfs),
-      q25 = quantile(psfs, 0.25),
-      q75 = quantile(psfs, 0.75);
-    const storeyAdjPct = baseMedPsf ? (medPsf / baseMedPsf - 1) * 100 : 0;
-    const estimate = medPsf * area,
-      low = q25 * area,
-      high = q75 * area;
+    // valuation (lib/valuation.ts, shared with the backtest): median comp PSF adjusted to this
+    // flat, the likely range, the comparable-sales scale and confidence
+    const {
+      n,
+      baseMedPsf,
+      medPsf,
+      estimate,
+      low,
+      high,
+      barLo,
+      barHi,
+      slope,
+      useStorey,
+      storeyAdjPct,
+      confLabel,
+      confBars,
+    } = valuate({ comps, nearby, scope }, { storey, area, lease: rem });
     currentEstimate = estimate;
-    const n = comps.length;
-    const [confLabel, confBars] =
-      n >= 30 ? ['High', 4] : n >= 15 ? ['Medium-High', 3] : n >= 5 ? ['Medium', 2] : ['Low', 1];
 
     $('val-hint').textContent = useStorey
       ? `Modelled from ${n} comparable ${flat.toLowerCase()} sales ${compWhere}, last ${months} months, adjusted to storey ${storey} (+$${slope.toFixed(1)} psf per floor).`
@@ -2707,11 +2690,8 @@ import LeafletMap from '../components/LeafletMap.astro';
     $('val-big').textContent = money(estimate);
     $('val-low').textContent = money(low);
     $('val-high').textContent = money(high);
-    // The bar is fixed to what the comps actually sold for (10th–90th pct, unadjusted, at the
-    // user's area); the marker is the storey-adjusted estimate, so it slides with the floor.
-    const rawPsfs = comps.map((c) => c.psf).sort((a, b) => a - b);
-    const barLo = quantile(rawPsfs, 0.1) * area,
-      barHi = quantile(rawPsfs, 0.9) * area;
+    // The bar is fixed to what the comps actually sold for (unadjusted, at the user's area); the
+    // marker is the adjusted estimate, so it slides with the floor.
     $('scale-low').textContent = moneyShort(barLo);
     $('scale-high').textContent = moneyShort(barHi);
     const pos =
