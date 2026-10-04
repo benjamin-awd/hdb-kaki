@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-// Nearest-MRT distance + nearby amenities on My Flat Insights. Resolving a postal draws the
+// Nearest-MRT distance + nearby amenities on Flat Insights. Resolving a postal draws the
 // flat, its nearest station, and a straight-line dash to it (computed on-device). This asserts
 // the observable end state: a station marker, a line, and the station card's headline (name,
 // distance, walk time) plus its nearby-stations list.
