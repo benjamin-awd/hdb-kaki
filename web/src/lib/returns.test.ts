@@ -5,6 +5,7 @@ import {
   reformatWithCaret,
   nearestYear,
   computeReturns,
+  MIN_PAID,
 } from './returns';
 
 describe('formatThousands', () => {
@@ -119,5 +120,50 @@ describe('computeReturns', () => {
     expect(r.gain).toBe(-60000);
     expect(r.totRet).toBeLessThan(0);
     expect(r.cagr).toBeLessThan(0);
+  });
+
+  test('bought before the town series starts: annualise over the real hold, no benchmark', () => {
+    // Snapping 1990 to the first town year (2012) used to annualise 36 years of gain over 12.
+    const r = computeReturns(200000, 1990, 720000, NOW, town, '2024');
+    expect(r.haveTown).toBe(false);
+    expect(r.seriesStart).toBe('2012');
+    expect(r.hold).toBe(36);
+    expect(r.cagr).toBeCloseTo((Math.pow(720000 / 200000, 1 / 36) - 1) * 100, 6);
+    expect(Number.isNaN(r.townCagr)).toBe(true);
+  });
+
+  test('bought in the first series year keeps the benchmark', () => {
+    const r = computeReturns(400000, 2012, 720000, NOW, town, '2024');
+    expect(r.haveTown).toBe(true);
+    expect(r.seriesStart).toBe('2012');
+  });
+
+  test('latestYear missing from the series: no benchmark', () => {
+    const r = computeReturns(400000, 2020, 500000, NOW, { '2020': 1 }, '2026');
+    expect(r.haveTown).toBe(false);
+    expect(Number.isNaN(r.beat)).toBe(true);
+  });
+
+  test('buy year after the latest town year falls back to the hold', () => {
+    const r = computeReturns(400000, 2025, 484000, 2027, { '2020': 1, '2024': 2 }, '2024');
+    expect(r.haveTown).toBe(false);
+    expect(r.cagr).toBeCloseTo(10, 6);
+  });
+
+  test('hold 0 or paid 0 are not finite; the page guards both before calling', () => {
+    expect(Number.isFinite(computeReturns(500000, 2026, 600000, 2026, {}, '').cagr)).toBe(false);
+    expect(computeReturns(0, 2020, 1, 2026, {}, '').totRet).toBe(Infinity);
+    expect(MIN_PAID).toBeGreaterThan(0);
+  });
+});
+
+describe('input helpers, edge cases', () => {
+  test('reformatWithCaret: deleted separator and an out-of-range caret', () => {
+    expect(reformatWithCaret('1,00', 4)).toEqual({ value: '100', caret: 3 });
+    expect(reformatWithCaret('1234', 99)).toEqual({ value: '1,234', caret: 5 });
+  });
+  test('parsePrice keeps decimals; formatThousands drops leading zeros', () => {
+    expect(parsePrice('1,234.5')).toBe(1234.5);
+    expect(formatThousands('007')).toBe('7');
   });
 });
