@@ -2698,6 +2698,7 @@ import LeafletMap from '../components/LeafletMap.astro';
       barHi,
       slope,
       useStorey,
+      storeyClampedTo,
       storeyAdjPct,
       leaseCoef,
       leaseAdjPct,
@@ -2707,7 +2708,11 @@ import LeafletMap from '../components/LeafletMap.astro';
     currentEstimate = estimate;
 
     const adjusted = [
-      useStorey ? `storey ${storey} (+$${slope.toFixed(1)} psf per floor)` : '',
+      useStorey
+        ? storeyClampedTo == null
+          ? `storey ${storey} (+$${slope.toFixed(1)} psf per floor)`
+          : `storey ${storey}, capped at storey ${storeyClampedTo}, the ${storeyClampedTo < (parseInt(storey, 10) || 0) ? 'highest' : 'lowest'} floor among recent sales (+$${slope.toFixed(1)} psf per floor)`
+        : '',
       leaseCoef > 0 ? `a ${rem}-year lease (+$${leaseCoef.toFixed(1)} psf per year)` : '',
     ].filter(Boolean);
     $('val-hint').textContent =

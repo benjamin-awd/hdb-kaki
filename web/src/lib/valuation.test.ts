@@ -97,4 +97,20 @@ describe('valuate', () => {
         .medPsf;
     expect(at(60) - at(59)).toBeCloseTo(6, 6);
   });
+
+  test('caps the storey premium at the floors it was fitted on', () => {
+    const pool = Array.from({ length: 12 }, (_, i) => row({ slo: 1 + 3 * i, psf: 600 + 15 * i }));
+    const comps = [comp({ slo: 1, psf: 600 })];
+    const v = valuate(
+      { comps, nearby: pool, scope: 'near', pool: [] },
+      { storey: '46 TO 48', area: 1000, lease: 80 },
+    );
+    expect(v.storeyClampedTo).toBe(34); // highest floor in the pool
+    expect(v.medPsf).toBeCloseTo(600 + 5 * 33, 6);
+    const inRange = valuate(
+      { comps, nearby: pool, scope: 'near', pool: [] },
+      { storey: '10 TO 12', area: 1000, lease: 80 },
+    );
+    expect(inRange.storeyClampedTo).toBeNull();
+  });
 });
