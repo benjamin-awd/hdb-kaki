@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-// Export a result (#3) on My Flat Insights: deep-link restore, copy-link, comps CSV, and
+// Export a result (#3) on Flat Insights: deep-link restore, copy-link, comps CSV, and
 // the printable one-page summary. Postal 142088 = 88 Dawson Rd, Queenstown (has 4 ROOM).
 const DEEP_LINK = '/my-flat-insights/?postal=142088&flat=4+ROOM&area=990';
 
