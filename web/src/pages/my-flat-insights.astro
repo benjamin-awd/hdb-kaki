@@ -87,14 +87,17 @@ import LeafletMap from '../components/LeafletMap.astro';
             <span id="val-range">Likely range <b id="val-low">—</b> – <b id="val-high">—</b></span>
             <span id="val-note" hidden></span>
           </div>
-          <div class="rangebar">
-            <div class="track">
-              <div class="fill" id="val-fill"></div><div class="marker" id="val-marker"></div>
+          <div class="pricegauge" id="val-gauge" hidden>
+            <div class="pg-track" aria-hidden="true">
+              <span class="pg-seg" data-band="below"></span><span class="pg-seg" data-band="typical"
+              ></span><span class="pg-seg" data-band="above"></span>
+              <i class="pg-tick" id="pg-tick"></i>
             </div>
-            <div class="scale">
-              <span class="mono" id="scale-low">—</span><span id="scale-mid">comparable sales</span
-              ><span class="mono" id="scale-high">—</span>
+            <div class="pg-labels" aria-hidden="true">
+              <span data-band="below">Below typical</span><span data-band="typical">Typical</span
+              ><span data-band="above">Above typical</span>
             </div>
+            <p class="pg-verdict" id="pg-verdict"></p>
           </div>
           <div class="toolbar">
             <button class="act act-share" id="copy-link" type="button">
@@ -649,45 +652,63 @@ import LeafletMap from '../components/LeafletMap.astro';
     font-family: var(--font-mono);
     font-weight: 600;
   }
-  .rangebar {
+  .pricegauge {
     margin-top: 26px;
   }
-  .rangebar .track {
+  .pg-track {
     position: relative;
-    height: 10px;
-    border-radius: 999px;
-    background: linear-gradient(90deg, #f0e7d8, #e9dcc7);
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 3px;
   }
-  .rangebar .fill {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 12%;
-    right: 12%;
-    border-radius: 999px;
-    background: linear-gradient(90deg, rgba(254, 1, 43, 0.25), rgba(254, 1, 43, 0.55));
+  .pg-seg {
+    height: 8px;
+    background: var(--line);
   }
-  .rangebar .marker {
+  .pg-seg:first-child {
+    border-radius: 999px 0 0 999px;
+  }
+  .pg-seg:last-child {
+    border-radius: 0 999px 999px 0;
+  }
+  .pg-tick {
     position: absolute;
     top: 50%;
-    left: 50%;
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: var(--red);
-    border: 3px solid #fff;
+    width: 3px;
+    height: 20px;
+    border-radius: 999px;
+    background: var(--ink);
+    box-shadow: 0 0 0 2px var(--paper-2);
     transform: translate(-50%, -50%);
-    box-shadow: 0 4px 12px -2px rgba(254, 1, 43, 0.7);
   }
-  .rangebar .scale {
-    display: flex;
-    justify-content: space-between;
+  .pg-labels {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
     margin-top: 10px;
     font-size: 12.5px;
+    text-align: center;
     color: var(--ink-3);
   }
-  .rangebar .scale .mono {
+  /* The band the estimate falls in: ink, like an active chip, never red. */
+  .pricegauge[data-band='below'] .pg-seg[data-band='below'],
+  .pricegauge[data-band='typical'] .pg-seg[data-band='typical'],
+  .pricegauge[data-band='above'] .pg-seg[data-band='above'] {
+    background: var(--ink-2);
+  }
+  .pricegauge[data-band='below'] .pg-labels [data-band='below'],
+  .pricegauge[data-band='typical'] .pg-labels [data-band='typical'],
+  .pricegauge[data-band='above'] .pg-labels [data-band='above'] {
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .pg-verdict {
+    margin: 12px 0 0;
+    font-size: 13.5px;
     color: var(--ink-2);
+  }
+  .pg-verdict b {
+    color: var(--ink);
+    font-weight: 600;
   }
   .val-side .vs-label {
     font-size: 12px;
@@ -1676,7 +1697,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     type NearbyRow,
     type ValuationData,
   } from '../lib/hyparquetClient';
-  import { valuate, med, COMP_LEASE_BAND } from '../lib/valuation';
+  import { valuate, med, pricePosition, COMP_LEASE_BAND } from '../lib/valuation';
   import { STOREY_MIN_N } from '../lib/storey';
   import { createUrlState, selectBinding, inputBinding } from '../lib/urlState';
   import { downloadCsv } from '../lib/csv';
@@ -2699,14 +2720,10 @@ import LeafletMap from '../components/LeafletMap.astro';
     currentComps = [];
     tableComps = [];
     $('val-hint').textContent = 'Modelled from the median PSF of comparable sales.';
-    $('scale-mid').textContent = 'comparable sales';
     showRange(false, note);
-    ($('val-marker') as HTMLElement).hidden = true;
-    ($('val-fill') as HTMLElement).hidden = true;
+    ($('val-gauge') as HTMLElement).hidden = true;
     for (const id of [
       'val-big',
-      'scale-low',
-      'scale-high',
       'vs-n',
       'vs-psf',
       'vs-storey',
@@ -2931,8 +2948,6 @@ import LeafletMap from '../components/LeafletMap.astro';
       estimate,
       low,
       high,
-      barLo,
-      barHi,
       slope,
       useStorey,
       storeyClampedTo,
@@ -2966,25 +2981,21 @@ import LeafletMap from '../components/LeafletMap.astro';
         ? `Only ${n} comparable sale${n === 1 ? '' : 's'}, too few for a likely range.`
         : 'Comparable sales are too alike to give a range.',
     );
-    // The bar spans what the comps actually sold for (unadjusted, at the user's area) and the
-    // likely range; the marker is the adjusted estimate, so it slides with the floor.
-    $('scale-low').textContent = moneyShort(barLo);
-    $('scale-high').textContent = moneyShort(barHi);
-    // The bar only takes the range's own edges when it had to stretch past the comps to fit it.
-    $('scale-mid').textContent =
-      hasRange && (barLo === low || barHi === high)
-        ? 'comparable sales and estimate'
-        : 'comparable sales';
-    const at = (v: number) =>
-      barHi > barLo ? Math.min(100, Math.max(0, ((v - barLo) / (barHi - barLo)) * 100)) : 50;
-    const marker = $('val-marker') as HTMLElement;
-    marker.hidden = false;
-    marker.style.left = `${Math.min(96, Math.max(4, at(estimate)))}%`;
-    // Fill = the estimate's likely range on the same scale.
-    const fill = $('val-fill') as HTMLElement;
-    fill.hidden = !hasRange;
-    fill.style.left = `${at(low)}%`;
-    fill.style.right = `${100 - at(high)}%`;
+    // Gauge: is this flat's estimate below, within or above what comparable flats typically sold
+    // for (the middle half of their unadjusted sale prices, at this flat's size)?
+    const gauge = $('val-gauge') as HTMLElement;
+    const pp = pricePosition(
+      comps.map((c) => c.psf),
+      medPsf,
+    );
+    gauge.hidden = n < 5;
+    gauge.dataset.band = pp.band;
+    ($('pg-tick') as HTMLElement).style.left = `${Math.min(99, Math.max(1, pp.pos))}%`;
+    const typical = `${moneyShort(pp.q25 * area)} to ${moneyShort(pp.q75 * area)}`;
+    $('pg-verdict').innerHTML =
+      pp.band === 'typical'
+        ? `<b>Typical.</b> In line with comparable sales, most of which sold for ${typical} at this size.`
+        : `<b>${pp.band === 'above' ? 'Above' : 'Below'} typical.</b> ${pp.band === 'above' ? `Higher than ${pp.pctBelow}%` : `Lower than ${100 - pp.pctBelow}%`} of comparable sales, most of which sold for ${typical} at this size.`;
     $('vs-n').textContent = String(n);
     $('vs-psf').textContent = fpsf(baseMedPsf);
     $('vs-area').textContent = `${area.toLocaleString()} sqft`;

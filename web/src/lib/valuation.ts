@@ -158,3 +158,46 @@ export function valuate(
     confBars: 4 - conf,
   } satisfies Valuation;
 }
+
+export type PriceBand = 'below' | 'typical' | 'above';
+export interface PricePosition {
+  /** Below, inside or above the middle half (q25 to q75) of what the comps sold for. */
+  band: PriceBand;
+  /** Edges of that middle half, $ psf as sold (no adjustment). */
+  q25: number;
+  q75: number;
+  /** Share of comps that sold for less, % (ties count half). */
+  pctBelow: number;
+  /** Where to draw the estimate on a gauge of three equal bands, 0 to 100. */
+  pos: number;
+}
+
+/** Where an estimate's PSF sits among what the comps actually sold for. The middle half of
+ * those sales is "typical"; each band of the gauge is a third of its width, so a flat just
+ * past q75 always reads as above typical however the sales are spread. */
+export function pricePosition(rawPsfs: number[], psf: number): PricePosition {
+  const s = [...rawPsfs].sort((a, b) => a - b);
+  const q25 = quantile(s, 0.25),
+    q75 = quantile(s, 0.75);
+  const lo = Math.min(quantile(s, 0.05), psf),
+    hi = Math.max(quantile(s, 0.95), psf);
+  const band: PriceBand = psf < q25 ? 'below' : psf > q75 ? 'above' : 'typical';
+  // Position within a band, offset to that band's third of the gauge.
+  const within = (a: number, b: number, third: number) =>
+    ((third + (b > a ? (psf - a) / (b - a) : 0.5)) * 100) / 3;
+  const pos =
+    band === 'below'
+      ? within(lo, q25, 0)
+      : band === 'typical'
+        ? within(q25, q75, 1)
+        : within(q75, hi, 2);
+  const less = s.filter((p) => p < psf).length,
+    same = s.filter((p) => p === psf).length;
+  return {
+    band,
+    q25,
+    q75,
+    pctBelow: s.length ? Math.round(((less + same / 2) / s.length) * 100) : 0,
+    pos,
+  };
+}
