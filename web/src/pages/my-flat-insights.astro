@@ -171,9 +171,10 @@ import LeafletMap from '../components/LeafletMap.astro';
           <div class="vs-row">
             <span class="k"
               >Median PSF (<Term term="comps" end
-                ><strong>Comps</strong> are recent resale sales of the same flat type nearby, from data.gov.sg.
-                They set the base for the estimate, adjusted for storey but not for exact lease or unit
-                condition.</Term
+                ><strong>Comps</strong> are recent resale sales of the same flat type with a similar remaining
+                lease, as close to this flat as the data allows, from data.gov.sg. Each is adjusted to
+                this flat's storey and lease before taking the median. Unit condition is not adjusted
+                for.</Term
               >)</span
             ><span class="v" id="vs-psf">—</span>
           </div>
@@ -183,6 +184,14 @@ import LeafletMap from '../components/LeafletMap.astro';
                 >How much the chosen storey shifts the estimate versus the base median.</Term
               ></span
             ><span class="v" id="vs-storey">—</span>
+          </div>
+          <div class="vs-row">
+            <span class="k"
+              ><Term term="Lease adjustment" end
+                >How much moving each comp to this flat's remaining lease shifts the estimate, at
+                the per-year premium seen across the town's sales.</Term
+              ></span
+            ><span class="v" id="vs-lease">—</span>
           </div>
           <div class="vs-row">
             <span class="k">Floor area</span><span class="v" id="vs-area">—</span>
@@ -1651,7 +1660,7 @@ import LeafletMap from '../components/LeafletMap.astro';
   // and benchmarks are computed off the main thread and only the summaries cross back.
   import { byId as $ } from '../lib/dom';
   import { createHyparquet, type NearbyRow } from '../lib/hyparquetClient';
-  import { valuate, med } from '../lib/valuation';
+  import { valuate, med, COMP_LEASE_BAND } from '../lib/valuation';
   import { createUrlState, selectBinding, inputBinding } from '../lib/urlState';
   import { downloadCsv } from '../lib/csv';
 
@@ -2644,7 +2653,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     // One worker round-trip returns everything this valuation needs from the dataset: comps
     // (same town+flat, 12mo → widened to 24 if thin), island medians, the yearly trajectory,
     // and the lease-decay buckets. All the shaping below stays on the (cheap) main thread.
-    const { comps, nearby, months, scope, town, island, trajectory, leaseTown, leaseIsland } =
+    const { comps, nearby, months, scope, pool, town, island, trajectory, leaseTown, leaseIsland } =
       await qValuation({
         town: block.town,
         flat,
@@ -2657,9 +2666,9 @@ import LeafletMap from '../components/LeafletMap.astro';
     const townName = titleCase(block.town);
     const compWhere =
       scope === 'near'
-        ? `within 1 km with a similar lease (±10 yrs)`
+        ? `within 1 km with a similar lease (±${COMP_LEASE_BAND} yrs)`
         : scope === 'lease'
-          ? `in ${townName} with a similar lease (±10 yrs)`
+          ? `in ${townName} with a similar lease (±${COMP_LEASE_BAND} yrs)`
           : `in ${townName}`;
     const islandPsf = island.psf,
       islandPrice = island.price,
@@ -2679,14 +2688,20 @@ import LeafletMap from '../components/LeafletMap.astro';
       slope,
       useStorey,
       storeyAdjPct,
+      leaseCoef,
+      leaseAdjPct,
       confLabel,
       confBars,
-    } = valuate({ comps, nearby, scope }, { storey, area, lease: rem });
+    } = valuate({ comps, nearby, scope, pool }, { storey, area, lease: rem });
     currentEstimate = estimate;
 
-    $('val-hint').textContent = useStorey
-      ? `Modelled from ${n} comparable ${flat.toLowerCase()} sales ${compWhere}, last ${months} months, adjusted to storey ${storey} (+$${slope.toFixed(1)} psf per floor).`
-      : `Modelled from ${n} comparable ${flat.toLowerCase()} sales ${compWhere}, last ${months} months.`;
+    const adjusted = [
+      useStorey ? `storey ${storey} (+$${slope.toFixed(1)} psf per floor)` : '',
+      leaseCoef > 0 ? `a ${rem}-year lease (+$${leaseCoef.toFixed(1)} psf per year)` : '',
+    ].filter(Boolean);
+    $('val-hint').textContent =
+      `Modelled from ${n} comparable ${flat.toLowerCase()} sales ${compWhere}, last ${months} months` +
+      (adjusted.length ? `, adjusted to ${adjusted.join(' and ')}.` : '.');
     $('val-big').textContent = money(estimate);
     $('val-low').textContent = money(low);
     $('val-high').textContent = money(high);
@@ -2709,6 +2724,10 @@ import LeafletMap from '../components/LeafletMap.astro';
     $('vs-storey').textContent = useStorey
       ? `${storeyAdjPct >= 0 ? '+' : ''}${storeyAdjPct.toFixed(1)}% · ${storey}`
       : 'n/a, too few';
+    $('vs-lease').textContent =
+      leaseCoef > 0
+        ? `${leaseAdjPct >= 0 ? '+' : '−'}${Math.abs(leaseAdjPct).toFixed(1)}% · ${rem} yrs`
+        : 'none';
     $('conf-label').textContent = confLabel;
     $('conf-bars').innerHTML = [0, 1, 2, 3]
       .map((i) => `<i class="${i < confBars ? 'on' : ''}"></i>`)

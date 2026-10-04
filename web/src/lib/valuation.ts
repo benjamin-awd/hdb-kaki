@@ -2,7 +2,10 @@
 // and confidence. Pure and DOM-free so the page and the backtest (scripts/backtest.ts) run the
 // exact same numbers.
 import type { CompRow, NearbyRow, CompScope } from './hyparquetCore';
-import { storeySlope, psfAtStorey } from './storey';
+import { fitPremiums, type StoreyPoint } from './storey';
+
+/** Comps match this flat's remaining lease within ± this many years (valuationQuery). */
+export const COMP_LEASE_BAND = 15;
 
 export const med = (a: number[]) => {
   if (!a.length) return 0;
@@ -23,6 +26,7 @@ export interface ValuationInput {
   comps: CompRow[];
   nearby: NearbyRow[];
   scope: CompScope;
+  pool: StoreyPoint[];
 }
 export interface Valuation {
   n: number;
@@ -39,7 +43,12 @@ export interface Valuation {
   /** Storey premium, $ psf per floor (0 = no adjustment). */
   slope: number;
   useStorey: boolean;
+  /** Median shift from moving the comps to this flat's storey, %. */
   storeyAdjPct: number;
+  /** Lease premium, $ psf per year of remaining lease (0 = no adjustment). */
+  leaseCoef: number;
+  /** Further median shift from moving the comps to this flat's remaining lease, %. */
+  leaseAdjPct: number;
   confLabel: string;
   confBars: number;
 }
@@ -48,19 +57,30 @@ export interface Valuation {
  * (0 = unknown) from the query result. */
 export function valuate(
   v: ValuationInput,
-  { storey, area }: { storey: string; area: number; lease: number },
+  { storey, area, lease }: { storey: string; area: number; lease: number },
 ) {
   const { comps, nearby } = v;
   const baseMedPsf = med(comps.map((c) => c.psf));
-  // Storey: shift every comp to the user's floor along the PSF-per-floor slope, fitted on the
-  // wider lease-matched pool so a thin comp set still gets a stable, monotonic adjustment.
+  // Shift every comp to this flat's floor and remaining lease. Adjusting for lease (not just
+  // matching on it) keeps the estimate smooth as sales enter or leave the lease band, e.g. when
+  // every lease ticks down on 1 January.
+  // - Per-floor premium: fitted on the lease-matched sales (the local market). A town-wide
+  //   fallback has too few of those, so it fits on its own comps.
+  // - Per-year lease premium: fitted on every town sale of the type. A pool that doesn't move
+  //   with this flat's lease keeps the coefficient stable year to year (fitting it on the
+  //   lease band swung it several-fold as sales crossed the band edge).
   const userLo = parseInt(storey, 10) || 0; // "10 TO 12" -> 10
-  const slope = storeySlope(nearby.filter((c) => c.match));
+  const matched = nearby.filter((c) => c.match);
+  const slope = fitPremiums(matched.length >= 10 ? matched : comps).storey;
+  const leaseCoef = lease > 0 ? fitPremiums(v.pool).lease : 0;
   const useStorey = slope > 0 && userLo > 0;
-  const psfs = useStorey
-    ? psfAtStorey(comps, userLo, slope)
-    : comps.map((c) => c.psf).sort((a, b) => a - b);
+  const atStorey = (c: CompRow) => c.psf + (useStorey ? slope * (userLo - c.slo) : 0);
+  const storeyPsfs = comps.map(atStorey);
+  const psfs = comps
+    .map((c, i) => storeyPsfs[i] + leaseCoef * (lease - c.lease))
+    .sort((a, b) => a - b);
   const medPsf = med(psfs);
+  const storeyMedPsf = med(storeyPsfs);
   const n = comps.length;
   const [confLabel, confBars] =
     n >= 30 ? ['High', 4] : n >= 15 ? ['Medium-High', 3] : n >= 5 ? ['Medium', 2] : ['Low', 1];
@@ -77,7 +97,9 @@ export function valuate(
     barHi: quantile(rawPsfs, 0.9) * area,
     slope,
     useStorey,
-    storeyAdjPct: baseMedPsf ? (medPsf / baseMedPsf - 1) * 100 : 0,
+    storeyAdjPct: baseMedPsf ? (storeyMedPsf / baseMedPsf - 1) * 100 : 0,
+    leaseCoef,
+    leaseAdjPct: storeyMedPsf ? (medPsf / storeyMedPsf - 1) * 100 : 0,
     confLabel: confLabel as string,
     confBars: confBars as number,
   } satisfies Valuation;

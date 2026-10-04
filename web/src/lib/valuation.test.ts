@@ -31,7 +31,12 @@ describe('valuate', () => {
   test('estimate is the median comp PSF times area', () => {
     const comps = [500, 550, 600, 650, 700].map((psf) => comp({ psf }));
     const v = valuate(
-      { comps, nearby: comps.map((c) => ({ ...c, dist: 0, match: true })), scope: 'near' },
+      {
+        comps,
+        nearby: comps.map((c) => ({ ...c, dist: 0, match: true })),
+        scope: 'near',
+        pool: [],
+      },
       { storey: '', area: 1000, lease: 80 },
     );
     expect(v.n).toBe(5);
@@ -48,11 +53,48 @@ describe('valuate', () => {
     );
     const comps = [comp({ slo: 1, psf: 600 })];
     const v = valuate(
-      { comps, nearby: pool, scope: 'near' },
+      { comps, nearby: pool, scope: 'near', pool: [] },
       { storey: '10 TO 12', area: 1000, lease: 80 },
     );
     expect(v.slope).toBeCloseTo(5, 6);
     expect(v.useStorey).toBe(true);
     expect(v.medPsf).toBeCloseTo(645, 6);
+  });
+
+  test('shifts comps to the flat lease at the town-wide per-year premium', () => {
+    // Town: PSF rises $6 per year of lease. Comps are 10 years longer than the flat.
+    const pool = Array.from({ length: 20 }, (_, i) => ({
+      slo: 4,
+      lease: 50 + 2 * i,
+      psf: 300 + 12 * i,
+    }));
+    const comps = [comp({ lease: 70, psf: 600 }), comp({ lease: 70, psf: 620 })];
+    const v = valuate(
+      { comps, nearby: [], scope: 'lease', pool },
+      { storey: '', area: 1000, lease: 60 },
+    );
+    expect(v.leaseCoef).toBeCloseTo(6, 6);
+    expect(v.medPsf).toBeCloseTo(550, 6); // 610 - 6 × 10
+    expect(v.leaseAdjPct).toBeCloseTo((550 / 610 - 1) * 100, 6);
+    // Unknown lease: no lease adjustment.
+    const u = valuate(
+      { comps, nearby: [], scope: 'town', pool },
+      { storey: '', area: 1000, lease: 0 },
+    );
+    expect(u.leaseCoef).toBe(0);
+    expect(u.medPsf).toBe(610);
+  });
+
+  test('a one-year lease tick moves the estimate by one year of premium', () => {
+    const pool = Array.from({ length: 20 }, (_, i) => ({
+      slo: 4,
+      lease: 50 + 2 * i,
+      psf: 300 + 12 * i,
+    }));
+    const comps = [comp({ lease: 70, psf: 600 })];
+    const at = (lease: number) =>
+      valuate({ comps, nearby: [], scope: 'lease', pool }, { storey: '', area: 1000, lease })
+        .medPsf;
+    expect(at(60) - at(59)).toBeCloseTo(6, 6);
   });
 });
