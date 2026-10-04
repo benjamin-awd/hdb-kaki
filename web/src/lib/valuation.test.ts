@@ -1,5 +1,5 @@
 import { test, expect, describe } from 'bun:test';
-import { valuate, med, quantile, confidence } from './valuation';
+import { valuate, med, quantile, confidence, pricePosition } from './valuation';
 import type { CompRow, NearbyRow } from './hyparquetCore';
 
 const comp = (o: Partial<CompRow> = {}): CompRow => ({
@@ -128,5 +128,41 @@ describe('confidence', () => {
     expect(confidence({ ...base, n: 8 })).toBe(1);
     expect(confidence({ ...base, scope: 'town' })).toBe(2);
     expect(confidence({ ...base, leaseSpan: 25 })).toBe(2);
+  });
+});
+
+describe('pricePosition', () => {
+  // 1..100: q25 = 25.75, q75 = 75.25
+  const psfs = Array.from({ length: 100 }, (_, i) => i + 1);
+  test('the median sits mid-gauge in the typical band', () => {
+    const p = pricePosition(psfs, 50.5);
+    expect([p.band, p.pctBelow]).toEqual(['typical', 50]);
+    expect(p.pos).toBeCloseTo(50, 6);
+  });
+  test('below q25 and above q75 land in the outer thirds', () => {
+    const lo = pricePosition(psfs, 10),
+      hi = pricePosition(psfs, 90);
+    expect(lo.band).toBe('below');
+    expect(lo.pos).toBeGreaterThanOrEqual(0);
+    expect(lo.pos).toBeLessThan(100 / 3);
+    expect(hi.band).toBe('above');
+    expect(hi.pos).toBeGreaterThan(200 / 3);
+    expect(hi.pos).toBeLessThanOrEqual(100);
+  });
+  test('beyond every sale pins to the gauge ends', () => {
+    expect(pricePosition(psfs, 500).pos).toBeCloseTo(100, 6);
+    expect(pricePosition(psfs, -5).pos).toBeCloseTo(0, 6);
+  });
+  test('the q25/q75 edges count as typical', () => {
+    expect(pricePosition(psfs, 25.75).band).toBe('typical');
+    expect(pricePosition(psfs, 75.25).band).toBe('typical');
+  });
+  test('identical sales: typical, centred, ties counted half', () => {
+    const p = pricePosition([600, 600, 600], 600);
+    expect([p.band, p.pos, p.pctBelow]).toEqual(['typical', 50, 50]);
+  });
+  test('no sales: nothing sold below it (the page shows its empty state instead)', () => {
+    const p = pricePosition([], 600);
+    expect([p.band, p.pctBelow]).toEqual(['above', 0]);
   });
 });
