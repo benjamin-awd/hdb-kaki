@@ -2721,8 +2721,8 @@ import LeafletMap from '../components/LeafletMap.astro';
     $('val-big').textContent = money(estimate);
     $('val-low').textContent = money(low);
     $('val-high').textContent = money(high);
-    // The bar is fixed to what the comps actually sold for (unadjusted, at the user's area); the
-    // marker is the adjusted estimate, so it slides with the floor.
+    // The bar spans what the comps actually sold for (unadjusted, at the user's area) and the
+    // likely range; the marker is the adjusted estimate, so it slides with the floor.
     $('scale-low').textContent = moneyShort(barLo);
     $('scale-high').textContent = moneyShort(barHi);
     const pos =

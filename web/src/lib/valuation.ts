@@ -44,6 +44,8 @@ export interface Valuation {
   /** The "comparable sales" scale under the range, in dollars at this flat's area. */
   barLo: number;
   barHi: number;
+  /** How tightly the adjusted comps agree: their interquartile range over the median. */
+  spread: number;
   /** Storey premium, $ psf per floor (0 = no adjustment). */
   slope: number;
   useStorey: boolean;
@@ -99,17 +101,23 @@ export function valuate(
   const n = comps.length;
   const [confLabel, confBars] =
     n >= 30 ? ['High', 4] : n >= 15 ? ['Medium-High', 3] : n >= 5 ? ['Medium', 2] : ['Low', 1];
-  // The bar is what the comps actually sold for (10th–90th pct, unadjusted, at this area).
+  // Likely range: the middle 80% of the adjusted comps (q25–q75 held only ~47% of actual
+  // prices in the backtest; q10–q90 holds ~75%).
+  const low = quantile(psfs, 0.1) * area,
+    high = quantile(psfs, 0.9) * area;
+  // The bar is what the comps actually sold for (5th–95th pct, unadjusted, at this area),
+  // stretched to take in the likely range so the estimate and its range always sit on it.
   const rawPsfs = comps.map((c) => c.psf).sort((a, b) => a - b);
   return {
     n,
     baseMedPsf,
     medPsf,
     estimate: medPsf * area,
-    low: quantile(psfs, 0.25) * area,
-    high: quantile(psfs, 0.75) * area,
-    barLo: quantile(rawPsfs, 0.1) * area,
-    barHi: quantile(rawPsfs, 0.9) * area,
+    low,
+    high,
+    barLo: Math.min(quantile(rawPsfs, 0.05) * area, low),
+    barHi: Math.max(quantile(rawPsfs, 0.95) * area, high),
+    spread: medPsf ? (quantile(psfs, 0.75) - quantile(psfs, 0.25)) / medPsf : 0,
     slope,
     useStorey,
     storeyClampedTo: useStorey && userLo !== askedLo ? userLo : null,
