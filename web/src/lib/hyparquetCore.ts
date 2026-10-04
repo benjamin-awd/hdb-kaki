@@ -15,6 +15,8 @@
 import { parquetReadObjects, type AsyncBuffer } from 'hyparquet';
 import { compressors } from 'hyparquet-compressors';
 import { haversineMeters } from './onemap';
+import type { StoreyPoint } from './storey';
+import { COMP_LEASE_BAND } from './valuation';
 
 interface Manifest {
   file: string;
@@ -348,6 +350,9 @@ export interface ValuationData {
   nearby: NearbyRow[];
   months: 12 | 24;
   scope: CompScope;
+  /** Every town sale of the flat type over `months` as (storey, lease, psf): the pool the
+   * storey and lease premiums are fitted on. */
+  pool: StoreyPoint[];
   /** Town-wide medians for the flat type over `months`, independent of scope (benchmarks). */
   town: { price: number; area: number };
   island: { psf: number; price: number; area: number };
@@ -600,7 +605,6 @@ export function storeysAreaQuery(c: Columns, postal: number, flat: string): Stor
 // Comps match lease (and distance) before storey, since lease age drives PSF more than floor and
 // a town can mix old and new blocks. The tightest tier with enough sales wins.
 const COMP_RADIUS_M = 1000;
-const COMP_LEASE_BAND = 10; // ± years of remaining lease
 
 /** The full valuation dataset: comps (tiered by distance + lease, 12mo widened to 24 if thin),
  * island medians, yearly trajectory, and lease-decay buckets (town: 36mo/n>=8, island:
@@ -718,6 +722,11 @@ export function valuationQuery(
     }),
     months,
     scope,
+    pool: townIdx.flatMap((i) =>
+      Number.isNaN(c.psf[i])
+        ? []
+        : [{ slo: c.storey_lower_bound[i], lease: c.remaining_lease_years[i], psf: c.psf[i] }],
+    ),
     town: {
       price: median(gather(c.resale_price, townIdx)),
       area: median(gather(c.floor_area_sqft, townIdx)),

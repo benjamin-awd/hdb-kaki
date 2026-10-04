@@ -1,6 +1,7 @@
-// Storey adjustment for Flat Insights: how much PSF rises per floor, fitted on recent
-// comparable sales. Lease is a covariate because new blocks are taller, so a storey-only fit
-// would credit floors with the lease premium.
+// Storey and lease adjustments for Flat Insights: how much PSF rises per floor and per year of
+// remaining lease, fitted together on recent comparable sales. Fitting both at once matters
+// because new blocks are taller, so a storey-only fit would credit floors with the lease
+// premium (and a lease-only fit would credit lease with the height).
 
 export interface StoreyPoint {
   slo: number; // storey_lower_bound
@@ -8,11 +9,15 @@ export interface StoreyPoint {
   psf: number;
 }
 
-/** OLS slope of PSF per floor from `psf ~ a + b·storey + c·lease`, clamped at 0 (a negative
- * fit is noise: HDB floors don't sell at a discount to the ones below). 0 when fewer than
- * `minN` points or the fit is degenerate. */
-export function storeySlope(pts: readonly StoreyPoint[], minN = 10): number {
-  if (pts.length < minN) return 0;
+/** OLS coefficients of `psf ~ a + storey·slo + lease·lease`, each clamped at 0 (a negative fit
+ * is noise: higher floors and longer leases don't sell at a discount). Both 0 when fewer than
+ * `minN` points or when storey and lease are collinear; a variable with no variation gets 0
+ * and the other is fitted alone. */
+export function fitPremiums(
+  pts: readonly StoreyPoint[],
+  minN = 10,
+): { storey: number; lease: number } {
+  if (pts.length < minN) return { storey: 0, lease: 0 };
   const n = pts.length;
   const mx = pts.reduce((s, p) => s + p.slo, 0) / n;
   const ml = pts.reduce((s, p) => s + p.lease, 0) / n;
@@ -32,11 +37,21 @@ export function storeySlope(pts: readonly StoreyPoint[], minN = 10): number {
     sxy += x * y;
     sly += l * y;
   }
-  // No lease variation: plain simple regression on storey.
-  if (sll === 0) return sxx ? Math.max(0, sxy / sxx) : 0;
+  const pos = (v: number) => (Number.isFinite(v) ? Math.max(0, v) : 0);
+  // One variable constant: a plain simple regression on the other.
+  if (!sll) return { storey: sxx ? pos(sxy / sxx) : 0, lease: 0 };
+  if (!sxx) return { storey: 0, lease: pos(sly / sll) };
   const det = sxx * sll - sxl * sxl;
-  if (Math.abs(det) < 1e-9 * sxx * sll) return 0; // storey and lease collinear
-  return Math.max(0, (sxy * sll - sly * sxl) / det);
+  if (Math.abs(det) < 1e-9 * sxx * sll) return { storey: 0, lease: 0 }; // collinear
+  return {
+    storey: pos((sxy * sll - sly * sxl) / det),
+    lease: pos((sly * sxx - sxy * sxl) / det),
+  };
+}
+
+/** PSF per floor from `fitPremiums` (0 when it can't be fitted). */
+export function storeySlope(pts: readonly StoreyPoint[], minN = 10): number {
+  return fitPremiums(pts, minN).storey;
 }
 
 /** Each comp's PSF shifted to the user's floor along `slope`, sorted ascending. */

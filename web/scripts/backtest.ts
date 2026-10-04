@@ -92,6 +92,8 @@ interface Row {
   conf: string;
   width: number; // (high - low) / estimate
   leaseSpan: number;
+  slope: number; // $ psf per floor
+  leaseCoef: number; // $ psf per lease year
 }
 
 const tier = (r: Row) => r.scope;
@@ -215,6 +217,8 @@ for (const [M, is] of [...byMonth].sort()) {
       conf: v.confLabel,
       width: v.estimate ? (v.high - v.low) / v.estimate : NaN,
       leaseSpan: leases.length ? Math.max(...leases) - Math.min(...leases) : 0,
+      slope: v.slope,
+      leaseCoef: 'leaseCoef' in v ? (v.leaseCoef as number) : 0,
     });
     isRandom.push(random.has(i));
   }
@@ -254,6 +258,21 @@ const out = [
   '|---|---|---|---|---|---|',
   line('**all (random)**', rnd),
   line('all (incl. stratified)', rows),
+  `\nPremiums (random sample, p10/p50/p90): storey ${[0.1, 0.5, 0.9]
+    .map((p) =>
+      q(
+        rnd.map((r) => r.slope),
+        p,
+      ).toFixed(1),
+    )
+    .join('/')} psf/floor · lease ${[0.1, 0.5, 0.9]
+    .map((p) =>
+      q(
+        rnd.map((r) => r.leaseCoef),
+        p,
+      ).toFixed(1),
+    )
+    .join('/')} psf/yr`,
   table('By scope (random sample)', rnd, tier),
   table('By confidence (random sample)', rnd, (r) => r.conf),
   table('By range width (random sample)', rnd, widthBucket),
