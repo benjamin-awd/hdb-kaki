@@ -90,7 +90,7 @@ interface Row {
   low: number;
   high: number;
   conf: string;
-  width: number; // (high - low) / estimate
+  width: number; // spread: IQR / median of the adjusted comps
   leaseSpan: number;
   slope: number; // $ psf per floor
   leaseCoef: number; // $ psf per lease year
@@ -215,7 +215,7 @@ for (const [M, is] of [...byMonth].sort()) {
       low: v.low,
       high: v.high,
       conf: v.confLabel,
-      width: v.estimate ? (v.high - v.low) / v.estimate : NaN,
+      width: v.spread,
       leaseSpan: leases.length ? Math.max(...leases) - Math.min(...leases) : 0,
       slope: v.slope,
       leaseCoef: 'leaseCoef' in v ? (v.leaseCoef as number) : 0,
@@ -275,7 +275,7 @@ const out = [
     .join('/')} psf/yr`,
   table('By scope (random sample)', rnd, tier),
   table('By confidence (random sample)', rnd, (r) => r.conf),
-  table('By range width (random sample)', rnd, widthBucket),
+  table('By comp spread, IQR/median (random sample)', rnd, widthBucket),
   table('By lease at sale (random sample)', rnd, leaseBucket),
   table('By storey (random sample)', rnd, storeyBucket),
   table('By flat type (all rows)', rows, (r) => r.flat),
