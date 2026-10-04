@@ -24,3 +24,29 @@ test('resolves a postal and values the flat via the worker', async ({ page }) =>
   await expect(page.locator('#f-postal-sub')).toContainText('Punggol', { timeout: 45_000 });
   await expect(page.locator('#val-big')).not.toHaveText('—');
 });
+
+test('lease dropdown re-filters the comps without moving the estimate', async ({ page }) => {
+  await page.goto('/my-flat-insights/');
+
+  // 270026 (26 Ghim Moh Link, 2013 lease) sits in Queenstown among 1970s blocks, so the town
+  // has both similar-lease and much older comps to switch between.
+  await page.fill('#f-postal', '270026');
+  await page.click('#get-insights');
+  await expect(page.locator('#val-big')).not.toHaveText('—', { timeout: 45_000 });
+
+  const lease = page.locator('#f-comp-lease');
+  await expect(lease).toHaveValue('similar');
+  await expect(page.locator('#comp-note')).toBeHidden();
+  const estimate = await page.locator('#val-big').textContent();
+
+  const oldest = await lease
+    .locator('option[value]:not([value="similar"]):not([value="any"])')
+    .first()
+    .getAttribute('value');
+  await lease.selectOption(oldest!);
+  await expect(page.locator('#comp-foot')).toContainText(
+    `${oldest}–${Number(oldest) + 9} yrs left`,
+  );
+  await expect(page.locator('#comp-note')).toBeVisible();
+  await expect(page.locator('#val-big')).toHaveText(estimate!);
+});
