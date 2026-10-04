@@ -1176,7 +1176,7 @@ const kpis = stats
   function paintRecent(rows: RecentRow[]) {
     q('tbody-recent').innerHTML = rows
       .map((r) => {
-        // Deep-link the address into My Flat Insights, pre-filled with this exact flat
+        // Deep-link the address into Flat Insights, pre-filled with this exact flat
         // (postal + flat type + storey band + area). Plain text when the row lacks a
         // postal to resolve the block from.
         const addr = titleCase(r.address);

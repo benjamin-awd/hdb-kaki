@@ -9,17 +9,17 @@ import Pager from '../components/Pager.astro';
 import LeafletMap from '../components/LeafletMap.astro';
 ---
 
-<Base active="My Flat Insights" title="My Flat Insights | HDB Kaki">
+<Base active="Flat Insights" title="Flat Insights | HDB Kaki">
   <!-- The data worker is warmed from JS (at idle after load); no declarative resource
        hints are needed for it here. -->
   <section class="hero">
     <div class="wrap">
-      <span class="eyebrow rise"><span class="dot"></span> My Flat Insights</span>
+      <span class="eyebrow rise"><span class="dot"></span> Flat Insights</span>
       <h1 class="title rise" style="animation-delay:.05s">
-        What's your flat <em>really</em> worth?
+        What's this flat <em>really</em> worth?
       </h1>
       <p class="lede solo rise" style="animation-delay:.1s">
-        Start with your postal code, and we'll value your flat against nearby transactions.
+        Start with a postal code, and we'll value the flat against nearby transactions.
       </p>
 
       <div class="form-card rise" style="animation-delay:.16s">
@@ -36,7 +36,7 @@ import LeafletMap from '../components/LeafletMap.astro';
               value=""
               autofocus
             />
-            <div class="sub cue" id="f-postal-sub">Start here · your 6-digit code</div>
+            <div class="sub cue" id="f-postal-sub">Start here · 6-digit postal code</div>
           </div>
           <div class="field">
             <label for="f-flat">Flat type</label>
@@ -76,7 +76,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     <div class="wrap">
       <!-- 01 VALUATION -->
       <SecHead num="01" title="Estimated valuation" hintId="val-hint">
-        Modelled from median PSF of comparable sales in your town.
+        Modelled from median PSF of comparable sales nearby.
       </SecHead>
 
       <div class="card val-hero">
@@ -88,10 +88,10 @@ import LeafletMap from '../components/LeafletMap.astro';
           </div>
           <div class="rangebar">
             <div class="track">
-              <div class="fill"></div><div class="marker" id="val-marker"></div>
+              <div class="fill" id="val-fill"></div><div class="marker" id="val-marker"></div>
             </div>
             <div class="scale">
-              <span class="mono" id="scale-low">—</span><span>estimate</span><span
+              <span class="mono" id="scale-low">—</span><span>comparable sales</span><span
                 class="mono"
                 id="scale-high">—</span
               >
@@ -172,20 +172,20 @@ import LeafletMap from '../components/LeafletMap.astro';
             <span class="k"
               >Median PSF (<Term term="comps" end
                 ><strong>Comps</strong> are recent resale sales of the same flat type nearby, from data.gov.sg.
-                They set the base for your estimate, adjusted for storey band but not for exact lease
-                or unit condition.</Term
+                They set the base for the estimate, adjusted for storey but not for exact lease or unit
+                condition.</Term
               >)</span
             ><span class="v" id="vs-psf">—</span>
           </div>
           <div class="vs-row">
             <span class="k"
               ><Term term="Storey adjustment" end
-                >How much your floor band shifts the estimate versus the base median.</Term
+                >How much the chosen storey shifts the estimate versus the base median.</Term
               ></span
             ><span class="v" id="vs-storey">—</span>
           </div>
           <div class="vs-row">
-            <span class="k">Your floor area</span><span class="v" id="vs-area">—</span>
+            <span class="k">Floor area</span><span class="v" id="vs-area">—</span>
           </div>
           <div class="conf">
             <Term term="Confidence" end
@@ -217,7 +217,7 @@ import LeafletMap from '../components/LeafletMap.astro';
 
       <!-- 02 PRICE TRAJECTORY -->
       <SecHead num="02" title="Price trajectory" hintId="traj-hint">
-        How your flat type has moved here over the years.
+        How this flat type has moved here over the years.
       </SecHead>
 
       <div class="split" style="grid-template-columns:1.55fr 1fr">
@@ -226,10 +226,9 @@ import LeafletMap from '../components/LeafletMap.astro';
           <div id="traj-chart" style="width:100%;height:300px"></div>
         </ChartCard>
         <div class="card returns">
-          <div class="ret-head">Your return so far</div>
+          <div class="ret-head">Return since purchase</div>
           <p class="ret-lede">
-            Already bought this flat? Enter what you paid to see your gain and annual return against
-            the town.
+            Enter a purchase price and year to see the gain and annual return against the town.
           </p>
           <div class="ret-inputs">
             <label
@@ -255,14 +254,14 @@ import LeafletMap from '../components/LeafletMap.astro';
             >
           </div>
           <div class="ret-out" id="ret-out">
-            <div class="ret-empty">Your appreciation will appear here.</div>
+            <div class="ret-empty">The gain will appear here.</div>
           </div>
         </div>
       </div>
 
       <!-- 03 BENCHMARKING -->
       <SecHead num="03" title="How it benchmarks" hintId="bench-hint">
-        Your flat vs the town and island-wide market.
+        This flat vs the town and island-wide market.
       </SecHead>
 
       <div class="bench-grid">
@@ -284,10 +283,10 @@ import LeafletMap from '../components/LeafletMap.astro';
       </div>
 
       <div class="split" style="grid-template-columns:1.4fr 1fr;margin-top:18px">
-        <ChartCard title="Where you sit in the market">
+        <ChartCard title="Where the flat sits in the market">
           <Info slot="titleTip" label="What does percentile mean?"
-            >The share of nearby sales priced below your estimate. For example, 70th percentile
-            beats about 70% of them.</Info
+            >The share of nearby sales priced below the estimate. For example, 70th percentile beats
+            about 70% of them.</Info
           >
           <span class="pill" id="pctile-pill" slot="head">—</span>
           <div id="dist-chart" style="width:100%;height:210px"></div>
@@ -367,7 +366,8 @@ import LeafletMap from '../components/LeafletMap.astro';
 
       <!-- 05 COMPARABLES -->
       <SecHead num="05" title="Nearby comparables" hintId="comp-hint">
-        Recent sales of the same flat type in your town, same street first.
+        Recent sales of the same flat type: the same street first, then similar-lease flats nearby,
+        then older and newer blocks nearby for comparison.
       </SecHead>
 
       <div class="card comp-wrap">
@@ -1650,7 +1650,8 @@ import LeafletMap from '../components/LeafletMap.astro';
   // The valuation reads resale.parquet via the hyparquet data worker: postal lookups, comps
   // and benchmarks are computed off the main thread and only the summaries cross back.
   import { byId as $ } from '../lib/dom';
-  import { createHyparquet } from '../lib/hyparquetClient';
+  import { createHyparquet, type NearbyRow } from '../lib/hyparquetClient';
+  import { storeySlope, psfAtStorey } from '../lib/storey';
   import { createUrlState, selectBinding, inputBinding } from '../lib/urlState';
   import { downloadCsv } from '../lib/csv';
 
@@ -1699,7 +1700,8 @@ import LeafletMap from '../components/LeafletMap.astro';
   const ec = (id: string) => (charts[id] ??= initChart($(id)));
   // State the "returns" panel needs so it can recompute on input change without re-querying.
   let currentEstimate = 0;
-  let currentComps: any[] = []; // last compute()'s comps — for the CSV export
+  let currentComps: any[] = []; // last compute()'s comps (the estimate basis) — for the print summary
+  let tableComps: NearbyRow[] = []; // the comparables table rows, in display order — for the CSV export
 
   // URL-synced form state (see web/src/lib/urlState.ts). All default to '' so an empty form
   // yields an empty query string; a computed view syncs the full deep link. The selects are
@@ -2437,7 +2439,7 @@ import LeafletMap from '../components/LeafletMap.astro';
                 lineStyle: { color: ink3, type: 'dashed' },
                 data: [{ yAxis: Math.round(userPsf) }],
                 label: {
-                  formatter: `your est. ${fpsf(userPsf)}`,
+                  formatter: `est. ${fpsf(userPsf)}`,
                   color: ink3,
                   fontSize: 11,
                   position: 'insideStartTop',
@@ -2463,7 +2465,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     const paid = parsePrice(($('r-paid') as HTMLInputElement).value);
     const yr = parseInt(($('r-year') as HTMLInputElement).value, 10);
     if (!paid || !yr || yr < 1990 || yr >= NOW_YEAR || !currentEstimate) {
-      out.innerHTML = '<div class="ret-empty">Your appreciation will appear here.</div>';
+      out.innerHTML = '<div class="ret-empty">The gain will appear here.</div>';
       return;
     }
     const { hold, gain, totRet, cagr, townCagr, beat } = computeReturns(
@@ -2480,11 +2482,11 @@ import LeafletMap from '../components/LeafletMap.astro';
       <div class="ret-big ${cls}">${gain >= 0 ? '+' : '−'}${money(Math.abs(gain))}</div>
       <div class="ret-sub">${totRet >= 0 ? '+' : '−'}${Math.abs(totRet).toFixed(0)}% since ${yr} · ${hold} year${hold > 1 ? 's' : ''} held</div>
       <div class="ret-rows">
-        <div class="ret-row"><span class="k">Your return per year</span><span class="v">${cagr >= 0 ? '+' : '−'}${Math.abs(cagr).toFixed(1)}%/yr</span></div>
+        <div class="ret-row"><span class="k">Return per year</span><span class="v">${cagr >= 0 ? '+' : '−'}${Math.abs(cagr).toFixed(1)}%/yr</span></div>
         ${
           isFinite(townCagr)
             ? `<div class="ret-row"><span class="k">${town} average</span><span class="v">${townCagr >= 0 ? '+' : '−'}${Math.abs(townCagr).toFixed(1)}%/yr</span></div>
-        <div class="ret-row"><span class="k">You vs ${town}</span><span class="v" style="color:${beat >= 0 ? 'var(--good)' : 'var(--red-ink)'}">${beat >= 0 ? '▲' : '▼'} ${Math.abs(beat).toFixed(1)} pts/yr</span></div>`
+        <div class="ret-row"><span class="k">This flat vs ${town}</span><span class="v" style="color:${beat >= 0 ? 'var(--good)' : 'var(--red-ink)'}">${beat >= 0 ? '▲' : '▼'} ${Math.abs(beat).toFixed(1)} pts/yr</span></div>`
             : ''
         }
       </div>`;
@@ -2492,7 +2494,7 @@ import LeafletMap from '../components/LeafletMap.astro';
 
   // 03 · distribution — histogram of comparable PSF with the user's estimate marked,
   // plus the percentile of comps it beats.
-  function renderDistribution(psfs: number[], userPsf: number, flat: string, town: string) {
+  function renderDistribution(psfs: number[], userPsf: number, flat: string, where: string) {
     const el = ec('dist-chart');
     if (psfs.length < 4) {
       el.clear();
@@ -2515,7 +2517,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     pill.className = `pill ${pct >= 50 ? 'up' : 'flat'}`;
     pill.textContent = `${pct}th percentile`;
     $('dist-cap').textContent =
-      `Your estimate (${fpsf(userPsf)}) is priced above ${pct}% of recent ${flat.toLowerCase()} sales in ${titleCase(town)}.`;
+      `The estimate (${fpsf(userPsf)}) is priced above ${pct}% of recent ${flat.toLowerCase()} sales ${where}.`;
     el.setOption({
       ...baseOption(),
       grid: { left: 18, right: 14, top: 14, bottom: 26, containLabel: false },
@@ -2596,7 +2598,7 @@ import LeafletMap from '../components/LeafletMap.astro';
                 silent: true,
                 lineStyle: { color: red, type: 'dashed' },
                 data: [{ xAxis: userBucket }],
-                label: { formatter: 'your flat', color: red, fontSize: 11 },
+                label: { formatter: 'this flat', color: red, fontSize: 11 },
               }
             : undefined,
         },
@@ -2610,6 +2612,7 @@ import LeafletMap from '../components/LeafletMap.astro';
   // reference; compute() stashes it, the full comp rows, and the footer suffix, and paging is
   // pure client-side slicing over the comps already fetched.
   const COMP_PAGE = 8;
+  const TABLE_RADIUS_M = 2000; // similar-lease rows beyond this drop off the table (see compute)
   let compPage = 0;
   let compYouRow = '';
   let compRowsHtml: string[] = [];
@@ -2654,21 +2657,38 @@ import LeafletMap from '../components/LeafletMap.astro';
     // One worker round-trip returns everything this valuation needs from the dataset: comps
     // (same town+flat, 12mo → widened to 24 if thin), island medians, the yearly trajectory,
     // and the lease-decay buckets. All the shaping below stays on the (cheap) main thread.
-    const { comps, months, island, trajectory, leaseTown, leaseIsland } = await qValuation({
-      town: block.town,
-      flat,
-    });
+    const { comps, nearby, months, scope, town, island, trajectory, leaseTown, leaseIsland } =
+      await qValuation({
+        town: block.town,
+        flat,
+        lease: rem,
+        lat: userLatLng?.[0] ?? null,
+        lng: userLatLng?.[1] ?? null,
+      });
+    // Where the comps came from, for the copy: the worker narrows to lease-matched sales nearby,
+    // then town-wide, before falling back to every sale in town.
+    const townName = titleCase(block.town);
+    const compWhere =
+      scope === 'near'
+        ? `within 1 km with a similar lease (±10 yrs)`
+        : scope === 'lease'
+          ? `in ${townName} with a similar lease (±10 yrs)`
+          : `in ${townName}`;
     const islandPsf = island.psf,
       islandPrice = island.price,
       islandArea = island.area;
 
-    // valuation — base median PSF over all comps, then adjust for the chosen storey band
+    // valuation — base median PSF over all comps, then adjust to the chosen storey
     const baseMedPsf = med(comps.map((c) => c.psf));
+    // Storey: shift every comp to the user's floor along the PSF-per-floor slope, fitted on the
+    // wider lease-matched pool (the table rows) so a thin comp set still gets a stable, monotonic
+    // adjustment.
     const userLo = parseInt(storey, 10) || 0; // "10 TO 12" -> 10
-    const nearStorey = comps.filter((c) => Math.abs(c.slo - userLo) <= 3);
-    const useStorey = nearStorey.length >= 5; // only adjust when the band has enough sales
-    const basis = useStorey ? nearStorey : comps;
-    const psfs = basis.map((c) => c.psf).sort((a, b) => a - b);
+    const slope = storeySlope(nearby.filter((c) => c.match));
+    const useStorey = slope > 0 && userLo > 0;
+    const psfs = useStorey
+      ? psfAtStorey(comps, userLo, slope)
+      : comps.map((c) => c.psf).sort((a, b) => a - b);
     const medPsf = med(psfs),
       q25 = quantile(psfs, 0.25),
       q75 = quantile(psfs, 0.75);
@@ -2678,21 +2698,31 @@ import LeafletMap from '../components/LeafletMap.astro';
       high = q75 * area;
     currentEstimate = estimate;
     const n = comps.length;
-    const nb = basis.length;
     const [confLabel, confBars] =
-      nb >= 30 ? ['High', 4] : nb >= 15 ? ['Medium-High', 3] : nb >= 5 ? ['Medium', 2] : ['Low', 1];
+      n >= 30 ? ['High', 4] : n >= 15 ? ['Medium-High', 3] : n >= 5 ? ['Medium', 2] : ['Low', 1];
 
     $('val-hint').textContent = useStorey
-      ? `Modelled from ${nb} comparable ${flat.toLowerCase()} sales on similar storeys (${storey}) in ${titleCase(block.town)}, last ${months} months.`
-      : `Modelled from ${n} comparable ${flat.toLowerCase()} sales in ${titleCase(block.town)}, last ${months} months.`;
+      ? `Modelled from ${n} comparable ${flat.toLowerCase()} sales ${compWhere}, last ${months} months, adjusted to storey ${storey} (+$${slope.toFixed(1)} psf per floor).`
+      : `Modelled from ${n} comparable ${flat.toLowerCase()} sales ${compWhere}, last ${months} months.`;
     $('val-big').textContent = money(estimate);
     $('val-low').textContent = money(low);
     $('val-high').textContent = money(high);
-    $('scale-low').textContent = moneyShort(low);
-    $('scale-high').textContent = moneyShort(high);
+    // The bar is fixed to what the comps actually sold for (10th–90th pct, unadjusted, at the
+    // user's area); the marker is the storey-adjusted estimate, so it slides with the floor.
+    const rawPsfs = comps.map((c) => c.psf).sort((a, b) => a - b);
+    const barLo = quantile(rawPsfs, 0.1) * area,
+      barHi = quantile(rawPsfs, 0.9) * area;
+    $('scale-low').textContent = moneyShort(barLo);
+    $('scale-high').textContent = moneyShort(barHi);
     const pos =
-      high > low ? Math.min(92, Math.max(8, ((estimate - low) / (high - low)) * 100)) : 50;
+      barHi > barLo ? Math.min(96, Math.max(4, ((estimate - barLo) / (barHi - barLo)) * 100)) : 50;
     ($('val-marker') as HTMLElement).style.left = pos + '%';
+    // Fill = the estimate's likely range on the same scale.
+    const at = (v: number) =>
+      barHi > barLo ? Math.min(100, Math.max(0, ((v - barLo) / (barHi - barLo)) * 100)) : 50;
+    const fill = $('val-fill') as HTMLElement;
+    fill.style.left = `${at(low)}%`;
+    fill.style.right = `${100 - at(high)}%`;
     $('vs-n').textContent = String(n);
     $('vs-psf').textContent = fpsf(baseMedPsf);
     $('vs-area').textContent = `${area.toLocaleString()} sqft`;
@@ -2705,8 +2735,7 @@ import LeafletMap from '../components/LeafletMap.astro';
       .join('');
 
     // benchmarks
-    const townPrice = med(comps.map((c) => c.price)),
-      townArea = med(comps.map((c) => c.area));
+    const { price: townPrice, area: townArea } = town;
     const bar = (
       rows: { lab: string; val: number; you?: boolean; fmt: (n: number) => string }[],
     ) => {
@@ -2760,29 +2789,64 @@ import LeafletMap from '../components/LeafletMap.astro';
     $('lease-start').textContent = block.lc ? String(block.lc) : '—';
     const nowEl = $('lease-now') as HTMLElement;
     nowEl.style.left = `${((99 - rem) / 99) * 100}%`;
-    nowEl.setAttribute('data-label', `You are here · ${rem}y`);
+    nowEl.setAttribute('data-label', `This flat · ${rem}y`);
 
-    // comparables table (same street first, then recency)
-    const sameStreet = (c: any) => c.street_name === block.street;
-    const sorted = [...comps].sort(
-      (a, b) => Number(sameStreet(b)) - Number(sameStreet(a)) || b.month.localeCompare(a.month),
+    // comparables table, in sections: your street (matched lease, newest first), then the
+    // matched lease elsewhere in town, then newer/older flats nearby (each nearest first). The
+    // section headers explain why the Sold dates reset at each boundary.
+    // Older/newer sections answer "how do the other blocks nearby compare?" without changing
+    // the estimate; each header carries its median PSF when enough sales back it.
+    const matchLabel = rem ? 'Similar lease' : '';
+    const sectionOf = (c: NearbyRow) =>
+      !c.match
+        ? c.lease > rem
+          ? 'newer'
+          : 'older'
+        : c.street_name === block.street
+          ? 'same'
+          : 'else';
+    const order = ['same', 'else', 'newer', 'older'];
+    const byDist = (a: NearbyRow, b: NearbyRow) => (a.dist ?? Infinity) - (b.dist ?? Infinity);
+    // When the estimate came from sales within 1 km, cap the similar-lease rows at 2 km so the
+    // older/newer blocks nearby aren't buried under far-off ones. Otherwise the estimate used
+    // sales from across town, so the table keeps them all.
+    const capped = scope === 'near';
+    const rows = capped
+      ? nearby.filter((c) => !c.match || (c.dist ?? Infinity) <= TABLE_RADIUS_M)
+      : nearby;
+    const sorted = [...rows].sort(
+      (a, b) =>
+        order.indexOf(sectionOf(a)) - order.indexOf(sectionOf(b)) ||
+        (sectionOf(a) === 'same' ? 0 : byDist(a, b)) ||
+        b.month.localeCompare(a.month),
     );
-    // Group the sorted comps into "same street" then "elsewhere in town", and build a divider
-    // per group. Only when both groups exist (that's the only case where the Sold dates reset)
-    // do we tag rows with a section key — otherwise there's no boundary to explain.
-    const sameCount = sorted.filter(sameStreet).length;
-    const elseCount = sorted.length - sameCount;
-    const useSections = sameCount > 0 && elseCount > 0;
-    const secRow = (label: string, count: number) =>
-      `<tr class="comp-section"><td colspan="7"><span class="cs-lab">${label}</span><span class="cs-n">${count.toLocaleString()} ${count === 1 ? 'sale' : 'sales'}</span></td></tr>`;
+    const secPsfs: Record<string, number[]> = {};
+    sorted.forEach((c) => (secPsfs[sectionOf(c)] ??= []).push(c.psf));
+    const useSections = Object.keys(secPsfs).length > 1;
+    const secRow = (label: string, psfs: number[]) =>
+      `<tr class="comp-section"><td colspan="7"><span class="cs-lab">${label}</span><span class="cs-n">${psfs.length.toLocaleString()} ${psfs.length === 1 ? 'sale' : 'sales'}${psfs.length >= 5 ? ` · median ${fpsf(med(psfs))} psf` : ''}</span></td></tr>`;
+    const secLabels: Record<string, string> = {
+      same: `Same street · ${titleCase(block.street)}`,
+      else: capped
+        ? `${matchLabel} · within 2 km`
+        : matchLabel
+          ? `${matchLabel} · elsewhere in ${townName}`
+          : `Elsewhere in ${townName}`,
+      newer: 'Newer flats nearby',
+      older: 'Older flats nearby',
+    };
     compSectionHeaders = useSections
-      ? {
-          same: secRow(`Same street · ${titleCase(block.street)}`, sameCount),
-          else: secRow(`Elsewhere in ${titleCase(block.town)}`, elseCount),
-        }
+      ? Object.fromEntries(Object.entries(secPsfs).map(([k, ps]) => [k, secRow(secLabels[k], ps)]))
       : {};
-    compRowGroups = sorted.map((c) => (useSections ? (sameStreet(c) ? 'same' : 'else') : ''));
-    const youRow = `<tr class="you"><td class="addr" data-role="title"><b>${titleCase(block.address)}</b><span class="badge">YOUR FLAT</span><br><span class="st">Estimated</span></td>
+    compRowGroups = sorted.map((c) => (useSections ? sectionOf(c) : ''));
+    tableComps = sorted;
+    const km = (m: number | null) =>
+      m == null
+        ? ''
+        : m < 1000
+          ? ` · ${Math.round(m / 10) * 10} m`
+          : ` · ${(m / 1000).toFixed(1)} km`;
+    const youRow = `<tr class="you"><td class="addr" data-role="title"><b>${titleCase(block.address)}</b><span class="badge">THIS FLAT</span><br><span class="st">Estimated</span></td>
       <td data-role="meta">${storey}</td><td class="r" data-role="meta" data-suffix="sqft">${area.toLocaleString()}</td><td class="r" data-role="meta">${rem} yr</td>
       <td class="r price" data-role="primary">${money(estimate)}</td><td class="r psf" data-role="meta" data-suffix="psf">${fpsf(medPsf)}</td><td class="r" data-role="meta">—</td><td class="tbreak" aria-hidden="true"></td></tr>`;
     // Comparables table — paged 8 at a time (see renderComps). The "your flat" row always
@@ -2791,11 +2855,11 @@ import LeafletMap from '../components/LeafletMap.astro';
     compRowsHtml = sorted.map(
       (
         c,
-      ) => `<tr><td class="addr" data-role="title"><b>${titleCase(c.address)}</b><br><span class="st">${titleCase(c.street_name)}</span></td>
+      ) => `<tr><td class="addr" data-role="title"><b>${titleCase(c.address)}</b><br><span class="st">${titleCase(c.street_name)}${c.street_name === block.street ? '' : km(c.dist)}</span></td>
       <td data-role="meta">${c.storey_range}</td><td class="r" data-role="meta" data-suffix="sqft">${c.area.toLocaleString()}</td><td class="r" data-role="meta">${c.lease} yr</td>
       <td class="r price" data-role="primary">${money(c.price)}</td><td class="r psf" data-role="meta" data-suffix="psf">${fpsf(c.psf)}</td><td class="r" data-role="meta">${c.month}</td><td class="tbreak" aria-hidden="true"></td></tr>`,
     );
-    compFootSuffix = `comparable sales · last ${months} months · ${titleCase(block.town)}`;
+    compFootSuffix = `recent sales · last ${months} months · ${townName}`;
     compPage = 0; // new valuation → back to the first page
     renderComps();
 
@@ -2805,12 +2869,11 @@ import LeafletMap from '../components/LeafletMap.astro';
       comps.map((c) => c.psf),
       medPsf,
       flat,
-      block.town,
+      compWhere,
     );
     const perMonth = comps.length / months;
     $('mt-vel').textContent = comps.length.toLocaleString();
-    $('mt-vel-s').textContent =
-      `${flat.toLowerCase()} in ${titleCase(block.town)} · ~${perMonth.toFixed(1)}/mo`;
+    $('mt-vel-s').textContent = `${flat.toLowerCase()} ${compWhere} · ~${perMonth.toFixed(1)}/mo`;
     const byPrice = [...comps].sort((a, b) => b.price - a.price);
     const hiC = byPrice[0],
       loC = byPrice[byPrice.length - 1];
@@ -2872,7 +2935,7 @@ import LeafletMap from '../components/LeafletMap.astro';
         fillOpacity: 1,
       })
         .bindTooltip(
-          `<b>Your flat</b> · ${titleCase(block.address)}<br/><b>${money(estimate)}</b> est · ${fpsf(medPsf)} psf`,
+          `<b>This flat</b> · ${titleCase(block.address)}<br/><b>${money(estimate)}</b> est · ${fpsf(medPsf)} psf`,
           { direction: 'top', offset: [0, -8], opacity: 1, className: 'hdb-tip' },
         )
         .addTo(layer);
@@ -3022,11 +3085,11 @@ import LeafletMap from '../components/LeafletMap.astro';
   });
 
   $('dl-comps').addEventListener('click', () => {
-    if (!currentComps.length) return;
+    if (!tableComps.length) return;
     downloadCsv(
       'my-flat-comps.csv',
       ['month', 'address', 'street_name', 'storey_range', 'area', 'lease', 'price', 'psf'],
-      currentComps.map((c) => [
+      tableComps.map((c) => [
         c.month,
         c.address,
         c.street_name,

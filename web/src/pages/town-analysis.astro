@@ -393,7 +393,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     background: var(--paper);
     padding: 12px 16px;
   }
-  /* Rows that deep-link into My Flat Insights render as anchors; strip link chrome and
+  /* Rows that deep-link into Flat Insights render as anchors; strip link chrome and
      add a hover lift so the whole row reads as clickable. */
   :global(a.rec) {
     color: inherit;
@@ -923,7 +923,7 @@ import LeafletMap from '../components/LeafletMap.astro';
       .map((r) => {
         const pill = r.band === 'below' ? 'up' : r.band === 'above' ? 'down' : 'flat';
         const lbl = r.band![0].toUpperCase() + r.band!.slice(1);
-        // Deep-link the address into My Flat Insights, pre-filled with this flat (postal +
+        // Deep-link the address into Flat Insights, pre-filled with this flat (postal +
         // the page's current flat type + this sale's storey band). Plain text when the row
         // lacks a postal to resolve the block from.
         const addr = titleCase(r.address);
@@ -997,7 +997,7 @@ import LeafletMap from '../components/LeafletMap.astro';
         <span class="town">${lead}</span>
         <span class="ctx">${badge}${titleCase(r.address)} · storey ${r.storey.toLowerCase()} · ${Math.round(r.area).toLocaleString()} sqft · ${fpsf(r.psf)} psf · sold ${r.month}</span>
         <span class="price">${moneyShort(r.price)}<small>${titleCase(r.flat)} median ${moneyShort(r.med)}</small></span>`;
-        // Deep-link the row to My Flat Insights, pre-filled with this exact flat. Fall back to
+        // Deep-link the row to Flat Insights, pre-filled with this exact flat. Fall back to
         // a plain row when the record lacks a postal (nothing to resolve the block from).
         if (!r.postal) return `<div class="${cls}">${inner}</div>`;
         const q = new URLSearchParams({
