@@ -1,5 +1,5 @@
 import { test, expect, describe } from 'bun:test';
-import { valuate, med, quantile } from './valuation';
+import { valuate, med, quantile, confidence } from './valuation';
 import type { CompRow, NearbyRow } from './hyparquetCore';
 
 const comp = (o: Partial<CompRow> = {}): CompRow => ({
@@ -112,5 +112,21 @@ describe('valuate', () => {
       { storey: '10 TO 12', area: 1000, lease: 80 },
     );
     expect(inRange.storeyClampedTo).toBeNull();
+  });
+});
+
+describe('confidence', () => {
+  const base = { n: 40, spread: 0.03, scope: 'near' as const, leaseSpan: 10 };
+  test('steps down as the adjusted comps spread out', () => {
+    expect(confidence(base)).toBe(0);
+    expect(confidence({ ...base, spread: 0.06 })).toBe(1);
+    expect(confidence({ ...base, spread: 0.1 })).toBe(2);
+    expect(confidence({ ...base, spread: 0.2 })).toBe(3);
+  });
+  test('few comps, a town-wide fallback or mixed leases cap it', () => {
+    expect(confidence({ ...base, n: 4 })).toBe(3);
+    expect(confidence({ ...base, n: 8 })).toBe(1);
+    expect(confidence({ ...base, scope: 'town' })).toBe(2);
+    expect(confidence({ ...base, leaseSpan: 25 })).toBe(2);
   });
 });
