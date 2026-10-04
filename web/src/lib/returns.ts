@@ -48,7 +48,7 @@ export interface ReturnStats {
   haveTown: boolean; // whether a town benchmark was available
 }
 
-/** Compute the "Your return so far" figures. When town data exists, the user's
+/** Compute the "Return since purchase" figures. When town data exists, the user's
  *  CAGR is annualised over the SAME span as the town (bYear -> latestYear) so the
  *  two are like-for-like; otherwise it falls back to the actual holding period. */
 export function computeReturns(
