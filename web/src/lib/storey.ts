@@ -1,4 +1,4 @@
-// Storey adjustment for My Flat Insights: how much PSF rises per floor, fitted on recent
+// Storey adjustment for Flat Insights: how much PSF rises per floor, fitted on recent
 // comparable sales. Lease is a covariate because new blocks are taller, so a storey-only fit
 // would credit floors with the lease premium.
 

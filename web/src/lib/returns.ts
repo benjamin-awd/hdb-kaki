@@ -1,4 +1,4 @@
-// "Your return so far" (my-flat-insights) — purchase-price formatting and the
+// "Return since purchase" (my-flat-insights) — purchase-price formatting and the
 // annualised-return maths, kept pure and DOM-free so they can be unit-tested.
 
 /** Format a raw string as a thousands-separated integer, dropping any non-digits.

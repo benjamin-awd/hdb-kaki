@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-// My Flat Insights end-to-end: the postal field autofocuses so the first action is obvious,
+// Flat Insights end-to-end: the postal field autofocuses so the first action is obvious,
 // and entering a real postal drives the worker (resolveBlock → valuation) to value the flat.
 //
 // Note: the on-load worker *warm* (warmWhenIdle) can't be asserted here — it runs in a

@@ -1,4 +1,4 @@
-// Geo helpers for My Flat Insights: pick the MRT station nearest the flat and measure the
+// Geo helpers for Flat Insights: pick the MRT station nearest the flat and measure the
 // straight-line distance to it. All client-side — nothing leaves the browser.
 
 export type LatLng = [number, number];
@@ -25,7 +25,7 @@ export function haversineMeters(a: LatLng, b: LatLng): number {
 }
 
 // The `k` stations closest to (lat, lng), nearest first, each with its straight-line
-// distance in metres. `k` is clamped to [0, stations.length]. Used by My Flat Insights to
+// distance in metres. `k` is clamped to [0, stations.length]. Used by Flat Insights to
 // route to the nearest and list the next-nearest as context.
 export function nearbyStations(
   lat: number,
