@@ -15,6 +15,8 @@
 import { parquetReadObjects, type AsyncBuffer } from 'hyparquet';
 import { compressors } from 'hyparquet-compressors';
 import { haversineMeters } from './onemap';
+import type { StoreyPoint } from './storey';
+import { COMP_LEASE_BAND, COMP_RADII, COMP_NEAR_MIN } from './valuation';
 
 interface Manifest {
   file: string;
@@ -315,6 +317,7 @@ export interface CompRow {
 export interface NearbyRow extends CompRow {
   dist: number | null; // metres from the flat; null when either location is unknown
   match: boolean;
+  used: boolean; // one of `comps`, i.e. it fed the estimate
 }
 /** Postal → block identity (latest-transaction fields) + the flat types seen at that block. */
 export interface BlockMeta {
@@ -338,16 +341,21 @@ export interface LeaseBucket {
 }
 /** Everything my-flat-insights' compute() needs from the dataset, in one round-trip. The
  * page keeps the pure shaping (storey adjustment, histogram, benchmarks, returns, map). */
-/** How the comps were narrowed: 'near' = within COMP_RADIUS_M and a similar lease, 'lease' =
+/** How the comps were narrowed: 'near' = a similar lease within one of COMP_RADII, 'lease' =
  * anywhere in town with a similar lease, 'town' = every sale in town (no lease/location match). */
 export type CompScope = 'near' | 'lease' | 'town';
 export interface ValuationData {
   comps: CompRow[];
-  /** Comparables table: every lease-matched town sale plus any other-lease sale within
-   * COMP_RADIUS_M, over `months`. Wider than `comps` (which only feeds the estimate). */
+  /** Comparables table: every lease-matched town sale, every comp, and any other-lease sale
+   * within COMP_RADIUS_M, over `months`. Rows that fed the estimate are flagged `used`. */
   nearby: NearbyRow[];
   months: 12 | 24;
   scope: CompScope;
+  /** For 'near': the ring (metres) the comps were drawn from; null otherwise. */
+  radius: number | null;
+  /** Every town sale of the flat type over `months` as (storey, lease, psf): the pool the
+   * storey and lease premiums are fitted on. */
+  pool: StoreyPoint[];
   /** Town-wide medians for the flat type over the last 12 months (24 if the town had no
    * sales in 12), independent of scope and `months` so the benchmark is like-for-like. */
   town: { price: number; area: number };
@@ -601,9 +609,9 @@ export function storeysAreaQuery(c: Columns, postal: number, flat: string): Stor
 }
 
 // Comps match lease (and distance) before storey, since lease age drives PSF more than floor and
-// a town can mix old and new blocks. The tightest tier with enough sales wins.
-const COMP_RADIUS_M = 1000;
-const COMP_LEASE_BAND = 10; // ± years of remaining lease
+// a town can mix old and new blocks. The tightest tier with enough sales wins. Other-lease sales
+// within the widest radius still show in the comparables table.
+const COMP_RADIUS_M = COMP_RADII[COMP_RADII.length - 1];
 
 /** The full valuation dataset: comps (tiered by distance + lease, 12mo widened to 24 if thin),
  * island medians, yearly trajectory, and lease-decay buckets (town: 36mo/n>=8, island:
@@ -643,13 +651,18 @@ export function valuationQuery(
     !hasLoc || Number.isNaN(c.latitude[i]) || Number.isNaN(c.longitude[i])
       ? null
       : haversineMeters([lat as number, lng as number], [c.latitude[i], c.longitude[i]]);
-  const isNear = (i: number) => (distTo(i) ?? Infinity) <= COMP_RADIUS_M;
-  // [scope, filter, min sales]. 'lease' accepts a thinner set since a few similar-lease sales
-  // still beat a town-wide mix of old and new blocks.
-  const tiers: [CompScope, (i: number) => boolean, number][] = [];
-  if (leaseKnown && hasLoc) tiers.push(['near', (i) => similarLease(i) && isNear(i), 10]);
-  if (leaseKnown) tiers.push(['lease', similarLease, 5]);
-  tiers.push(['town', () => true, 10]);
+  const dist = new Map<number, number | null>();
+  for (const i of inTownFlat) dist.set(i, distTo(i));
+  const within = (i: number, r: number) => (dist.get(i) ?? Infinity) <= r;
+  // [scope, filter, min sales, radius]. 'near' tightens to the closest ring with enough
+  // similar-lease sales. 'lease' accepts a thinner set since a few similar-lease sales still
+  // beat a town-wide mix of old and new blocks.
+  const tiers: [CompScope, (i: number) => boolean, number, number | null][] = [];
+  if (leaseKnown && hasLoc)
+    for (const r of COMP_RADII)
+      tiers.push(['near', (i) => similarLease(i) && within(i, r), COMP_NEAR_MIN, r]);
+  if (leaseKnown) tiers.push(['lease', similarLease, 5, null]);
+  tiers.push(['town', () => true, 10, null]);
 
   // Sales without a PSF can't price anything, so they never become comps or table rows.
   const priced = inTownFlat.filter((i) => !Number.isNaN(c.psf[i]));
@@ -659,20 +672,22 @@ export function valuationQuery(
   // older sale of a similar flat beats a fresh sale of a dissimilar one. The last tier is
   // used regardless of size.
   let scope: CompScope = 'town';
+  let radius: number | null = null;
   let months: 12 | 24 = 12;
   let comps = in12;
-  pick: for (const [s, keep, min] of tiers)
+  pick: for (const [s, keep, min, r] of tiers)
     for (const [m, src] of [
       [12, in12],
       [24, in24],
     ] as const) {
       const sel = src.filter(keep);
-      [scope, months, comps] = [s, m, sel];
+      [scope, radius, months, comps] = [s, r, m, sel];
       if (sel.length >= min) break pick;
     }
   const tableIdx = months === 12 ? in12 : in24;
   const town12 = inTownFlat.filter((i) => c.month[i] >= c12);
   const townIdx = town12.length ? town12 : inTownFlat.filter((i) => c.month[i] >= c24);
+  const usedIdx = new Set(comps);
   const toComp = (i: number): CompRow => ({
     month: c.month[i],
     address: c.address[i],
@@ -722,11 +737,20 @@ export function valuationQuery(
     comps: comps.map(toComp),
     nearby: tableIdx.flatMap((i) => {
       const match = !leaseKnown || similarLease(i);
-      const dist = distTo(i);
-      return match || (dist ?? Infinity) <= COMP_RADIUS_M ? [{ ...toComp(i), dist, match }] : [];
+      const used = usedIdx.has(i);
+      const d = dist.get(i) ?? null;
+      return match || used || within(i, COMP_RADIUS_M)
+        ? [{ ...toComp(i), dist: d, match, used }]
+        : [];
     }),
     months,
     scope,
+    radius,
+    pool: tableIdx.flatMap((i) =>
+      Number.isNaN(c.psf[i])
+        ? []
+        : [{ slo: c.storey_lower_bound[i], lease: c.remaining_lease_years[i], psf: c.psf[i] }],
+    ),
     town: {
       price: median(gather(c.resale_price, townIdx)),
       area: median(gather(c.floor_area_sqft, townIdx)),

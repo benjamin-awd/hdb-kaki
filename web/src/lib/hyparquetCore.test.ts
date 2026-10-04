@@ -1,4 +1,5 @@
 import { test, expect, describe } from 'bun:test';
+import { COMP_LEASE_BAND } from './valuation';
 import {
   median,
   quantileSorted,
@@ -438,6 +439,59 @@ describe('valuationQuery', () => {
     );
   });
 
+  // Young 3-room sales at `n` × 0.0036° (~400 m) steps north of the flat.
+  const young = (k: number, ring: number, month = '2026-03') =>
+    Array.from({ length: k }, () =>
+      row({
+        town: 'QUEENSTOWN',
+        flat_type: '3 ROOM',
+        month,
+        psf: 1100,
+        remaining_lease_years: 88,
+        latitude: 1.32 + 0.0036 * ring,
+      }),
+    );
+  const at = { town: 'QUEENSTOWN', flat: '3 ROOM', lease: 85, lat: 1.32, lng: 103.9 };
+
+  test('draws comps from the tightest ring with enough similar-lease sales', () => {
+    const v = valuationQuery(cols([...young(10, 0), ...young(20, 1)]), at, NOW);
+    expect([v.scope, v.radius, v.months, v.comps.length]).toEqual(['near', 300, 12, 10]);
+  });
+
+  test('widens the ring to 500 m, then 1 km, when the closer ring is thin', () => {
+    const v500 = valuationQuery(cols([...young(9, 0), ...young(3, 1), ...young(20, 2)]), at, NOW);
+    expect([v500.scope, v500.radius, v500.comps.length]).toEqual(['near', 500, 12]);
+    const v1k = valuationQuery(cols([...young(4, 0), ...young(4, 1), ...young(4, 2)]), at, NOW);
+    expect([v1k.scope, v1k.radius, v1k.comps.length]).toEqual(['near', 1000, 12]);
+  });
+
+  test('widens a ring to 24 months before moving to a wider ring', () => {
+    const v = valuationQuery(
+      cols([...young(6, 0), ...young(5, 0, '2025-03'), ...young(20, 1)]),
+      at,
+      NOW,
+    );
+    expect([v.scope, v.radius, v.months, v.comps.length]).toEqual(['near', 300, 24, 11]);
+  });
+
+  test('flags the table rows that fed the estimate, and lists every comp', () => {
+    // 10 young sales in the 300 m ring, 5 more ~800 m out: only the ring is used.
+    const near = valuationQuery(cols([...young(10, 0), ...young(5, 2)]), at, NOW);
+    expect(near.nearby.filter((r) => r.used)).toHaveLength(10);
+    expect(near.nearby.filter((r) => r.used).every((r) => (r.dist ?? Infinity) <= 300)).toBe(true);
+    // Town-wide fallback (old flat, no similar lease in town): every comp is in the table,
+    // including other-lease sales far beyond 1 km.
+    const old = valuationQuery(cols(young(12, 30)), { ...at, lease: 50 }, NOW);
+    expect(old.scope).toBe('town');
+    expect(old.nearby).toHaveLength(12);
+    expect(old.nearby.every((r) => r.used && !r.match)).toBe(true);
+  });
+
+  test('radius is null outside the near tiers', () => {
+    const v = valuationQuery(cols(mixedTown(1.4)), at, NOW);
+    expect([v.scope, v.radius]).toEqual(['lease', null]);
+  });
+
   test('uses every town sale when lease is unknown', () => {
     const v = valuationQuery(cols(mixedTown()), { town: 'QUEENSTOWN', flat: '3 ROOM' }, NOW);
     expect(v.scope).toBe('town');
@@ -492,13 +546,13 @@ describe('valuationQuery tiers', () => {
     expect(v.scope).toBe('near');
     expect(v.comps.every((c) => c.psf === 1000)).toBe(true);
   });
-  test('lease band is inclusive at ±10 years', () => {
+  test('lease band is inclusive at ±COMP_LEASE_BAND years', () => {
     const v = vq([
-      ...vmany(5, { remaining_lease_years: 90 }),
-      ...vmany(5, { remaining_lease_years: 70 }),
+      ...vmany(5, { remaining_lease_years: 80 + COMP_LEASE_BAND }),
+      ...vmany(5, { remaining_lease_years: 80 - COMP_LEASE_BAND }),
     ]);
     expect([v.scope, v.comps.length]).toEqual(['near', 10]);
-    expect(vq(vmany(10, { remaining_lease_years: 90.01 })).scope).toBe('town');
+    expect(vq(vmany(10, { remaining_lease_years: 80.01 + COMP_LEASE_BAND })).scope).toBe('town');
   });
   test('lease: exactly 5 -> lease/12; 4 -> town/12', () => {
     const five = vq([...vmany(5, LEASE_FAR), ...vmany(30, OLD)]);
