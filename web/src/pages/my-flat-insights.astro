@@ -6,7 +6,6 @@ import SecHead from '../components/SecHead.astro';
 import ChartCard from '../components/ChartCard.astro';
 import DataTable from '../components/DataTable.astro';
 import Pager from '../components/Pager.astro';
-import FieldSelect from '../components/FieldSelect.astro';
 import LeafletMap from '../components/LeafletMap.astro';
 ---
 
@@ -55,8 +54,8 @@ import LeafletMap from '../components/LeafletMap.astro';
             <div class="sub" id="f-area-sub">&nbsp;</div>
           </div>
           <div class="field">
-            <label>Remaining lease</label>
-            <div class="val" id="f-lease">—</div>
+            <label for="f-lease">Remaining lease</label>
+            <select id="f-lease"></select>
             <div class="sub" id="f-lease-sub">From records</div>
           </div>
           <div class="field">
@@ -368,16 +367,9 @@ import LeafletMap from '../components/LeafletMap.astro';
 
       <!-- 05 COMPARABLES -->
       <SecHead num="05" title="Nearby comparables" hintId="comp-hint">
-        Recent sales of the same flat type, same street first. Pick a lease range to compare against
-        older or newer blocks.
+        Recent sales of the same flat type with a matching lease, nearby first, same street first.
       </SecHead>
 
-      <div class="controls" style="margin-bottom:16px">
-        <FieldSelect label="Lease" id="f-comp-lease" />
-        <span class="comp-note" id="comp-note" hidden
-          >Your estimate still uses similar-lease sales.</span
-        >
-      </div>
       <div class="card comp-wrap">
         <DataTable
           headers={[
@@ -1335,10 +1327,6 @@ import LeafletMap from '../components/LeafletMap.astro';
     font-size: 12px;
     color: var(--ink-3);
   }
-  .comp-note {
-    font-size: 13px;
-    color: var(--ink-3);
-  }
   .comp-foot {
     display: flex;
     justify-content: space-between;
@@ -1662,7 +1650,7 @@ import LeafletMap from '../components/LeafletMap.astro';
   // The valuation reads resale.parquet via the hyparquet data worker: postal lookups, comps
   // and benchmarks are computed off the main thread and only the summaries cross back.
   import { byId as $ } from '../lib/dom';
-  import { createHyparquet, type CompRow } from '../lib/hyparquetClient';
+  import { createHyparquet } from '../lib/hyparquetClient';
   import { createUrlState, selectBinding, inputBinding } from '../lib/urlState';
   import { downloadCsv } from '../lib/csv';
 
@@ -1711,8 +1699,7 @@ import LeafletMap from '../components/LeafletMap.astro';
   const ec = (id: string) => (charts[id] ??= initChart($(id)));
   // State the "returns" panel needs so it can recompute on input change without re-querying.
   let currentEstimate = 0;
-  let currentComps: CompRow[] = []; // the comps behind the estimate — for the print summary
-  let shownComps: CompRow[] = []; // the comps the lease dropdown is showing — for the CSV export
+  let currentComps: any[] = []; // last compute()'s comps — for the CSV export
 
   // URL-synced form state (see web/src/lib/urlState.ts). All default to '' so an empty form
   // yields an empty query string; a computed view syncs the full deep link. The selects are
@@ -1724,8 +1711,9 @@ import LeafletMap from '../components/LeafletMap.astro';
       selectBinding('f-flat', 'flat', ''),
       selectBinding('f-storey', 'storey', ''),
       inputBinding('f-area', 'area', ''),
+      selectBinding('f-lease', 'lease', ''),
     ],
-    ['postal', 'flat', 'storey', 'area'],
+    ['postal', 'flat', 'storey', 'area', 'lease'],
   );
   let townYearPrice: Record<string, number> = {}; // 'YYYY' -> town median price for the flat type
   let latestYear = '';
@@ -2382,7 +2370,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     const flat = ($('f-flat') as HTMLSelectElement).value;
     $('f-flat-sub').textContent = block.model || '';
 
-    const { storeys, areaMedian: areaMed } = await qStoreysArea(postal, flat);
+    const { storeys, areaMedian: areaMed, leaseBuckets } = await qStoreysArea(postal, flat);
     const sel = $('f-storey') as HTMLSelectElement;
     sel.innerHTML = storeys.map((s) => `<option>${s.storey_range}</option>`).join('');
     if (storeys.length) sel.selectedIndex = Math.floor(storeys.length / 2); // default mid-floor
@@ -2391,9 +2379,30 @@ import LeafletMap from '../components/LeafletMap.astro';
       ($('f-area') as HTMLInputElement).value = String(Math.round(areaMed));
       $('f-area-sub').textContent = `≈ typical for this block`;
     }
+    // Default ('') values the flat against similar-lease sales; the other options let the user
+    // compare against a specific lease range in town (e.g. the older blocks next door).
     const rem = remainingLease();
-    $('f-lease').textContent = rem ? `${rem} yr` : '—';
-    $('f-lease-sub').textContent = block.lc ? `Commenced ${block.lc}` : 'From records';
+    ($('f-lease') as HTMLSelectElement).innerHTML =
+      `<option value="">${rem ? `${rem} yr` : '—'}</option>` +
+      `<option value="any">Any lease</option>` +
+      leaseBuckets
+        .map(
+          (b) =>
+            `<option value="${b.bucket}">${b.bucket}–${b.bucket + 9} yr (${b.n} sales)</option>`,
+        )
+        .join('');
+    onLeaseChange();
+  }
+
+  function onLeaseChange() {
+    const pick = ($('f-lease') as HTMLSelectElement).value;
+    $('f-lease-sub').textContent = !pick
+      ? block.lc
+        ? `Commenced ${block.lc}`
+        : 'From records'
+      : pick === 'any'
+        ? 'Comparing against all lease ages'
+        : `Comparing against ${pick}–${Number(pick) + 9} yr flats`;
   }
 
   // ================= render helpers for the new insight sections =================
@@ -2657,131 +2666,6 @@ import LeafletMap from '../components/LeafletMap.astro';
     ($('comp-next') as HTMLButtonElement).disabled = end >= total;
   }
 
-  // ---- comparables lease filter ----
-  // The estimate always uses `similar` (lease-matched, nearby first); the dropdown only changes
-  // which sales the table, histogram and map pins show, so older or newer blocks can be browsed.
-  let compView: {
-    similar: CompRow[];
-    town: CompRow[];
-    months: number;
-    scope: string;
-    compWhere: string;
-    townName: string;
-    flat: string;
-    medPsf: number;
-  } | null = null;
-
-  function fillLeaseSelect(rem: number) {
-    if (!compView) return;
-    const sel = $('f-comp-lease') as HTMLSelectElement;
-    const counts = new Map<number, number>();
-    for (const c of compView.town) {
-      const b = Math.floor(c.lease / 10) * 10;
-      counts.set(b, (counts.get(b) ?? 0) + 1);
-    }
-    const buckets = [...counts].sort((a, b) => a[0] - b[0]);
-    // Without a known lease the estimate already uses every town sale, so "Similar" is moot.
-    const similar =
-      compView.scope === 'town'
-        ? ''
-        : `<option value="similar">Similar (${Math.max(1, rem - 10)}–${Math.min(99, rem + 10)} yrs left)</option>`;
-    sel.innerHTML =
-      similar +
-      `<option value="any">Any lease</option>` +
-      `<option disabled>──────────</option>` +
-      buckets
-        .map(([b, n]) => `<option value="${b}">${b}–${b + 9} yrs left (${n})</option>`)
-        .join('');
-    sel.value = similar ? 'similar' : 'any';
-  }
-
-  function drawCompPins(rows: CompRow[]) {
-    compsLayer.clearLayers();
-    rows.forEach((c) => {
-      if (c.lat == null || c.lng == null) return;
-      L.circleMarker([c.lat, c.lng], {
-        radius: 6,
-        weight: 1.5,
-        color: '#fff',
-        fillColor: '#c9bfae',
-        fillOpacity: 0.9,
-      })
-        .bindTooltip(
-          `<b>${titleCase(c.address)}</b><br/>${c.month} · ${c.storey_range}<br/><b>${money(c.price)}</b> · ${fpsf(c.psf)} psf`,
-          { direction: 'top', offset: [0, -6], opacity: 1, className: 'hdb-tip' },
-        )
-        .addTo(compsLayer);
-    });
-  }
-
-  function renderCompView() {
-    if (!compView) return;
-    const { similar, town, months, scope, compWhere, townName, flat, medPsf } = compView;
-    const pick = ($('f-comp-lease') as HTMLSelectElement).value || 'similar';
-    const bucket = Number(pick);
-    const comps =
-      pick === 'similar'
-        ? similar
-        : pick === 'any'
-          ? town
-          : town.filter((c) => Math.floor(c.lease / 10) * 10 === bucket);
-    const where =
-      pick === 'similar'
-        ? compWhere
-        : pick === 'any'
-          ? `in ${townName}`
-          : `in ${townName} with ${bucket}–${bucket + 9} yrs left`;
-    $('comp-note').hidden = pick === 'similar' || scope === 'town';
-    shownComps = comps;
-
-    // table: same street first, then recency
-    const sameStreet = (c: CompRow) => c.street_name === block.street;
-    const sorted = [...comps].sort(
-      (a, b) => Number(sameStreet(b)) - Number(sameStreet(a)) || b.month.localeCompare(a.month),
-    );
-    // Group the sorted comps into "same street" then "elsewhere in town", and build a divider
-    // per group. Only when both groups exist (that's the only case where the Sold dates reset)
-    // do we tag rows with a section key — otherwise there's no boundary to explain.
-    const sameCount = sorted.filter(sameStreet).length;
-    const elseCount = sorted.length - sameCount;
-    const useSections = sameCount > 0 && elseCount > 0;
-    const secRow = (label: string, count: number) =>
-      `<tr class="comp-section"><td colspan="7"><span class="cs-lab">${label}</span><span class="cs-n">${count.toLocaleString()} ${count === 1 ? 'sale' : 'sales'}</span></td></tr>`;
-    compSectionHeaders = useSections
-      ? {
-          same: secRow(`Same street · ${titleCase(block.street)}`, sameCount),
-          else: secRow(
-            pick === 'similar' && scope === 'near'
-              ? 'Elsewhere nearby'
-              : `Elsewhere in ${townName}`,
-            elseCount,
-          ),
-        }
-      : {};
-    compRowGroups = sorted.map((c) => (useSections ? (sameStreet(c) ? 'same' : 'else') : ''));
-    // Comparables table — paged 8 at a time (see renderComps). The "your flat" row always
-    // leads each page; renderComps pages only the comps below it.
-    compRowsHtml = sorted.map(
-      (
-        c,
-      ) => `<tr><td class="addr" data-role="title"><b>${titleCase(c.address)}</b><br><span class="st">${titleCase(c.street_name)}</span></td>
-      <td data-role="meta">${c.storey_range}</td><td class="r" data-role="meta" data-suffix="sqft">${c.area.toLocaleString()}</td><td class="r" data-role="meta">${c.lease} yr</td>
-      <td class="r price" data-role="primary">${money(c.price)}</td><td class="r psf" data-role="meta" data-suffix="psf">${fpsf(c.psf)}</td><td class="r" data-role="meta">${c.month}</td><td class="tbreak" aria-hidden="true"></td></tr>`,
-    );
-    compFootSuffix = `comparable sales · last ${months} months · ${where}`;
-    compPage = 0; // new valuation → back to the first page
-    renderComps();
-
-    // 03 · distribution of the shown comps, with the estimate marked
-    renderDistribution(
-      comps.map((c) => c.psf),
-      medPsf,
-      flat,
-      where,
-    );
-    drawCompPins(comps);
-  }
-
   async function compute() {
     const flat = ($('f-flat') as HTMLSelectElement).value;
     const storey = ($('f-storey') as HTMLSelectElement).value;
@@ -2792,22 +2676,31 @@ import LeafletMap from '../components/LeafletMap.astro';
     // One worker round-trip returns everything this valuation needs from the dataset: comps
     // (same town+flat, 12mo → widened to 24 if thin), island medians, the yearly trajectory,
     // and the lease-decay buckets. All the shaping below stays on the (cheap) main thread.
-    const { comps, townComps, months, scope, town, island, trajectory, leaseTown, leaseIsland } =
+    // Lease to match comps on: the flat's own (±10 yrs) by default, or the range picked in the form.
+    const leasePick = ($('f-lease') as HTMLSelectElement).value;
+    const bucket = Number(leasePick);
+    const leaseOpt = !leasePick
+      ? { lease: rem }
+      : leasePick === 'any'
+        ? { lease: 0 }
+        : { lease: bucket + 4.5, leaseBand: 4.5 };
+    const { comps, months, scope, town, island, trajectory, leaseTown, leaseIsland } =
       await qValuation({
         town: block.town,
         flat,
-        lease: rem,
+        ...leaseOpt,
         lat: userLatLng?.[0] ?? null,
         lng: userLatLng?.[1] ?? null,
       });
-    // Where the comps came from, for the copy: the worker narrows to similar-lease sales nearby,
+    // Where the comps came from, for the copy: the worker narrows to lease-matched sales nearby,
     // then town-wide, before falling back to every sale in town.
     const townName = titleCase(block.town);
+    const leaseWhat = leasePick ? `${bucket}–${bucket + 9} yrs left` : 'a similar lease (±10 yrs)';
     const compWhere =
       scope === 'near'
-        ? `within 1 km with a similar lease (±10 yrs)`
+        ? `within 1 km with ${leaseWhat}`
         : scope === 'lease'
-          ? `in ${townName} with a similar lease (±10 yrs)`
+          ? `in ${townName} with ${leaseWhat}`
           : `in ${townName}`;
     const islandPsf = island.psf,
       islandPrice = island.price,
@@ -2912,25 +2805,54 @@ import LeafletMap from '../components/LeafletMap.astro';
     nowEl.style.left = `${((99 - rem) / 99) * 100}%`;
     nowEl.setAttribute('data-label', `You are here · ${rem}y`);
 
-    // comparables (table, histogram, map pins) — re-rendered on lease dropdown change
-    compView = {
-      similar: comps,
-      town: townComps,
-      months,
-      scope,
-      compWhere,
-      townName,
-      flat,
-      medPsf,
-    };
-    compYouRow = `<tr class="you"><td class="addr" data-role="title"><b>${titleCase(block.address)}</b><span class="badge">YOUR FLAT</span><br><span class="st">Estimated</span></td>
+    // comparables table (same street first, then recency)
+    const sameStreet = (c: any) => c.street_name === block.street;
+    const sorted = [...comps].sort(
+      (a, b) => Number(sameStreet(b)) - Number(sameStreet(a)) || b.month.localeCompare(a.month),
+    );
+    // Group the sorted comps into "same street" then "elsewhere in town", and build a divider
+    // per group. Only when both groups exist (that's the only case where the Sold dates reset)
+    // do we tag rows with a section key — otherwise there's no boundary to explain.
+    const sameCount = sorted.filter(sameStreet).length;
+    const elseCount = sorted.length - sameCount;
+    const useSections = sameCount > 0 && elseCount > 0;
+    const secRow = (label: string, count: number) =>
+      `<tr class="comp-section"><td colspan="7"><span class="cs-lab">${label}</span><span class="cs-n">${count.toLocaleString()} ${count === 1 ? 'sale' : 'sales'}</span></td></tr>`;
+    compSectionHeaders = useSections
+      ? {
+          same: secRow(`Same street · ${titleCase(block.street)}`, sameCount),
+          else: secRow(
+            scope === 'near' ? 'Elsewhere nearby' : `Elsewhere in ${townName}`,
+            elseCount,
+          ),
+        }
+      : {};
+    compRowGroups = sorted.map((c) => (useSections ? (sameStreet(c) ? 'same' : 'else') : ''));
+    const youRow = `<tr class="you"><td class="addr" data-role="title"><b>${titleCase(block.address)}</b><span class="badge">YOUR FLAT</span><br><span class="st">Estimated</span></td>
       <td data-role="meta">${storey}</td><td class="r" data-role="meta" data-suffix="sqft">${area.toLocaleString()}</td><td class="r" data-role="meta">${rem} yr</td>
       <td class="r price" data-role="primary">${money(estimate)}</td><td class="r psf" data-role="meta" data-suffix="psf">${fpsf(medPsf)}</td><td class="r" data-role="meta">—</td><td class="tbreak" aria-hidden="true"></td></tr>`;
-    fillLeaseSelect(rem);
-    renderCompView();
+    // Comparables table — paged 8 at a time (see renderComps). The "your flat" row always
+    // leads each page; renderComps pages only the comps below it.
+    compYouRow = youRow;
+    compRowsHtml = sorted.map(
+      (
+        c,
+      ) => `<tr><td class="addr" data-role="title"><b>${titleCase(c.address)}</b><br><span class="st">${titleCase(c.street_name)}</span></td>
+      <td data-role="meta">${c.storey_range}</td><td class="r" data-role="meta" data-suffix="sqft">${c.area.toLocaleString()}</td><td class="r" data-role="meta">${c.lease} yr</td>
+      <td class="r price" data-role="primary">${money(c.price)}</td><td class="r psf" data-role="meta" data-suffix="psf">${fpsf(c.psf)}</td><td class="r" data-role="meta">${c.month}</td><td class="tbreak" aria-hidden="true"></td></tr>`,
+    );
+    compFootSuffix = `comparable sales · last ${months} months · ${compWhere}`;
+    compPage = 0; // new valuation → back to the first page
+    renderComps();
 
     // ---- new insight sections: trajectory, distribution, market tiles, lease, storey ----
-    // 03 · market texture tiles (derived from the estimate's comps)
+    // 03 · distribution + market texture tiles (derived from comps already fetched)
+    renderDistribution(
+      comps.map((c) => c.psf),
+      medPsf,
+      flat,
+      compWhere,
+    );
     const perMonth = comps.length / months;
     $('mt-vel').textContent = comps.length.toLocaleString();
     $('mt-vel-s').textContent = `${flat.toLowerCase()} ${compWhere} · ~${perMonth.toFixed(1)}/mo`;
@@ -2967,9 +2889,24 @@ import LeafletMap from '../components/LeafletMap.astro';
 
     // map: comps (grey, own toggleable layer) + your block (red, always shown)
     layer.clearLayers();
-    const pts: [number, number][] = comps
-      .filter((c) => c.lat != null && c.lng != null)
-      .map((c) => [c.lat as number, c.lng as number]);
+    compsLayer.clearLayers();
+    const pts: [number, number][] = [];
+    comps.forEach((c) => {
+      if (c.lat == null || c.lng == null) return;
+      pts.push([c.lat, c.lng]);
+      L.circleMarker([c.lat, c.lng], {
+        radius: 6,
+        weight: 1.5,
+        color: '#fff',
+        fillColor: '#c9bfae',
+        fillOpacity: 0.9,
+      })
+        .bindTooltip(
+          `<b>${titleCase(c.address)}</b><br/>${c.month} · ${c.storey_range}<br/><b>${money(c.price)}</b> · ${fpsf(c.psf)} psf`,
+          { direction: 'top', offset: [0, -6], opacity: 1, className: 'hdb-tip' },
+        )
+        .addTo(compsLayer);
+    });
     if (userLatLng) {
       pts.push(userLatLng);
       flatMarker = L.circleMarker(userLatLng, {
@@ -3060,6 +2997,10 @@ import LeafletMap from '../components/LeafletMap.astro';
     compute();
   });
   ['f-storey', 'f-area'].forEach((id) => $(id).addEventListener('change', compute));
+  $('f-lease').addEventListener('change', () => {
+    onLeaseChange();
+    compute();
+  });
   // Amenity category chips: each toggles its layer of nearby hawker/food, supermarket, or mall
   // pins. Independent (multi-select); toggling only redraws the amenity layer, no re-valuation.
   $('ins-amenities')
@@ -3130,11 +3071,11 @@ import LeafletMap from '../components/LeafletMap.astro';
   });
 
   $('dl-comps').addEventListener('click', () => {
-    if (!shownComps.length) return;
+    if (!currentComps.length) return;
     downloadCsv(
       'my-flat-comps.csv',
       ['month', 'address', 'street_name', 'storey_range', 'area', 'lease', 'price', 'psf'],
-      shownComps.map((c) => [
+      currentComps.map((c) => [
         c.month,
         c.address,
         c.street_name,
@@ -3149,10 +3090,6 @@ import LeafletMap from '../components/LeafletMap.astro';
 
   // Comparables pager — client-side paging over the comps already fetched (the pinned "your
   // flat" row rides atop every page, so it's not counted in the paging).
-  $('f-comp-lease').addEventListener('change', () => {
-    compPage = 0;
-    renderCompView();
-  });
   $('comp-prev').addEventListener('click', () => {
     if (compPage > 0) {
       compPage--;
@@ -3191,6 +3128,11 @@ import LeafletMap from '../components/LeafletMap.astro';
     if (storey) ($('f-storey') as HTMLSelectElement).value = storey;
     const area = params.get('area');
     if (area) ($('f-area') as HTMLInputElement).value = area;
+    const lease = params.get('lease');
+    if (lease) {
+      ($('f-lease') as HTMLSelectElement).value = lease;
+      onLeaseChange();
+    }
     await compute();
     document.querySelector('.results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
