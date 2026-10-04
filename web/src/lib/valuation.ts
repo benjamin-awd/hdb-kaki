@@ -47,6 +47,9 @@ export interface Valuation {
   /** Storey premium, $ psf per floor (0 = no adjustment). */
   slope: number;
   useStorey: boolean;
+  /** The floor the storey premium was capped at, when the chosen storey lies outside the
+   * floors the premium was fitted on; null when it wasn't capped. */
+  storeyClampedTo: number | null;
   /** Median shift from moving the comps to this flat's storey, %. */
   storeyAdjPct: number;
   /** Lease premium, $ psf per year of remaining lease (0 = no adjustment). */
@@ -73,9 +76,17 @@ export function valuate(
   // - Per-year lease premium: fitted on every town sale of the type. A pool that doesn't move
   //   with this flat's lease keeps the coefficient stable year to year (fitting it on the
   //   lease band swung it several-fold as sales crossed the band edge).
-  const userLo = parseInt(storey, 10) || 0; // "10 TO 12" -> 10
   const matched = nearby.filter((c) => c.match);
-  const slope = fitPremiums(matched.length >= 10 ? matched : comps).storey;
+  const storeyPool = matched.length >= 10 ? matched : comps;
+  const slope = fitPremiums(storeyPool).storey;
+  // Don't extrapolate the per-floor premium past the floors it was fitted on: a flat above
+  // every sale is valued as the highest floor sold (likewise below the lowest).
+  const askedLo = parseInt(storey, 10) || 0; // "10 TO 12" -> 10
+  const floors = storeyPool.map((c) => c.slo);
+  const userLo =
+    askedLo && floors.length
+      ? Math.min(Math.max(askedLo, Math.min(...floors)), Math.max(...floors))
+      : askedLo;
   const leaseCoef = lease > 0 ? fitPremiums(v.pool).lease : 0;
   const useStorey = slope > 0 && userLo > 0;
   const atStorey = (c: CompRow) => c.psf + (useStorey ? slope * (userLo - c.slo) : 0);
@@ -101,6 +112,7 @@ export function valuate(
     barHi: quantile(rawPsfs, 0.9) * area,
     slope,
     useStorey,
+    storeyClampedTo: useStorey && userLo !== askedLo ? userLo : null,
     storeyAdjPct: baseMedPsf ? (storeyMedPsf / baseMedPsf - 1) * 100 : 0,
     leaseCoef,
     leaseAdjPct: storeyMedPsf ? (medPsf / storeyMedPsf - 1) * 100 : 0,
