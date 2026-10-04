@@ -9,14 +9,20 @@ export interface StoreyPoint {
   psf: number;
 }
 
+/** Fewest sales the premiums are fitted on; below this there's no adjustment. */
+export const STOREY_MIN_N = 10;
+
 /** OLS coefficients of `psf ~ a + storey·slo + lease·lease`, each clamped at 0 (a negative fit
  * is noise: higher floors and longer leases don't sell at a discount). Both 0 when fewer than
- * `minN` points or when storey and lease are collinear; a variable with no variation gets 0
- * and the other is fitted alone. */
+ * `minN` usable (all-finite) points or when storey and lease are collinear; a variable with no
+ * variation gets 0 and the other is fitted alone. */
 export function fitPremiums(
-  pts: readonly StoreyPoint[],
-  minN = 10,
+  all: readonly StoreyPoint[],
+  minN = STOREY_MIN_N,
 ): { storey: number; lease: number } {
+  const pts = all.filter(
+    (p) => Number.isFinite(p.slo) && Number.isFinite(p.lease) && Number.isFinite(p.psf),
+  );
   if (pts.length < minN) return { storey: 0, lease: 0 };
   const n = pts.length;
   const mx = pts.reduce((s, p) => s + p.slo, 0) / n;
@@ -42,7 +48,7 @@ export function fitPremiums(
   if (!sll) return { storey: sxx ? pos(sxy / sxx) : 0, lease: 0 };
   if (!sxx) return { storey: 0, lease: pos(sly / sll) };
   const det = sxx * sll - sxl * sxl;
-  if (Math.abs(det) < 1e-9 * sxx * sll) return { storey: 0, lease: 0 }; // collinear
+  if (Math.abs(det) <= 1e-9 * sxx * sll) return { storey: 0, lease: 0 }; // collinear
   return {
     storey: pos((sxy * sll - sly * sxl) / det),
     lease: pos((sly * sxx - sxy * sxl) / det),
@@ -50,7 +56,7 @@ export function fitPremiums(
 }
 
 /** PSF per floor from `fitPremiums` (0 when it can't be fitted). */
-export function storeySlope(pts: readonly StoreyPoint[], minN = 10): number {
+export function storeySlope(pts: readonly StoreyPoint[], minN = STOREY_MIN_N): number {
   return fitPremiums(pts, minN).storey;
 }
 
