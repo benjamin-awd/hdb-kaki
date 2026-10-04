@@ -8,6 +8,10 @@ export const formatThousands = (raw: string): string => {
   return digits ? Number(digits).toLocaleString('en-SG') : '';
 };
 
+/** Smallest purchase price the returns panel accepts; below this the gain is noise
+ *  (a typo like "380" for "380,000" would otherwise read as a 100,000% return). */
+export const MIN_PAID = 10_000;
+
 /** Parse a possibly comma-formatted price back to a number; invalid -> 0. */
 export const parsePrice = (v: string): number => Number(v.replace(/,/g, '')) || 0;
 
@@ -46,11 +50,13 @@ export interface ReturnStats {
   townCagr: number; // town's annualised return % (NaN when no town data)
   beat: number; // cagr - townCagr (NaN when no town data)
   haveTown: boolean; // whether a town benchmark was available
+  seriesStart: string; // first year of the town series ('' when empty)
 }
 
-/** Compute the "Return since purchase" figures. When town data exists, the user's
- *  CAGR is annualised over the SAME span as the town (bYear -> latestYear) so the
- *  two are like-for-like; otherwise it falls back to the actual holding period. */
+/** Compute the "Return since purchase" figures. When town data covers the buy year, the
+ *  user's CAGR is annualised over the SAME span as the town (bYear -> latestYear) so the
+ *  two are like-for-like; otherwise (no series, or bought before it starts) it falls back
+ *  to the actual holding period and drops the benchmark. */
 export function computeReturns(
   paid: number,
   buyYear: number,
@@ -63,13 +69,16 @@ export function computeReturns(
   const gain = estimate - paid;
   const totRet = (estimate / paid - 1) * 100;
   const bYear = nearestYear(townYearPrice, buyYear);
+  const years = Object.keys(townYearPrice).map(Number);
+  const seriesStart = years.length ? String(Math.min(...years)) : '';
   const py = townYearPrice[bYear],
     cy = townYearPrice[latestYear];
   const span = Number(latestYear) - Number(bYear);
-  const haveTown = !!py && !!cy && span > 0;
+  // Snapping a pre-series buy year forward (1990 -> 2017) would annualise over the wrong span.
+  const haveTown = !!py && !!cy && span > 0 && buyYear >= Number(seriesStart);
   const period = haveTown ? span : hold;
   const cagr = (Math.pow(estimate / paid, 1 / period) - 1) * 100;
   const townCagr = haveTown ? (Math.pow(cy / py, 1 / span) - 1) * 100 : NaN;
   const beat = cagr - townCagr;
-  return { hold, gain, totRet, cagr, townCagr, beat, haveTown };
+  return { hold, gain, totRet, cagr, townCagr, beat, haveTown, seriesStart };
 }
