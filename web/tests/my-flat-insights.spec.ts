@@ -25,27 +25,19 @@ test('resolves a postal and values the flat via the worker', async ({ page }) =>
   await expect(page.locator('#val-big')).not.toHaveText('—');
 });
 
-test('picking a lease range re-values the flat against those sales', async ({ page }) => {
+test('values a young block in a mixed-age town against similar-lease sales', async ({ page }) => {
   await page.goto('/my-flat-insights/');
 
-  // 270026 (26 Ghim Moh Link, 2013 lease) sits in Queenstown among 1970s blocks, so the town
-  // has both similar-lease and much older sales to value against.
+  // 270026 (26 Ghim Moh Link, 2013 lease) sits in Queenstown among 1970s blocks. The estimate
+  // matches on lease, and the older blocks nearby get their own comparables section.
   await page.fill('#f-postal', '270026');
   await page.click('#get-insights');
   await expect(page.locator('#val-big')).not.toHaveText('—', { timeout: 45_000 });
-  await expect(page.locator('#f-lease')).toHaveValue('');
-  const own = await page.locator('#val-big').textContent();
+  await expect(page.locator('#f-lease')).toHaveText(/^\d+ yr$/);
+  await expect(page.locator('#val-hint')).toContainText('similar lease');
 
-  const lease = page.locator('#f-lease');
-  const oldest = await lease
-    .locator('option:not([value=""]):not([value="any"])')
-    .first()
-    .getAttribute('value');
-  await lease.selectOption(oldest!);
-  await expect(page.locator('#f-lease-sub')).toContainText(`${oldest}–${Number(oldest) + 9} yr`);
-  await expect(page.locator('#comp-body .cs-lab').first()).toContainText(
-    `${oldest}–${Number(oldest) + 9} yr · elsewhere in Queenstown`,
-  );
-  await expect(page.locator('#val-big')).not.toHaveText(own!);
-  await expect(page).toHaveURL(new RegExp(`lease=${oldest}`));
+  for (let i = 0; i < 60 && !(await page.locator('#comp-next').isDisabled()); i++)
+    await page.click('#comp-next');
+  await expect(page.locator('#comp-body .cs-lab').last()).toHaveText('Older flats nearby');
+  await expect(page.locator('#comp-body .cs-n').last()).toContainText('psf');
 });

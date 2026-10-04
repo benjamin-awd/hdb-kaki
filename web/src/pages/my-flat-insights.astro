@@ -54,8 +54,8 @@ import LeafletMap from '../components/LeafletMap.astro';
             <div class="sub" id="f-area-sub">&nbsp;</div>
           </div>
           <div class="field">
-            <label for="f-lease">Remaining lease</label>
-            <select id="f-lease"></select>
+            <label>Remaining lease</label>
+            <div class="val" id="f-lease">—</div>
             <div class="sub" id="f-lease-sub">From records</div>
           </div>
           <div class="field">
@@ -366,8 +366,8 @@ import LeafletMap from '../components/LeafletMap.astro';
 
       <!-- 05 COMPARABLES -->
       <SecHead num="05" title="Nearby comparables" hintId="comp-hint">
-        Recent sales of the same flat type: the same street first, then the same lease range across
-        town, then newer and older flats nearby.
+        Recent sales of the same flat type: the same street first, then similar-lease flats in town,
+        then older and newer blocks nearby for comparison.
       </SecHead>
 
       <div class="card comp-wrap">
@@ -1713,9 +1713,8 @@ import LeafletMap from '../components/LeafletMap.astro';
       selectBinding('f-flat', 'flat', ''),
       selectBinding('f-storey', 'storey', ''),
       inputBinding('f-area', 'area', ''),
-      selectBinding('f-lease', 'lease', ''),
     ],
-    ['postal', 'flat', 'storey', 'area', 'lease'],
+    ['postal', 'flat', 'storey', 'area'],
   );
   let townYearPrice: Record<string, number> = {}; // 'YYYY' -> town median price for the flat type
   let latestYear = '';
@@ -2372,7 +2371,7 @@ import LeafletMap from '../components/LeafletMap.astro';
     const flat = ($('f-flat') as HTMLSelectElement).value;
     $('f-flat-sub').textContent = block.model || '';
 
-    const { storeys, areaMedian: areaMed, leaseBuckets } = await qStoreysArea(postal, flat);
+    const { storeys, areaMedian: areaMed } = await qStoreysArea(postal, flat);
     const sel = $('f-storey') as HTMLSelectElement;
     sel.innerHTML = storeys.map((s) => `<option>${s.storey_range}</option>`).join('');
     if (storeys.length) sel.selectedIndex = Math.floor(storeys.length / 2); // default mid-floor
@@ -2381,30 +2380,9 @@ import LeafletMap from '../components/LeafletMap.astro';
       ($('f-area') as HTMLInputElement).value = String(Math.round(areaMed));
       $('f-area-sub').textContent = `≈ typical for this block`;
     }
-    // Default ('') values the flat against similar-lease sales; the other options let the user
-    // compare against a specific lease range in town (e.g. the older blocks next door).
     const rem = remainingLease();
-    ($('f-lease') as HTMLSelectElement).innerHTML =
-      `<option value="">${rem ? `${rem} yr` : '—'}</option>` +
-      `<option value="any">Any lease</option>` +
-      leaseBuckets
-        .map(
-          (b) =>
-            `<option value="${b.bucket}">${b.bucket}–${b.bucket + 9} yr (${b.n} sales)</option>`,
-        )
-        .join('');
-    onLeaseChange();
-  }
-
-  function onLeaseChange() {
-    const pick = ($('f-lease') as HTMLSelectElement).value;
-    $('f-lease-sub').textContent = !pick
-      ? block.lc
-        ? `Commenced ${block.lc}`
-        : 'From records'
-      : pick === 'any'
-        ? 'Comparing against all lease ages'
-        : `Comparing against ${pick}–${Number(pick) + 9} yr flats`;
+    $('f-lease').textContent = rem ? `${rem} yr` : '—';
+    $('f-lease-sub').textContent = block.lc ? `Commenced ${block.lc}` : 'From records';
   }
 
   // ================= render helpers for the new insight sections =================
@@ -2678,31 +2656,22 @@ import LeafletMap from '../components/LeafletMap.astro';
     // One worker round-trip returns everything this valuation needs from the dataset: comps
     // (same town+flat, 12mo → widened to 24 if thin), island medians, the yearly trajectory,
     // and the lease-decay buckets. All the shaping below stays on the (cheap) main thread.
-    // Lease to match comps on: the flat's own (±10 yrs) by default, or the range picked in the form.
-    const leasePick = ($('f-lease') as HTMLSelectElement).value;
-    const bucket = Number(leasePick);
-    const leaseOpt = !leasePick
-      ? { lease: rem }
-      : leasePick === 'any'
-        ? { lease: 0 }
-        : { lease: bucket + 4.5, leaseBand: 4.5 };
     const { comps, nearby, months, scope, town, island, trajectory, leaseTown, leaseIsland } =
       await qValuation({
         town: block.town,
         flat,
-        ...leaseOpt,
+        lease: rem,
         lat: userLatLng?.[0] ?? null,
         lng: userLatLng?.[1] ?? null,
       });
     // Where the comps came from, for the copy: the worker narrows to lease-matched sales nearby,
     // then town-wide, before falling back to every sale in town.
     const townName = titleCase(block.town);
-    const leaseWhat = leasePick ? `${bucket}–${bucket + 9} yrs left` : 'a similar lease (±10 yrs)';
     const compWhere =
       scope === 'near'
-        ? `within 1 km with ${leaseWhat}`
+        ? `within 1 km with a similar lease (±10 yrs)`
         : scope === 'lease'
-          ? `in ${townName} with ${leaseWhat}`
+          ? `in ${townName} with a similar lease (±10 yrs)`
           : `in ${townName}`;
     const islandPsf = island.psf,
       islandPrice = island.price,
@@ -2824,15 +2793,12 @@ import LeafletMap from '../components/LeafletMap.astro';
     // comparables table, in sections: your street (matched lease, newest first), then the
     // matched lease elsewhere in town, then newer/older flats nearby (each nearest first). The
     // section headers explain why the Sold dates reset at each boundary.
-    const target = !leasePick ? rem : leasePick === 'any' ? 0 : bucket + 4.5;
-    const matchLabel = !leasePick
-      ? 'Similar lease'
-      : leasePick === 'any'
-        ? ''
-        : `${bucket}–${bucket + 9} yr`;
+    // Older/newer sections answer "how do the other blocks nearby compare?" without changing
+    // the estimate; each header carries its median PSF when enough sales back it.
+    const matchLabel = rem ? 'Similar lease' : '';
     const sectionOf = (c: NearbyRow) =>
       !c.match
-        ? c.lease > target
+        ? c.lease > rem
           ? 'newer'
           : 'older'
         : c.street_name === block.street
@@ -2846,11 +2812,11 @@ import LeafletMap from '../components/LeafletMap.astro';
         (sectionOf(a) === 'same' ? 0 : byDist(a, b)) ||
         b.month.localeCompare(a.month),
     );
-    const counts: Record<string, number> = {};
-    sorted.forEach((c) => (counts[sectionOf(c)] = (counts[sectionOf(c)] ?? 0) + 1));
-    const useSections = Object.keys(counts).length > 1;
-    const secRow = (label: string, count: number) =>
-      `<tr class="comp-section"><td colspan="7"><span class="cs-lab">${label}</span><span class="cs-n">${count.toLocaleString()} ${count === 1 ? 'sale' : 'sales'}</span></td></tr>`;
+    const secPsfs: Record<string, number[]> = {};
+    sorted.forEach((c) => (secPsfs[sectionOf(c)] ??= []).push(c.psf));
+    const useSections = Object.keys(secPsfs).length > 1;
+    const secRow = (label: string, psfs: number[]) =>
+      `<tr class="comp-section"><td colspan="7"><span class="cs-lab">${label}</span><span class="cs-n">${psfs.length.toLocaleString()} ${psfs.length === 1 ? 'sale' : 'sales'}${psfs.length >= 5 ? ` · median ${fpsf(med(psfs))} psf` : ''}</span></td></tr>`;
     const secLabels: Record<string, string> = {
       same: `Same street · ${titleCase(block.street)}`,
       else: matchLabel ? `${matchLabel} · elsewhere in ${townName}` : `Elsewhere in ${townName}`,
@@ -2858,7 +2824,7 @@ import LeafletMap from '../components/LeafletMap.astro';
       older: 'Older flats nearby',
     };
     compSectionHeaders = useSections
-      ? Object.fromEntries(Object.entries(counts).map(([k, n]) => [k, secRow(secLabels[k], n)]))
+      ? Object.fromEntries(Object.entries(secPsfs).map(([k, ps]) => [k, secRow(secLabels[k], ps)]))
       : {};
     compRowGroups = sorted.map((c) => (useSections ? sectionOf(c) : ''));
     tableComps = sorted;
@@ -3037,10 +3003,6 @@ import LeafletMap from '../components/LeafletMap.astro';
     compute();
   });
   ['f-storey', 'f-area'].forEach((id) => $(id).addEventListener('change', compute));
-  $('f-lease').addEventListener('change', () => {
-    onLeaseChange();
-    compute();
-  });
   // Amenity category chips: each toggles its layer of nearby hawker/food, supermarket, or mall
   // pins. Independent (multi-select); toggling only redraws the amenity layer, no re-valuation.
   $('ins-amenities')
@@ -3168,11 +3130,6 @@ import LeafletMap from '../components/LeafletMap.astro';
     if (storey) ($('f-storey') as HTMLSelectElement).value = storey;
     const area = params.get('area');
     if (area) ($('f-area') as HTMLInputElement).value = area;
-    const lease = params.get('lease');
-    if (lease) {
-      ($('f-lease') as HTMLSelectElement).value = lease;
-      onLeaseChange();
-    }
     await compute();
     document.querySelector('.results')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }

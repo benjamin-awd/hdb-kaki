@@ -330,8 +330,6 @@ export interface BlockMeta {
 export interface StoreysArea {
   storeys: { storey_range: string; lo: number }[];
   areaMedian: number;
-  /** Town sales of the flat type in the last 24 months, by 10-year remaining-lease bucket. */
-  leaseBuckets: { bucket: number; n: number }[];
 }
 export interface LeaseBucket {
   bucket: number;
@@ -584,25 +582,11 @@ export function resolveBlockQuery(c: Columns, postal: number): BlockMeta | null 
   };
 }
 
-/** Dependent fields for a postal+flat: storey ranges (min lower-bound, ASC), median area, and
- * the town's lease buckets for the flat type (ASC). */
-export function storeysAreaQuery(
-  c: Columns,
-  postal: number,
-  flat: string,
-  now?: Date,
-): StoreysArea {
+/** Dependent fields for a postal+flat: storey ranges (min lower-bound, ASC) + median area. */
+export function storeysAreaQuery(c: Columns, postal: number, flat: string): StoreysArea {
   const idx: number[] = [];
   for (let i = 0; i < c.n; i++) if (c.postal[i] === postal && c.flat_type[i] === flat) idx.push(i);
-  const town = idx.length ? c.town[idx[0]] : '';
-  const c24 = monthsAgo(24, now);
-  const inTown: number[] = [];
-  for (let i = 0; i < c.n; i++)
-    if (c.town[i] === town && c.flat_type[i] === flat && c.month[i] >= c24) inTown.push(i);
   return {
-    leaseBuckets: [...groupBy(inTown, (i) => Math.floor(c.remaining_lease_years[i] / 10) * 10)]
-      .map(([bucket, is]) => ({ bucket, n: is.length }))
-      .sort((a, b) => a.bucket - b.bucket),
     storeys: [...groupBy(idx, (i) => c.storey_range[i])]
       .map(([storey_range, is]) => ({
         storey_range,
@@ -616,25 +600,24 @@ export function storeysAreaQuery(
 // Comps match lease (and distance) before storey, since lease age drives PSF more than floor and
 // a town can mix old and new blocks. The tightest tier with enough sales wins.
 const COMP_RADIUS_M = 1000;
+const COMP_LEASE_BAND = 10; // ± years of remaining lease
 
 /** The full valuation dataset: comps (tiered by distance + lease, 12mo widened to 24 if thin),
  * island medians, yearly trajectory, and lease-decay buckets (town: 36mo/n>=8, island:
- * 24mo/n>=30). `lease` (remaining years, matched ±`leaseBand`) and `lat`/`lng` enable the
- * tighter tiers; without them comps fall back to the whole town. */
+ * 24mo/n>=30). `lease` (remaining years, matched ±COMP_LEASE_BAND) and `lat`/`lng` enable
+ * the tighter tiers; without them comps fall back to the whole town. */
 export function valuationQuery(
   c: Columns,
   {
     town,
     flat,
     lease = 0,
-    leaseBand = 10,
     lat = null,
     lng = null,
   }: {
     town: string;
     flat: string;
     lease?: number;
-    leaseBand?: number;
     lat?: number | null;
     lng?: number | null;
   },
@@ -648,7 +631,8 @@ export function valuationQuery(
   for (let i = 0; i < c.n; i++)
     if (c.town[i] === town && c.flat_type[i] === flat) inTownFlat.push(i);
 
-  const similarLease = (i: number) => Math.abs(c.remaining_lease_years[i] - lease) <= leaseBand;
+  const similarLease = (i: number) =>
+    Math.abs(c.remaining_lease_years[i] - lease) <= COMP_LEASE_BAND;
   const distTo = (i: number) =>
     lat == null || lng == null || Number.isNaN(c.latitude[i])
       ? null
@@ -848,7 +832,6 @@ export interface HyparquetApi {
     town: string;
     flat: string;
     lease?: number;
-    leaseBand?: number;
     lat?: number | null;
     lng?: number | null;
   }): Promise<ValuationData>;
