@@ -3,7 +3,7 @@
 SFA licenses every food outlet in Singapore, so its Track Records API is the one comprehensive,
 current, correctly-named source (OpenStreetMap misses many; the data.gov.sg dump is a stale 2024
 snapshot). This scrapes it ONCE at build time — so no user location ever leaves the browser at
-runtime — keeps consumer venue-level food types, uses the trade ``businessName``, geocodes each
+runtime — keeps consumer venue-level food types, uses the trade ``business_name``, geocodes each
 unique postal via OneMap Search (authenticated: the account's 250/min quota is a reliable bucket
 the anonymous per-IP throttle is not), and merges in NEA hawker centres. Postal->coords are cached
 in ``postal_coords.json`` so refreshes only geocode new postals. Needs ONEMAP_EMAIL/ONEMAP_PASSWORD
@@ -21,7 +21,7 @@ Run on demand (a few minutes; re-run to refresh):
 
     uv run python webapp/update/build_food.py
 
-Caveat: SFA's ``businessName`` is the trade name for most outlets but occasionally a franchisee's
+Caveat: SFA's ``business_name`` is the trade name for most outlets but occasionally a franchisee's
 company name (e.g. "APPS GURU" for a Springleaf Prata outlet). Sources: SFA + NEA (data.gov.sg).
 """
 
@@ -109,7 +109,7 @@ def _mall_postals(records: list[dict]) -> set[str]:
     }
     postals: set[str] = set()
     for r in records:
-        addr = r.get("establishmentAddress", "")
+        addr = r.get("appl_address", "")
         if any(norm(part) in names for part in addr.split(",")):
             m = _POSTAL.search(addr)
             if m:
@@ -118,43 +118,41 @@ def _mall_postals(records: list[dict]) -> set[str]:
 
 
 def _sfa_rows() -> tuple[list[dict], set[str]]:
-    """One call returns every establishment (address always contains 'Singapore')."""
-    q = {
-        "postalCode": "",
-        "establishmentAddress": "Singapore",
-        "licenceNumber": "",
-        "businessName": "",
-        "licenseeName": "",
-        "typeOfFoodBussiness": "",
-        "isShowLicenceSuspended": "false",
-        "grades": "",
-    }
-    url = "https://www.sfa.gov.sg/api/TrackRecord/GetTrackRecord?" + urllib.parse.urlencode(q)
-    req = urllib.request.Request(
-        url, headers={**UA, "Accept": "application/json", "X-Requested-With": "XMLHttpRequest"}
+    """One call returns every establishment (address always contains 'Singapore').
+
+    SFA's Next.js site (Nov 2026) replaced the old ``/api/TrackRecord/GetTrackRecord`` endpoint
+    with ``/api/track-record/search``, which takes and returns snake_case fields
+    (``appl_address``, ``business_name``, ``biz_trade_description``, ``postal_cd``)."""
+    url = "https://www.sfa.gov.sg/api/track-record/search?" + urllib.parse.urlencode(
+        {"appl_address": "Singapore"}
     )
-    raw = urllib.request.urlopen(req, timeout=120).read()
+    req = urllib.request.Request(url, headers={**UA, "Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        ctype = resp.headers.get("Content-Type", "")
+        raw = resp.read()
     try:
         raw = gzip.decompress(raw)
     except (OSError, EOFError):
         pass
-    data = json.loads(raw)
-    records = data if isinstance(data, list) else next(
-        (v for v in data.values() if isinstance(v, list)), []
-    )
+    if "json" not in ctype:
+        raise RuntimeError(f"SFA track-record API returned {ctype or 'no content type'}, not JSON "
+                           f"(endpoint moved again?): {raw[:200]!r}")
+    records = json.loads(raw).get("trackRecords") or []
+    if len(records) < 10_000:  # a full dump is ~50k; far fewer means the query/schema changed
+        raise RuntimeError(f"SFA track-record API returned only {len(records)} records")
 
     mall_postals = _mall_postals(records)  # food inside a mall is covered by the Mall pin — drop it
 
     # Pass 1: collect keepable rows, and note which postals host a coffeeshop/foodcourt parent.
     kept, parent_postals = [], set()
     for r in records:
-        ftype = r.get("typeOfFoodBussiness")
+        ftype = r.get("biz_trade_description")
         if ftype not in KEEP_TYPES:
             continue
-        name = (r.get("businessName") or "").strip()
+        name = (r.get("business_name") or "").strip()
         if name.upper() in _BAD_NAME or name.lower() in _GENERIC_NAME:
             continue
-        m = _POSTAL.search(r.get("establishmentAddress", ""))
+        m = _POSTAL.search(r.get("appl_address", ""))
         if not m or m.group(1) in mall_postals:
             continue
         kept.append({"name": name, "postal": m.group(1), "type": ftype})
