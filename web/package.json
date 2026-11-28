@@ -4,6 +4,7 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
+    "setup": "bash ../scripts/setup-data.sh",
     "dev": "astro dev",
     "vendor-fonts": "node scripts/vendor-fonts.mjs",
     "build": "astro build",

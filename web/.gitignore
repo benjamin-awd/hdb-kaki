@@ -6,7 +6,7 @@ dist/
 # Generated data artifacts (year-sharded parquet + manifest). Produced by
 # `webapp/update/emit_web.py` from data/df.parquet — regenerated in CI on every
 # deploy, so we keep them out of git history rather than commit ~3-4MB daily.
-# For local dev, run once:  uv run --with polars webapp/update/emit_web.py
+# For local dev, run once:  bun run setup  (scripts/setup-data.sh)
 public/data
 
 # Brotli-compressed DuckDB-WASM engine, staged from node_modules by
