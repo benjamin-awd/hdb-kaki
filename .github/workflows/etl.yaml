@@ -31,6 +31,8 @@ jobs:
       id: etl
       env:
         DATAGOV_API_KEY: ${{ secrets.DATAGOV_API_KEY }}
+        ONEMAP_EMAIL: ${{ secrets.ONEMAP_EMAIL }}
+        ONEMAP_PASSWORD: ${{ secrets.ONEMAP_PASSWORD }}
       run: uv run webapp/update/etl.py
 
     - name: Upload parquet to release
