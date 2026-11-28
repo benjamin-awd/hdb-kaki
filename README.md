@@ -4,11 +4,6 @@ HDB Kaki helps you stay updated on the latest movements in the HDB resale market
 
 This repository is a fork of https://github.com/Joanna-Khek/hdb_resale_prices.
 
-> **HDB Kaki has moved.** The app has been rebuilt and now lives at
-> **[app.hdb-kaki.workers.dev](https://app.hdb-kaki.workers.dev)**. The old
-> Streamlit app (`webapp/`) now only serves a migration notice; the data
-> pipeline in `webapp/update/` continues to power the new site.
-
 <h3 align="center">
     🔑 Try it out: <br>
     <a href="https://app.hdb-kaki.workers.dev/">https://app.hdb-kaki.workers.dev/</a>
@@ -19,25 +14,38 @@ The data used in this application comes from the "Resale flat prices based on re
 
 ## Developing
 
-Install uv
+The site is a static [Astro](https://astro.build) app in `web/`. Its data is generated
+by the Python pipeline in `webapp/update/`.
+
+Requirements: [Bun](https://bun.sh) and [uv](https://docs.astral.sh/uv/).
+
 ```sh
-pipx install uv
+cd web
+bun install
+bun run setup   # fetch the data from the GitHub Release and generate web/public/data/
+bun run dev
 ```
 
-Install dependencies
+Re-run `bun run setup` whenever you want the latest data.
+
+Other useful scripts (run from `web/`):
+
+| Command | What |
+|---|---|
+| `bun run build` / `bun run preview` | Production build, and serve it locally |
+| `bun run check` / `bun run lint` | Type-check and lint |
+| `bun run test:unit` | Unit tests |
+| `bun run test` | Playwright end-to-end tests |
+
+### Working on the ETL
+
+The daily ETL (`webapp/update/etl.py`) reads and updates the monthly CSVs, so fetch
+those too:
+
 ```sh
 uv sync
-```
-
-Fetch the data (not stored in git, see [Data](#data))
-```sh
-gh release download data --pattern csv.tar.gz --pattern df.parquet --pattern metadata --dir data --clobber
-tar xzf data/csv.tar.gz
-```
-
-Run the app
-```sh
-streamlit run webapp/0_🔑_HDB_Kaki.py
+scripts/setup-data.sh --csv
+DATAGOV_API_KEY=... ONEMAP_EMAIL=... ONEMAP_PASSWORD=... uv run webapp/update/etl.py
 ```
 
 ## Data
