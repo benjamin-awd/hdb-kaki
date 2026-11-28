@@ -55,6 +55,7 @@ The data lives in the `data` [GitHub Release](https://github.com/benjamin-awd/hd
 The daily `Auto-update` workflow restores `csv.tar.gz`, runs the ETL, and publishes all three back.
 
 ## Attribution
-This repository is a fork of https://github.com/Joanna-Khek/hdb_resale_prices.
+This project started out as a fork of [hdb_resale_prices](https://github.com/Joanna-Khek/hdb_resale_prices),
+a Streamlit app by [Joanna Khek](https://github.com/Joanna-Khek). Thanks for the original idea and groundwork!
 
 The data used in this application comes from the "Resale flat prices based on registration date from Jan-2017" dataset from [data.gov.sg](https://data.gov.sg/datasets/d_8b84c4ee58e3cfc0ece0d773c8ca6abc/view) which is made available under the terms of the [Singapore Open Data Licence](https://data.gov.sg/open-data-licence) v1.0.
