@@ -59,7 +59,7 @@ a Streamlit app by [Joanna Khek](https://github.com/Joanna-Khek). Thanks for the
   - [HDB Existing Building](https://data.gov.sg/datasets/d_16b157c52ed637edd6ba1232e026258d/view) (HDB): block postal codes
   - [Master Plan 2019 Planning Area Boundary](https://data.gov.sg/datasets/d_4765db0e87b9c86336792efe8a1f7a66/view) and [Subzone Boundary](https://data.gov.sg/datasets/d_8594ae9ff96d0c708bc2af633048edfb/view) (URA): town and subzone maps
   - [Hawker Centres](https://data.gov.sg/datasets/d_4a086da0a5553be1d89383cd90d07ecd/view) (NEA): nearby amenities and food
-- **[OneMap](https://www.onemap.gov.sg)** (Singapore Land Authority): address geocoding, MRT/LRT station locations, and walking routes
+- **[OneMap](https://www.onemap.gov.sg)** (Singapore Land Authority): address geocoding and MRT/LRT station locations
 - **[Singapore Food Agency](https://www.sfa.gov.sg)** Track Records: licensed food outlets
 - **[OpenStreetMap](https://www.openstreetmap.org/copyright)** © OpenStreetMap contributors, available under the [ODbL](https://opendatacommons.org/licenses/odbl/): amenities such as supermarkets, and fallback geocoding via Nominatim
 - **[CARTO](https://carto.com/attributions)**: basemap tiles
