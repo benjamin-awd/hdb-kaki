@@ -15,15 +15,19 @@ test('default page renders from JSON with block letters uppercased, data file bl
   await expect(page.locator('#tbody-recent tr')).toHaveCount(20, { timeout: 20_000 });
   await expect(page.locator('#recent-foot')).toContainText('Showing 1–20 of');
 
-  // Block + lane letter suffixes stay uppercase (311c -> 311C); the rest is title-cased.
-  // Asserted as an invariant over every visible address rather than a pinned newest sale,
-  // which drifts each time the scheduled dataset auto-update refreshes the release: no
-  // letter ever directly follows a digit in lower case, and at least one address carries an
-  // uppercased block/lane suffix (so the transform provably fired, not just absent in data).
+  // Addresses go through titleCase: block + lane letter suffixes stay uppercase
+  // (311c -> 311C) and the rest is title-cased. Asserted as invariants over every visible
+  // address, because the newest sales change with each daily data refresh: no letter
+  // directly follows a digit in lower case, and every address has lowercase letters
+  // (proving titleCase actually ran on the raw upper-case data). Don't require a suffixed
+  // block to be present: some days none of the 20 newest sales has one. The suffix rule
+  // itself is unit-tested in src/lib/format.test.ts.
   const addrs = await page.locator('#tbody-recent tr td:nth-child(3)').allTextContents();
   expect(addrs).toHaveLength(20);
-  for (const a of addrs) expect(a).not.toMatch(/\d[a-z]/);
-  expect(addrs.some((a) => /\d[A-Z]/.test(a))).toBe(true);
+  for (const a of addrs) {
+    expect(a).not.toMatch(/\d[a-z]/);
+    expect(a).toMatch(/[a-z]/);
+  }
 
   // Prev disabled on page 1; Next enabled.
   await expect(page.locator('#rec-prev')).toBeDisabled();
