@@ -2,7 +2,11 @@ __pycache__
 .env
 test.ipynb
 uv.lock
+# Data lives in the `data` GitHub Release, not git (see README "Data").
 data/df.parquet
+data/*.csv
+data/metadata
+data/csv.tar.gz
 wireframes/
 .claude
 .astro

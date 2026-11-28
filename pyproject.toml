@@ -6,7 +6,7 @@ authors = [{ name = "Benjamin Dornel", email = "benjamindornel@gmail.com" }]
 requires-python = ">=3.12,<3.13"
 readme = "README.md"
 dependencies = [
-    "streamlit",
+    "streamlit==1.43.2",
     "polars>=1.7.1,<2",
     "pandas>=2.2.2,<3",
     "numpy>=2.0,<3",
@@ -27,9 +27,6 @@ dev = [
 ]
 
 [tool.uv]
-
-[tool.uv.sources]
-streamlit = { path = "./build/streamlit-1.43.2.tar.gz" }
 
 [tool.hatch.build.targets.sdist]
 include = ["webapp"]

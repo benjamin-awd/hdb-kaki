@@ -29,7 +29,24 @@ Install dependencies
 uv sync
 ```
 
+Fetch the data (not stored in git, see [Data](#data))
+```sh
+gh release download data --pattern csv.tar.gz --pattern df.parquet --pattern metadata --dir data --clobber
+tar xzf data/csv.tar.gz
+```
+
 Run the app
 ```sh
 streamlit run webapp/0_🔑_HDB_Kaki.py
 ```
+
+## Data
+The data lives in the `data` [GitHub Release](https://github.com/benjamin-awd/hdb-kaki/releases/tag/data), not in git, to keep clones small:
+
+| Asset | What |
+|---|---|
+| `csv.tar.gz` | Monthly transaction CSVs (`data/YYYY-MM.csv`) plus `data/metadata`. The ETL's persistent store, including cached OneMap geocodes |
+| `df.parquet` | All months combined; the input for `webapp/update/emit_web.py` |
+| `metadata` | Unix epoch of the last data change |
+
+The daily `Auto-update` workflow restores `csv.tar.gz`, runs the ETL, and publishes all three back.

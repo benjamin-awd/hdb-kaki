@@ -47,10 +47,10 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v10.2.0
 
-      - name: Download latest parquet from release
+      - name: Download latest parquet + metadata from release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download data --pattern df.parquet --dir data --clobber
+        run: gh release download data --pattern df.parquet --pattern metadata --dir data --clobber
 
       - name: Emit web data artifacts (year-sharded parquet + manifest)
         run: uv run --with polars --with shapely webapp/update/emit_web.py

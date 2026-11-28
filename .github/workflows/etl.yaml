@@ -1,16 +1,29 @@
 name: Auto-update
 
+# Daily price ETL. The monthly CSVs in data/ are the ETL's persistent store (they
+# cache OneMap geocodes per address), but they are NOT committed — they live in the
+# `data` GitHub Release as csv.tar.gz, alongside the derived df.parquet and the
+# `metadata` last-updated epoch. Each run restores the store from the release,
+# updates it, and publishes it back only if a CSV changed.
+
 on:
   schedule:
     - cron: "0 20 * * *"
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: write # release uploads
+
+# Two overlapping runs would race on the release assets.
+concurrency:
+  group: auto-update
+  cancel-in-progress: false
 
 jobs:
   update:
     runs-on: ubuntu-26.04
+    env:
+      GH_TOKEN: ${{ github.token }}
 
     steps:
     - name: Checkout code
@@ -27,6 +40,20 @@ jobs:
         uv venv
         uv pip install .
 
+    # Fails the run if the store can't be restored: running the ETL against an
+    # empty data/ would re-download and re-geocode every month since 2017.
+    - name: Restore CSV store from release
+      run: |
+        set -euo pipefail
+        # csv.tar.gz.new only survives if a previous run died mid-swap (see below).
+        gh release download data --pattern csv.tar.gz --dir "$RUNNER_TEMP" \
+          || gh release download data --pattern csv.tar.gz.new --output "$RUNNER_TEMP/csv.tar.gz"
+        tar xzf "$RUNNER_TEMP/csv.tar.gz"
+        n=$(ls data/*.csv | wc -l)
+        echo "Restored $n monthly CSVs"
+        [ "$n" -ge 100 ] || { echo "::error::Expected 100+ CSVs, got $n"; exit 1; }
+        sha256sum data/*.csv > "$RUNNER_TEMP/before.sha256"
+
     - name: Run ETL Process
       id: etl
       env:
@@ -36,32 +63,35 @@ jobs:
       run: uv run webapp/update/etl.py
 
     - name: Upload parquet to release
-      env:
-        GH_TOKEN: ${{ github.token }}
       run: |
-        gh release create data --title "Data" --notes "Auto-updated parquet data" 2>/dev/null || true
+        gh release create data --title "Data" --notes "Auto-updated data" 2>/dev/null || true
         gh release upload data data/df.parquet --clobber
 
     - name: Check for changes in data/*.csv
-      id: check_changes
       run: |
-        changes=$(git diff --name-only | grep '^data/.*\.csv$') || true
-        untracked=$(git ls-files --others --exclude-standard | grep '^data/.*\.csv$') || true
-
-        if [ -n "$changes" ] || [ -n "$untracked" ]; then
-          echo "has_changes=true" >> $GITHUB_ENV
+        if sha256sum data/*.csv | cmp -s - "$RUNNER_TEMP/before.sha256"; then
+          echo "has_changes=false" >> "$GITHUB_ENV"
         else
-          echo "has_changes=false" >> $GITHUB_ENV
+          echo "has_changes=true" >> "$GITHUB_ENV"
         fi
 
-    - name: Commit and push changes
+    # Upload under a temporary name first, then swap, so a failed upload never
+    # leaves the release without a csv.tar.gz.
+    - name: Publish CSV store to release
       if: env.has_changes == 'true'
       run: |
-        git config user.name 'GitHub Actions'
-        git config user.email 'actions@github.com'
+        set -euo pipefail
+        date +%s > data/metadata
+        tar czf "$RUNNER_TEMP/csv.tar.gz.new" data/*.csv data/metadata
 
-        echo $(date +%s) > data/metadata
-        git add data/*.csv data/metadata
+        asset_id() {
+          gh api "repos/${{ github.repository }}/releases/tags/data" \
+            --jq ".assets[] | select(.name == \"$1\") | .id"
+        }
+        gh release upload data "$RUNNER_TEMP/csv.tar.gz.new" --clobber
+        new=$(asset_id csv.tar.gz.new)
+        old=$(asset_id csv.tar.gz)
+        [ -n "$old" ] && gh api -X DELETE "repos/${{ github.repository }}/releases/assets/$old"
+        gh api -X PATCH "repos/${{ github.repository }}/releases/assets/$new" -f name=csv.tar.gz > /dev/null
 
-        git commit -m "chore: update data"
-        git push
+        gh release upload data data/metadata --clobber
