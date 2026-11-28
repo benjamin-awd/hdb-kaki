@@ -29,12 +29,13 @@ from __future__ import annotations
 
 import gzip
 import json
-import os
 import re
 import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
+
+from onemap import onemap_token
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "web" / "public" / "geo" / "food.json"
@@ -175,32 +176,6 @@ def _sfa_rows() -> tuple[list[dict], set[str]]:
     return rows, postals
 
 
-def _onemap_token() -> str:
-    """Mint a OneMap token from ONEMAP_EMAIL/ONEMAP_PASSWORD (env, or web/.dev.vars for local
-    builds). Authenticated Search uses the account's 250/min quota — a separate, reliable bucket
-    that the anonymous per-IP throttle does not, so geocoding succeeds where anon requests get
-    dropped. In CI, provide the two values as secrets."""
-    email, password = os.environ.get("ONEMAP_EMAIL"), os.environ.get("ONEMAP_PASSWORD")
-    dev = ROOT / "web" / ".dev.vars"
-    if not (email and password) and dev.exists():
-        vals = dict(
-            line.split("=", 1)
-            for line in dev.read_text().splitlines()
-            if "=" in line and not line.lstrip().startswith("#")
-        )
-        email = email or vals.get("ONEMAP_EMAIL", "").strip()
-        password = password or vals.get("ONEMAP_PASSWORD", "").strip()
-    if not (email and password):
-        raise SystemExit("Set ONEMAP_EMAIL / ONEMAP_PASSWORD (or web/.dev.vars) to geocode.")
-    body = json.dumps({"email": email, "password": password}).encode()
-    req = urllib.request.Request(
-        "https://www.onemap.gov.sg/api/auth/post/getToken",
-        data=body,
-        headers={"content-type": "application/json"},
-    )
-    return json.load(urllib.request.urlopen(req, timeout=30))["access_token"]
-
-
 def _geocode_all(postals: set[str], token: str) -> dict[str, tuple[float, float]]:
     """Postal -> (lat, lng) via authenticated OneMap Search, paced under the 250/min quota. Results
     persist in CACHE, so only newly-seen postals are looked up (near-instant on repeat runs)."""
@@ -248,7 +223,7 @@ def _hawker_centres() -> list[dict]:
 def build() -> None:
     rows, postals = _sfa_rows()
     print(f"SFA venue-level food: {len(rows)} rows, {len(postals)} unique postals", flush=True)
-    coords = _geocode_all(postals, _onemap_token())
+    coords = _geocode_all(postals, onemap_token())
     print(f"geocoded {len(coords)}/{len(postals)} postals", flush=True)
 
     # One pin per point (== per postal, since we geocode by postal): every eatery at a block is

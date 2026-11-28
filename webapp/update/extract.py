@@ -13,6 +13,8 @@ from dateutil.relativedelta import relativedelta
 from numpy import nan
 from tqdm import tqdm
 
+from webapp.update.onemap import onemap_token
+
 DATAGOV_API_KEY = os.environ.get("DATAGOV_API_KEY")
 
 
@@ -181,6 +183,7 @@ def get_map_results(data):
     headers = {
         "User-Agent": "HDB Kaki/1.0 (https://hdb-kaki.streamlit.app/)",
         "Referer": "https://hdb-kaki.streamlit.app/",
+        "Authorization": onemap_token(),
     }
 
     unique_address = list(dict.fromkeys(data["address"]))
